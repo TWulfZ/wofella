@@ -1,1 +1,3 @@
-//! Tauri-agnostic application layer. Content arrives with specs 003, 004 and 005.
+//! Tauri-agnostic application layer (architecture §3). Shells call into it; it owns no UI.
+
+pub mod errors;

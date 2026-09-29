@@ -1,0 +1,83 @@
+---
+source: crates/app/src/errors.rs
+expression: json
+---
+[
+  {
+    "code": "OSU_DIR_NOT_FOUND",
+    "messageKey": "error.code.OSU_DIR_NOT_FOUND",
+    "args": {},
+    "details": null,
+    "retryable": false
+  },
+  {
+    "code": "UNSUPPORTED_FORMAT",
+    "messageKey": "error.code.UNSUPPORTED_FORMAT",
+    "args": {},
+    "details": null,
+    "retryable": false
+  },
+  {
+    "code": "PARSE_FAILED",
+    "messageKey": "error.code.PARSE_FAILED",
+    "args": {},
+    "details": null,
+    "retryable": false
+  },
+  {
+    "code": "OSU_RUNNING",
+    "messageKey": "error.code.OSU_RUNNING",
+    "args": {},
+    "details": null,
+    "retryable": true
+  },
+  {
+    "code": "CONSENT_REQUIRED",
+    "messageKey": "error.code.CONSENT_REQUIRED",
+    "args": {},
+    "details": null,
+    "retryable": false
+  },
+  {
+    "code": "SIGNATURE_INVALID",
+    "messageKey": "error.code.SIGNATURE_INVALID",
+    "args": {},
+    "details": null,
+    "retryable": false
+  },
+  {
+    "code": "NOT_FOUND",
+    "messageKey": "error.code.NOT_FOUND",
+    "args": {},
+    "details": null,
+    "retryable": false
+  },
+  {
+    "code": "INVALID_INPUT",
+    "messageKey": "error.code.INVALID_INPUT",
+    "args": {},
+    "details": null,
+    "retryable": false
+  },
+  {
+    "code": "CONFLICT",
+    "messageKey": "error.code.CONFLICT",
+    "args": {},
+    "details": null,
+    "retryable": false
+  },
+  {
+    "code": "CANCELLED",
+    "messageKey": "error.code.CANCELLED",
+    "args": {},
+    "details": null,
+    "retryable": false
+  },
+  {
+    "code": "INTERNAL",
+    "messageKey": "error.code.INTERNAL",
+    "args": {},
+    "details": null,
+    "retryable": false
+  }
+]
