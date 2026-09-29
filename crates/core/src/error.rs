@@ -19,4 +19,6 @@ pub enum CoreError {
     },
     #[error("unknown game {0:?}")]
     UnknownGame(String),
+    #[error("pack section {0:?} declared twice in a version key")]
+    DuplicateSection(String),
 }

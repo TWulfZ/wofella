@@ -81,6 +81,7 @@ macro_rules! hex_bytes {
         }
     };
 }
+pub(crate) use hex_bytes;
 
 /// ADR 0006 encoding: a raw domain tag, then every byte string as `u32` LE length + bytes and
 /// every integer as fixed-width LE. The length prefix makes the encoding injective.
@@ -99,6 +100,11 @@ impl FieldHasher {
         let len = u32::try_from(bytes.len()).unwrap_or(u32::MAX);
         self.0.update(&len.to_le_bytes());
         self.0.update(bytes);
+        self
+    }
+
+    pub(crate) fn u32(&mut self, value: u32) -> &mut Self {
+        self.0.update(&value.to_le_bytes());
         self
     }
 
