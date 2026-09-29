@@ -2,4 +2,5 @@
 
 pub mod clock;
 pub mod errors;
+pub mod features;
 pub mod logging;
