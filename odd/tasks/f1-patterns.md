@@ -101,4 +101,4 @@ Deliverable 2 of F1 (architecture §3 patterns crate, §9.2, §12 F1 row). Rules
 - Accepted change: the engine re-exports `Chart` and `Segment` so app can name them, which adds no crate edge (the verifier agreed).
 
 ## Next step
-T7: close. architecture §5.4 segment schema, CLAUDE.md commands, full gates, corpus when osu! is closed.
+T7 (remaining): with osu! closed run `WOLLUF_CORPUS="/mnt/e/Games/osu!" cargo nextest run -p wolluf-app --run-ignored only -E 'test(corpus_patterns)'` (and the full corpus), record the numbers here, then `git rm` this document and mark PR #7 ready. Docs and gates are already done (833 passed).
