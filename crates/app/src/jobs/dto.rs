@@ -23,14 +23,17 @@ impl std::fmt::Display for JobId {
 #[serde(rename_all = "snake_case")]
 pub enum JobKindDto {
     SyncPlays,
+    /// Chained after every `SyncPlays` (spec 004); never started from IPC.
+    RefreshIdentity,
 }
 
 impl JobKindDto {
-    pub const ALL: &'static [Self] = &[Self::SyncPlays];
+    pub const ALL: &'static [Self] = &[Self::SyncPlays, Self::RefreshIdentity];
 
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::SyncPlays => "sync_plays",
+            Self::RefreshIdentity => "refresh_identity",
         }
     }
 

@@ -22,6 +22,7 @@ use crate::errors::AppError;
 
 pub use dto::{JobId, JobKindDto, JobStageDto, JobStatusDto};
 pub use progress::ProgressSink;
+pub(crate) use runner::to_system_time;
 pub use runner::{JobRunner, JobSubmitter};
 pub use service::JobService;
 

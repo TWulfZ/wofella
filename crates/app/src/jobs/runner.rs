@@ -59,6 +59,8 @@ struct Deps {
 struct Inner {
     state: Mutex<State>,
     wake: Notify,
+    /// Signalled after every job, so `wait_idle` re-checks.
+    job_done: Notify,
     shutdown: CancellationToken,
     deps: Deps,
 }
@@ -109,7 +111,7 @@ impl Inner {
     }
 }
 
-fn to_system_time(t: UnixUs) -> SystemTime {
+pub(crate) fn to_system_time(t: UnixUs) -> SystemTime {
     match u64::try_from(t.0) {
         Ok(us) => UNIX_EPOCH + Duration::from_micros(us),
         Err(_) => UNIX_EPOCH,
@@ -157,6 +159,7 @@ impl JobRunner {
         let inner = Arc::new(Inner {
             state: Mutex::new(State::default()),
             wake: Notify::new(),
+            job_done: Notify::new(),
             shutdown: CancellationToken::new(),
             deps: Deps {
                 user,
@@ -175,6 +178,24 @@ impl JobRunner {
     /// starts.
     pub fn submit(&self, job: Box<dyn Job>) -> JobId {
         submit(&self.inner, job)
+    }
+
+    /// Resolves once nothing is queued or running, follow-ups included. A caller that exits
+    /// right after a sync (the CLI) waits here so the chained identity refresh is not cut off.
+    pub async fn wait_idle(&self) {
+        loop {
+            let done = self.inner.job_done.notified();
+            tokio::pin!(done);
+            // Registered before the check, so a job ending in between still wakes us.
+            done.as_mut().enable();
+            {
+                let state = self.inner.lock();
+                if state.queue.is_empty() && state.running.is_none() {
+                    return;
+                }
+            }
+            done.await;
+        }
     }
 
     pub fn submitter(&self) -> JobSubmitter {
@@ -198,6 +219,7 @@ impl JobRunner {
         let Some(queued) = removed else {
             return Err(AppError::not_found().with_arg("jobId", id.0.clone()));
         };
+        self.inner.job_done.notify_waiters();
         let deps = self.inner.deps.clone();
         let now = deps.clock.now();
         let error = AppError::cancelled();
@@ -327,6 +349,7 @@ async fn worker(inner: Arc<Inner>) {
                     tracing::error!(error = %e, details = ?e.details, "job bookkeeping failed");
                 }
                 inner.lock().running = None;
+                inner.job_done.notify_waiters();
             }
             None => {
                 tokio::select! {
@@ -780,6 +803,31 @@ mod tests {
             "{:?}",
             failures[0]
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn wait_idle_covers_follow_ups() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = open(dir.path());
+        ctx.jobs().wait_idle().await;
+        let gate = Arc::new(Gate::default());
+        let child = TestJob {
+            gate: Some(gate.clone()),
+            ..TestJob::new("players.refresh")
+        };
+        let child_runs = child.runs.clone();
+        ctx.jobs().submit(Box::new(TestJob {
+            follow_up: Some(Box::new(child)),
+            ..TestJob::new("sync_plays:1")
+        }));
+        gate.until_waiting(1).await;
+        let waiting = tokio::time::timeout(Duration::from_millis(100), ctx.jobs().wait_idle());
+        assert!(waiting.await.is_err(), "the follow-up is still running");
+        gate.open();
+        tokio::time::timeout(WAIT, ctx.jobs().wait_idle())
+            .await
+            .unwrap();
+        assert_eq!(child_runs.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test(flavor = "multi_thread")]

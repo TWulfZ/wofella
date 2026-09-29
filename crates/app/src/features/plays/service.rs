@@ -27,8 +27,9 @@ impl<'a> PlaysService<'a> {
             .submit(Box::new(SyncPlaysJob::new(install_id))))
     }
 
-    /// Runs one sync to its end and returns its history entry, whatever its status; `Err` only
-    /// for an unknown install or broken bookkeeping.
+    /// Runs one sync and its follow-ups (the identity refresh) to their end and returns the
+    /// sync's history entry, whatever its status; `Err` only for an unknown install or broken
+    /// bookkeeping.
     pub async fn sync_and_wait(&self, install_id: InstallId) -> Result<JobDto, AppError> {
         // Subscribed before submitting, so the finish event cannot slip past.
         let mut rx = self.ctx.subscribe();
@@ -43,6 +44,7 @@ impl<'a> PlaysService<'a> {
                 }
             }
         }
+        self.ctx.jobs().wait_idle().await;
         self.ctx
             .jobs()
             .list(None)
@@ -133,9 +135,10 @@ mod tests {
                 break;
             }
         }
-        let listed = f.ctx.job_service().list(Some(1)).await.unwrap();
-        assert_eq!(listed[0].id, id);
-        assert_eq!(listed[0].status, JobStatusDto::Ok);
+        let listed = f.ctx.job_service().list(None).await.unwrap();
+        let job = listed.iter().find(|j| j.id == id).unwrap();
+        assert_eq!(job.kind, crate::jobs::JobKindDto::SyncPlays);
+        assert_eq!(job.status, JobStatusDto::Ok);
     }
 
     #[test]

@@ -111,6 +111,8 @@ impl Fixture {
         })
         .await
         .expect("sync finished in time");
+        // The chained identity refresh must not race the test's next step.
+        self.ctx.jobs().wait_idle().await;
         let job = self
             .ctx
             .jobs()
