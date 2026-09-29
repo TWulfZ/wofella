@@ -13,3 +13,18 @@ workspace = true
 wolluf-core.workspace = true
 wolluf-store.workspace = true
 wolluf-source-osu.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+specta.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time", "macros"] }
+tokio-util.workspace = true
+rayon.workspace = true
+directories.workspace = true
+ulid.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+# The fixture install for SyncPlays tests is built from 002's builders (spec 003 AC10).
+wolluf-source-osu = { workspace = true, features = ["test-support"] }
+tempfile.workspace = true
