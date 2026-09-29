@@ -1,3 +1,7 @@
+mod check_layers;
+
+use std::path::{Path, PathBuf};
+
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -22,15 +26,23 @@ enum Command {
     Bindings,
 }
 
-// Skeleton from spec 001 T1; T9–T12 replace each arm. Failing instead of succeeding keeps a CI gate from passing vacuously.
+fn workspace_root() -> PathBuf {
+    // xtask always lives one level below the workspace root.
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .map_or_else(|| PathBuf::from("."), Path::to_path_buf)
+}
+
 fn run(command: Command) -> anyhow::Result<()> {
-    let name = match command {
-        Command::CheckLayers => "check-layers",
-        Command::LintCanary => "lint-canary",
-        Command::StageLock { .. } => "stage-lock",
-        Command::Bindings => "bindings",
-    };
-    anyhow::bail!("xtask {name}: not implemented yet (spec 001)")
+    let root = workspace_root();
+    match command {
+        Command::CheckLayers => check_layers::run(&root),
+        Command::LintCanary => anyhow::bail!("xtask lint-canary: not implemented yet (spec 001)"),
+        Command::StageLock { .. } => {
+            anyhow::bail!("xtask stage-lock: not implemented yet (spec 001)")
+        }
+        Command::Bindings => anyhow::bail!("xtask bindings: not implemented yet (spec 001)"),
+    }
 }
 
 fn main() -> anyhow::Result<()> {
@@ -70,7 +82,6 @@ mod tests {
     #[test]
     fn unimplemented_subcommands_fail_loudly() {
         for command in [
-            Command::CheckLayers,
             Command::LintCanary,
             Command::StageLock { check: true },
             Command::Bindings,
@@ -78,5 +89,11 @@ mod tests {
             let err = run(command).unwrap_err().to_string();
             assert!(err.contains("not implemented"), "{command:?}: {err}");
         }
+    }
+
+    #[test]
+    fn workspace_root_holds_the_root_manifest() {
+        assert!(workspace_root().join("Cargo.toml").is_file());
+        assert!(workspace_root().join("xtask/layers.toml").is_file());
     }
 }

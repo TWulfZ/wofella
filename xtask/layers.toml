@@ -1,0 +1,171 @@
+# Layer rules checked by `cargo xtask check-layers` (spec 001, architecture §4).
+#
+# `allowed` lists are the §4 DAG edges written out explicitly, plus a direct edge to
+# wolluf-core for every crate (Rust needs a direct dependency to name core types).
+# Explicit lists instead of the transitive closure of §4: closure would let cli
+# depend on store, which D11 forbids (ADR 0004).
+#
+# Changing this file adds or removes a crate edge: the PR needs an ADR (D1).
+# Every crate of §3 is listed, present or future; entries for crates that do not
+# exist yet are inert until the crate is created in its phase (§12).
+
+# ---- domain: IO-free and deterministic (D2, D3) ----
+
+[layers.domain]
+# L4: checked over the transitive normal + build dependency tree.
+banned_deps = ["rusqlite", "libsqlite3-sys", "tokio", "tauri", "reqwest", "notify"]
+# L6: matched on src/**/*.rs after comments are stripped.
+banned_apis = [
+    { label = "std::fs|net|env|process", regex = '\bstd\s*::\s*(fs|net|env|process)\b' },
+    { label = "use std::{fs|net|env|process}", regex = '\buse\s+(::)?std\s*::\s*\{[^;]*?[{,]\s*(fs|net|env|process)\b' },
+    { label = "SystemTime::now", regex = '\bSystemTime\s*::\s*now\b' },
+    { label = "Instant::now", regex = '\bInstant\s*::\s*now\b' },
+    { label = "thread_rng", regex = '\bthread_rng\b' },
+    { label = "rand::random", regex = '\brand\s*::\s*random\b' },
+    # Domain crates may not opt out of the D3 determinism lints, not even locally.
+    { label = "allow(clippy::disallowed_*)", regex = '\b(allow|expect)\s*\(\s*clippy\s*::\s*disallowed_' },
+]
+
+[crates.wolluf-core]
+layer = "domain"
+allowed = []
+
+[crates.wolluf-chart]
+layer = "domain"
+allowed = ["wolluf-core"]
+
+[crates.wolluf-patterns]
+layer = "domain"
+allowed = ["wolluf-core", "wolluf-chart"]
+
+[crates.wolluf-difficulty]
+layer = "domain"
+allowed = ["wolluf-core", "wolluf-chart", "wolluf-patterns"]
+
+[crates.wolluf-judge]
+layer = "domain"
+allowed = ["wolluf-core", "wolluf-chart"]
+
+[crates.wolluf-drills]
+layer = "domain"
+allowed = ["wolluf-core", "wolluf-chart"]
+
+# D4: skill sees core only; it consumes core::Evidence.
+[crates.wolluf-skill]
+layer = "domain"
+allowed = ["wolluf-core"]
+
+[crates.wolluf-session]
+layer = "domain"
+allowed = ["wolluf-core", "wolluf-skill"]
+
+[crates.wolluf-recommend]
+layer = "domain"
+allowed = ["wolluf-core", "wolluf-skill"]
+
+[crates.wolluf-eval]
+layer = "domain"
+allowed = ["wolluf-core", "wolluf-skill"]
+
+# ---- engine ----
+
+[crates.wolluf-engine]
+layer = "engine"
+allowed = [
+    "wolluf-core",
+    "wolluf-chart",
+    "wolluf-patterns",
+    "wolluf-difficulty",
+    "wolluf-judge",
+    "wolluf-drills",
+    "wolluf-skill",
+    "wolluf-session",
+    "wolluf-recommend",
+    "wolluf-eval",
+]
+
+# ---- adapters: never depend on app or on each other (D7) ----
+
+# wolluf-chart is a shortcut edge while wolluf-engine does not exist (spec 001 Design).
+[crates.wolluf-store]
+layer = "adapter"
+allowed = ["wolluf-core", "wolluf-chart", "wolluf-engine"]
+
+# D9: read-only by construction. The patterns cover std::fs free functions, File/OpenOptions
+# constructors and their imported bare names.
+[crates.wolluf-source-osu]
+layer = "adapter"
+allowed = ["wolluf-core", "wolluf-chart", "wolluf-engine"]
+banned_apis = [
+    { label = "fs::write", regex = '\bfs\s*::\s*write\b' },
+    { label = "fs::rename", regex = '\bfs\s*::\s*rename\b' },
+    { label = "fs::copy", regex = '\bfs\s*::\s*copy\b' },
+    { label = "use std::fs::{write|rename|copy}", regex = '\bfs\s*::\s*\{[^}]*\b(write|rename|copy)\b' },
+    { label = "File::create", regex = '\bFile\s*::\s*(create|create_new|options)\b' },
+    { label = "OpenOptions", regex = '\bOpenOptions\b' },
+    { label = "create_dir", regex = '\bcreate_dir(_all)?\b' },
+    { label = "remove_file", regex = '\bremove_file\b' },
+    { label = "remove_dir", regex = '\bremove_dir(_all)?\b' },
+    { label = "hard_link", regex = '\bhard_link\b' },
+    { label = "symlink", regex = '\bsymlink(_file|_dir)?\b' },
+    { label = "set_permissions", regex = '\bset_permissions\b' },
+]
+
+[crates.wolluf-online]
+layer = "adapter"
+allowed = ["wolluf-core", "wolluf-engine"]
+
+[crates.wolluf-audio]
+layer = "adapter"
+allowed = ["wolluf-core", "wolluf-engine"]
+
+# ---- app ----
+
+[crates.wolluf-app]
+layer = "app"
+allowed = [
+    "wolluf-core",
+    "wolluf-engine",
+    "wolluf-store",
+    "wolluf-source-osu",
+    "wolluf-online",
+    "wolluf-audio",
+]
+
+# ---- shells: no logic, app only (D11) ----
+
+[crates.wolluf-desktop]
+layer = "shell"
+allowed = ["wolluf-core", "wolluf-app"]
+
+[crates.wolluf-cli]
+layer = "shell"
+allowed = ["wolluf-core", "wolluf-app"]
+
+# ---- tools ----
+
+# wolluf-source-osu with feature `test-support` builds 002's minimized DB fixtures (`cargo xtask fixtures`).
+[crates.xtask]
+layer = "tool"
+allowed = ["wolluf-source-osu"]
+
+# ---- L5: packages only the listed crates may depend on directly (any dependency kind) ----
+
+[restricted_deps]
+# D6: only store contains SQL.
+rusqlite = ["wolluf-store"]
+rusqlite_migration = ["wolluf-store"]
+libsqlite3-sys = ["wolluf-store"]
+notify = ["wolluf-source-osu"]
+notify-debouncer-full = ["wolluf-source-osu"]
+# Runtimes and thread pools belong to the composition root (spec 003).
+tokio = ["wolluf-app", "wolluf-desktop", "wolluf-cli"]
+tokio-util = ["wolluf-app", "wolluf-desktop", "wolluf-cli"]
+rayon = ["wolluf-app", "wolluf-desktop", "wolluf-cli"]
+
+# ---- L6: source tokens only the listed crates may use ----
+
+[[restricted_apis]]
+label = "rusqlite::"
+regex = '\brusqlite\s*::'
+allowed_in = ["wolluf-store"]
