@@ -1,5 +1,6 @@
 mod bindings;
 mod check_layers;
+mod lint_canary;
 mod stage_lock;
 
 use std::path::{Path, PathBuf};
@@ -39,7 +40,7 @@ fn run(command: Command) -> anyhow::Result<()> {
     let root = workspace_root();
     match command {
         Command::CheckLayers => check_layers::run(&root),
-        Command::LintCanary => anyhow::bail!("xtask lint-canary: not implemented yet (spec 001)"),
+        Command::LintCanary => lint_canary::run(&root),
         Command::StageLock { check } => stage_lock::run(&root, check),
         Command::Bindings => bindings::run(&root),
     }
@@ -76,14 +77,6 @@ mod tests {
         ];
         for (argv, expected) in cases {
             assert_eq!(Cli::try_parse_from(argv).unwrap().command, expected);
-        }
-    }
-
-    #[test]
-    fn unimplemented_subcommands_fail_loudly() {
-        for command in [Command::LintCanary] {
-            let err = run(command).unwrap_err().to_string();
-            assert!(err.contains("not implemented"), "{command:?}: {err}");
         }
     }
 

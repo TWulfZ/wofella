@@ -1,0 +1,25 @@
+[package]
+name = "wolluf-lint-canary"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Its own workspace, excluded from the root one, so its deliberate violations never reach
+# workspace builds. It sits under the repo root so clippy finds the root clippy.toml by
+# directory lookup, which is exactly what `cargo xtask lint-canary` proves.
+[workspace]
+
+# Copy of the root [workspace.lints]; `lint_canary::tests::canary_lints_match_root` keeps them equal.
+[lints.rust]
+unsafe_code = "deny"
+unreachable_pub = "warn"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+disallowed_types = "deny"
+disallowed_methods = "deny"
