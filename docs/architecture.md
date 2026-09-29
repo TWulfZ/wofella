@@ -164,7 +164,7 @@ wolluf/
 │  ├─ engine/      wolluf-engine     # Registry, keymode profiles (profiles/k7.toml, k4.toml), EngineManifest, stage DAG +
 │  │                                 #   staleness planning (pure), pipelines: analyze_chart, judge_play, evidence_for_play, fold_skill
 │  ├─ store/       wolluf-store      # the ONLY crate with SQL: user.db + cache.db, migrations, repositories, writer thread, blob vault, codecs
-│  ├─ source-osu/  wolluf-source-osu # READ-ONLY osu! stable: install detection, snapshot-copy of DBs, format codecs (osu!.db, scores.db,
+│  ├─ source-osu/  wolluf-source-osu # READ-ONLY osu! stable: install detection, in-memory DB snapshots (ADR 0014), codecs (osu!.db, scores.db,
 │  │                                 #   collection.db, .osr, .osg, cfg) pure over &[u8], Songs scanner, notify watcher, osu!-running probe
 │  ├─ online/      wolluf-online     # (F3+) osu! API /me only; (F5) telemetry transport, pack feed + signature verify, tosu ws client
 │  ├─ audio/       wolluf-audio      # (F4) symphonia → signalsmith-stretch|rubato → vorbis_rs; heavy deps isolated from domain builds
@@ -271,10 +271,11 @@ game_install(id, game 'osu_stable', root_path, client_version, detected_at)
 source_snapshot(id, install_id, kind [osu_db|scores_db|collection_db|cfg|songs_scan], sha256, size, mtime,
                 format_version, imported_at)                  -- provenance of every import
 blob(sha256 PK, kind [osr|osg|osu], size, origin_path, first_seen)
-alias(id, game, raw_name, UNIQUE(game, raw_name))             -- raw bytes are the key; normalization is for matching only; '' is a valid alias
-play(id PK = blake3(game, chart_md5, raw_name, filetime), alias_id, chart_md5, filetime TEXT, played_at_utc,
-     mods, score_system [v1|v2], counts_json, max_combo, score, native_acc, passed, online_score_id TEXT NULL,
-     client_version, replay_sha NULL, osg_sha NULL, chart_sha NULL, snapshot_id, ingested_at)
+alias(id, game, raw_name BLOB, UNIQUE(game, raw_name))        -- raw bytes are the key; normalization is for matching only; '' is a valid alias
+play(id PK = blake3(game, chart_md5, raw_name, filetime), alias_id, chart_md5, origin [scores_db|replay_only],
+     filetime TEXT, played_at_utc, mods, score_system [v1|v2], counts_json, max_combo, score, native_acc,
+     passed NULL, online_score_id TEXT NULL, client_version, replay_sha NULL, osg_sha NULL, chart_sha NULL,
+     snapshot_id NULL, ingested_at)
                                                               -- immutable ledger; re-ingest is idempotent through the natural key
 identity_decision(alias_id PK, decision [me|not_me], decided_at)   -- the user's answer; heuristics never override it
 profile(id, kind [self|other], label, is_default, merge_mode [merged|separate], created_at)
@@ -293,6 +294,12 @@ param_pack(pack_id PK, semver, sha256, signature, source [builtin|downloaded|loc
            activated_at NULL, previous_pack_id NULL)
 settings(key, json)                                           -- UI/UX preferences ONLY
 ```
+
+**Ledger details (ADR 0014).**
+- `play.id` is `PlayId::derive`, whose byte encoding ADR 0006 freezes. `filetime` is the FILETIME decimal text (100 ns since 1601, the `Data/r` name suffix), converted once at ingest from the .NET ticks that scores.db and the `.osr` header store. Those ticks are UTC, so `played_at_utc` needs no timezone conversion.
+- `origin = scores_db` rows come from a scores.db record and carry `snapshot_id`. `origin = replay_only` rows come from an orphan `Data/r` replay with no score row, built from its `.osr` header under the same natural key; they carry `replay_sha` and no `snapshot_id`.
+- `passed` is NULL in F0: scores.db has no pass flag and stable saves failed plays too. F2 derives pass/fail in cache.db.
+- The only updates the ledger allows are NULL → value on `replay_sha`, `osg_sha` and `chart_sha`, and the one-way upgrade `replay_only → scores_db` with its `snapshot_id`. Triggers enforce this.
 
 **Rule:** anything that changes a derived number lives in one of these places:
 - an append-only `feedback_event` (label corrections, play exclusions, ratings, preference resets, undo as a compensating event);
@@ -505,7 +512,7 @@ Gate rules live in `params/gates.toml`. A pack cannot be released without a comm
   - From F3 on there are two rayon pools: a small *interactive* pool (a new play, a scope change, a single-chart relabel) and a *bulk* pool. Rayon has no priorities or preemption, so separate pools are the honest mechanism.
 - **Writes** go to one writer thread per DB, in transactions of ~500–5k rows. This avoids `SQLITE_BUSY` without mutexes or an ORM.
 - **Sources.**
-  - osu!.db, scores.db and collection.db are **snapshot-copied** to temp before parsing, for consistent reads and so osu!'s files are never locked.
+  - osu!.db, scores.db and collection.db are **snapshotted in memory** before parsing: stat, read the whole file, stat again, and retry with backoff while size or mtime changes (`OSU_RUNNING` after 3 changed reads). Reads are consistent, osu!'s files are never locked, and nothing is written to disk, so D9 holds literally (ADR 0014).
   - A `notify` watcher on `Data/r` and on the scores.db mtime, debounced 5 s, triggers an incremental `SyncPlays` from the last snapshot.
 - **Failures.** Each item runs under `catch_unwind`. A failure is recorded in `derivation.status=failed` / `item_failure` and the job continues ("18,868 indexed, 37 failed to parse (view)").
 
@@ -697,7 +704,7 @@ Real beatmaps, audio and replays are **never committed**. Every bug found in the
 
 | Phase | Builds | Crates added | Exists at the end (user-visible) | Exit criteria |
 |---|---|---|---|---|
-| **F0 Base** | Workspace, xtask (check-layers, bindings), deny, CI skeleton, ADRs 0001–0009. Ports of the audited osu!.db/scores.db/collection.db/cfg readers; snapshot-copy; vault (.osr/.osg/.osu bytes); user.db ledger + cache.db skeleton + writer thread. `SyncPlays` job + watcher. **Players feature complete:** alias stats, heuristics, tiers, decisions, profiles, Select all, Merged/Compare. **.osg spike** (`wolluf osg dump`) | core, chart (types), source-osu, store, app, desktop, cli | The app detects osu!, ingests 4.3k plays idempotently, archives replays and charts, and shows the "Which of these are you?" list with correct defaults (`TWulfZ` auto; `""`/`W`/`Wulf` suggested) | Re-ingest adds 0 rows; identity table tests pass; ADR 0012 drafted from the spike |
+| **F0 Base** | Workspace, xtask (check-layers, bindings), deny, CI skeleton, ADRs 0001–0009. Ports of the audited osu!.db/scores.db/collection.db/cfg readers; in-memory snapshots (ADR 0014); vault (.osr/.osg/.osu bytes); user.db ledger + cache.db skeleton + writer thread. `SyncPlays` job + watcher. **Players feature complete:** alias stats, heuristics, tiers, decisions, profiles, Select all, Merged/Compare. **.osg spike** (`wolluf osg dump`) | core, chart (types), source-osu, store, app, desktop, cli | The app detects osu!, ingests 4.3k plays idempotently, archives replays and charts, and shows the "Which of these are you?" list with correct defaults (`TWulfZ` auto; `""`/`W`/`Wulf` suggested) | Re-ingest adds 0 rows; identity table tests pass; ADR 0012 drafted from the spike |
 | **F1 Charts** | Chart decoder + layout; pattern rules + segmenter; Sunny clean-room, minacalc/rosu features, LeoBlack; engine (registry, k7 profile, manifest, planner); default pack; stage-lock; eval metrics; `IndexLibrary`/`AnalyzeCharts` jobs; Library + Playfield with segment overlay; **relabel capture** (builds the gold set) | patterns, difficulty, engine, eval | Browse 18.9k charts, see pattern segments and difficulty per rate, correct labels | Beats NPS on bms_st, bms_oj and O2Jam [H] and on same-dan pairs; KomeijiDove 8-class slot prediction; per-pattern precision on 200–300 hand-labelled segments |
 | **F2 Replays** | .osr/.osg decode stage, judge rulesets (V1/V2), re-judge job, parity harness + committed report, NNLS fallback (play-level stats only, never per-axis evidence), play breakdown screen | judge | For every play: per-note offsets, per-finger bias, parity status | ≥ 98% exact parity on rice without mods; LN offset-based metrics carry a confidence tag |
 | **F3 Player + session + recommend** | Evidence stage; skill filter (τ_p, pattern offsets); prequential `skill_trace`; sessions + reports + `report_impression`; recommender + `rec_impression`/`rec_outcome`; explicit feedback on recs, reports and plays; preference derivation; isotonic calibration (n ≥ 30); interactive/bulk pools; optional osu! `/me` link for identity | skill, session, recommend, online (API only) | θ ± σ per axis over time for any scope, session reports ("what improved, what worsened, what to practise"), recommendations with "why", and feedback that visibly moves things | Temporal split (train < 2026-09-01, test September, 897 plays): log-loss and Brier beat SR and NPS; pilot sanity check (Jack strongest, Speed weakest) reviewed |
