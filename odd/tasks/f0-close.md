@@ -37,12 +37,15 @@ A known inconsistency in how non-mania plays are counted is also still open (F0 
 
 ## Tasks
 - [x] T1: targeted advisory ignores for RUSTSEC-2024-0436 (paste via specta) and RUSTSEC-2024-0370 (proc-macro-error via tauri gtk), each with a reason. Acceptance: `cargo deny check` green. Route: inline. Tier: medium. Commit: `build: ignore unmaintained advisories pulled by specta and tauri`
-- [ ] T2: apply ADR 0012 item 7 and accept ADR 0012. Acceptance: final b25 is not a warning; survey I3 counts it as ok; AC8 reworded; §13 O1/O9 closed. Route: delegated (writer touches 2+ non-trivial files). Tier: medium. Commit: —
-- [ ] T3: first sync counts non-mania plays once; players `non_mania` bucket semantics made consistent with ingest skipping mode ≠ 3. Route: delegated (4+ files to understand). Tier: medium. Commit: —
+- [x] T2: apply ADR 0012 item 7 and accept ADR 0012. Acceptance: final b25 is not a warning; survey I3 counts it as ok; AC8 reworded; §13 O1/O9 closed. Route: delegated (writer touches 2+ non-trivial files). Tier: medium. Commit: `fix(osg): treat final-record b25 as the full-combo flag`
+- [x] T3: first sync counts non-mania plays once; players `non_mania` bucket semantics made consistent with ingest skipping mode ≠ 3. Route: delegated (4+ files to understand). Tier: medium. Commit: `fix(sync): count each non-mania play once per sync`
 - [ ] T4: accept ADR 0014; tick the F0 index (deny, ADRs, WSL smoke 005 AC17); record what is still open (Windows smoke, CI link). Route: inline. Tier: passive. Commit: —
 
 ## Progress
 - 2026-09-29 T1: RED `cargo deny check` → advisories FAILED (0436, 0370) → GREEN: advisories ok, bans ok, licenses ok, sources ok. `cargo nextest run -p xtask`: 50 passed.
+- 2026-09-29 T2: RED 6/9 targeted tests (final b25 still warned, strict exit 1) → GREEN. Corpus `osg_corpus_invariants`: pass, I3 4682/4682, no osg.nonzero_reserved. `osg survey --strict`: 18 unexplained (down from 54). All 18 are the 9 known final_short files, which are outside T2. Spot check `cargo nextest run --workspace`: 439 passed.
+- 2026-09-29 T3: RED `non_mania_score_with_replay_counted_once` left 2 right 1 → GREEN. The pilot's first and second syncs both give skipped_non_mania 19 (before: 38 on the first). The `non_mania` bucket was removed: it was never produced or persisted. Corpus sync + players: 2 passed.
+- Accepted change: T3 dropped the `non_mania` bucket (DTO doc, en/es i18n key, UI fixture). That is simpler than keeping a bucket that is always empty.
 
 ## Next step
-T2 (delegated writer): apply ADR 0012 item 7 in source-osu codec::osg, the app osg survey and the CLI test; accept ADR 0012.
+T4: accept ADR 0014; fix stale "ADR 0012 Proposed" mentions (CLAUDE.md, docs/research/04 l.3); update the F0 index Close status; then close the feature.

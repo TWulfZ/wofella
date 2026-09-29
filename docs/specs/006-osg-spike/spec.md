@@ -147,10 +147,11 @@ None. CLI only.
 - [x] AC7: Read-only guarantee → `survey_does_not_modify_corpus` (tempdir corpus; the mtime and sha256 of every file are unchanged after the survey) passes, and 001's banned-API grep on `source-osu` stays green (`cargo xtask check-layers`).
 - [ ] AC8: Corpus invariants → `WOLLUF_CORPUS="/mnt/e/Games/osu!" cargo nextest run -p wolluf-app --run-ignored only osg_corpus_invariants` asserts:
   - I1 and I2 on 100% of `.osg` files;
-  - I3 and I4 on 100%;
+  - I3 on 100% after reclassifying `b25 = 1` on the final record as the full-combo flag (ADR 0012 item 7), and I4 on 100%;
   - I5 on ≥ 99.5% (preliminary: 4,673 / 4,682).
   
   Every I5/I6 failure is listed by class in the report.
+  Reworded at ADR 0012's acceptance (2026-09-29); it originally read "I3 and I4 on 100%".
 - [ ] AC9: `wolluf osg survey --corpus "/mnt/e/Games/osu!" --json > <scratch>/osg-survey.json` runs in < 60 s on the pilot corpus. The Python oracle `python3 research/scripts/osg/osg.py --survey "/mnt/e/Games/osu!"` agrees with it on I1–I5 counts exactly.
 - [x] AC10: `python3 research/scripts/osg/correlate.py --corpus "/mnt/e/Games/osu!" --out <scratch>/osg-correlate.json` reports C1–C5 for every group listed under Correlations, with n per group.
 - [x] AC11: `docs/research/04-osg-format.md` exists. It has a byte-layout table, one verdict per hypothesis (confirmed / refuted / partial, with the invariant or correlation numbers), the coverage table (which plays lack an `.osg` and why, as far as known), and the remaining unknowns.
