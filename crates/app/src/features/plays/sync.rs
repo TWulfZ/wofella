@@ -37,7 +37,7 @@ use crate::jobs::{ItemError, ItemResult, Job, JobCtx, JobFuture, JobSummary};
 
 pub const CATALOG_STAGE: StageId = StageId::from_static("catalog");
 /// Bump when the catalog rows derived from one osu!.db change (spec 003 "Versioned stages").
-pub const CATALOG_VERSION: u32 = 1;
+pub const CATALOG_VERSION: u32 = 2;
 const CHART_ARCHIVE_STAGE: StageId = StageId::from_static("chart_archive");
 /// Bump when the rule deciding "this chart cannot be archived" changes.
 const CHART_ARCHIVE_VERSION: u32 = 1;
@@ -172,7 +172,12 @@ fn catalog_row(md5: wolluf_core::ChartMd5, b: &OsuDbBeatmap) -> CatalogChart {
         creator: lossy(&b.creator),
         set_id: positive(b.beatmapset_id),
         beatmap_id: positive(b.beatmap_id),
-        path: format!("{}/{}", lossy(&b.folder), lossy(&b.osu_file)),
+        // osu! stable writes nested Songs folders with `\`, a separator only on Windows.
+        path: format!(
+            "{}/{}",
+            lossy(&b.folder).replace('\\', "/"),
+            lossy(&b.osu_file)
+        ),
         od: f64::from(b.overall_difficulty),
         hp: f64::from(b.hp_drain),
         length_ms: u32::try_from(b.total_time_ms).unwrap_or(0),

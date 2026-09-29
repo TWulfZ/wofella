@@ -96,8 +96,15 @@ impl Map {
         self
     }
 
+    /// osu!.db stores a nested Songs folder with Windows separators (`Normal\<set>`).
+    pub(crate) fn nested_in(mut self, parent: &str) -> Self {
+        self.folder = format!("{parent}\\{}", self.folder);
+        self
+    }
+
+    /// Where the file sits under `Songs/` on this host.
     pub(crate) fn rel_path(&self) -> String {
-        format!("{}/{}", self.folder, self.file)
+        format!("{}/{}", self.folder.replace('\\', "/"), self.file)
     }
 
     fn beatmap(&self) -> OsuDbBeatmap {

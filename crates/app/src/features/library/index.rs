@@ -545,6 +545,15 @@ mod tests {
         );
     }
 
+    /// Pilot corpus: 432 charts under `Songs/Normal/` were reported missing off Windows.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn charts_in_nested_songs_folders_are_parsed() {
+        let nested = Map::k7("nested").nested_in("Normal");
+        let (f, first) = synced(std::slice::from_ref(&nested), &[]).await;
+        assert_eq!((first.parsed_new, first.skipped_unavailable), (1, 0));
+        assert_eq!(parse_row(&f, &nested).unwrap().status, DerivationStatus::Ok);
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn parse_failure_is_recorded_and_memoized() {
         let text = String::from_utf8(osu_text(7, "std", &[(0, 0)], &[]))
