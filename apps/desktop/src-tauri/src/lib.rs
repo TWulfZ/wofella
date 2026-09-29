@@ -1,5 +1,8 @@
 //! Tauri desktop shell (spec 005): composition root only, no logic (D11).
 
+pub mod commands;
+pub mod error;
+
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -30,6 +33,21 @@ pub fn with_plugins<R: Runtime>(builder: Builder<R>) -> Builder<R> {
         .plugin(tauri_plugin_log::Builder::new().skip_logger().build())
 }
 
+/// Append-only: 004 adds its `players_*` commands here, and the bindings follow this list.
+pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
+    tauri_specta::Builder::<R>::new().commands(tauri_specta::collect_commands![
+        commands::setup::setup_detect_installs,
+        commands::setup::setup_set_install_path,
+        commands::setup::setup_status,
+        commands::jobs::jobs_list,
+        commands::jobs::jobs_start,
+        commands::jobs::jobs_cancel,
+        // The specta half only reads argument types, and `AppHandle` is skipped there; the Tauri half
+        // strips the generic and infers `R`, so a concrete runtime here serves every `R`.
+        commands::app::app_open_logs_dir::<tauri::Wry>,
+    ])
+}
+
 pub fn manage_context<R: Runtime>(app: &App<R>, ctx: Arc<AppContext>) {
     app.manage(ctx);
 }
@@ -52,7 +70,9 @@ pub fn run(runtime: Handle) -> ExitCode {
             Ok(paths)
         });
 
+    let specta = specta_builder();
     let built = with_plugins(tauri::Builder::default())
+        .invoke_handler(specta.invoke_handler())
         .setup(move |app| {
             let opened = prepared.and_then(|paths| {
                 let logs_dir = paths.logs_dir();
