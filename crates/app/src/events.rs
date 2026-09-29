@@ -27,7 +27,7 @@ pub struct JobFinishedDto {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DataChangedDto {
-    /// Query-key roots the UI invalidates (`plays`, `players`, `setup`, `jobs`).
+    /// Query-key roots the UI invalidates (`plays`, `players`, `setup`, `jobs`, `library`).
     pub domains: Vec<String>,
 }
 

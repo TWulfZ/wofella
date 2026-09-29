@@ -32,6 +32,10 @@ fn result(job: &JobDto) -> String {
             "new={} replay_only={} failed={}",
             s.plays_new, s.plays_replay_only, s.failed_items
         ),
+        Some(JobSummaryDto::IndexLibrary(s)) => format!(
+            "parsed={} memoized={} failed={}",
+            s.parsed_new, s.skipped_memoized, s.failed_items
+        ),
         None => "-".to_owned(),
     }
 }

@@ -53,7 +53,7 @@ F1 needs a chart model before anything else (architecture §12 F1 row, §3 chart
 - [x] T3 — `wolluf-engine` crate: `chart_parse` stage (`VERSION = 1`, stage-lock golden), k7 profile, rows blob encode/decode (postcard + zstd, format-version header), `ParsedChart` summary (n_notes, n_ln, ln_ratio, length, nps), ASCII window render. Route: delegated. Tier: medium. Commit: `feat(engine): add chart_parse stage, rows blob, k7 profile and ASCII render`
 - [x] T4 [P with T3] — store cache: `chart_parsed(md5, vkey, rows_blob, n_notes, n_ln, ln_ratio, length_ms)` and `chart_label(md5, vkey, source, scale, level_ord, level_text, skill_tag, is_variant)` + repos; `CACHE_SCHEMA_VERSION` 1 → 2. Route: delegated. Tier: medium. Commit: —
 - [x] T5 — engine `labels`: pure extraction from (folder, version, creator, set id) per source, porting `labels.py`. Route: delegated. Tier: medium. Commit: `feat(engine): add engine crate with difficulty-name label extraction`
-- [ ] T6 — app `library` feature: `IndexLibrary` job (7K per profile, played charts first, memo by (md5, vkey) in `derivation`, rayon, cancel, progress, item failures), chained after `SyncPlays`; query service (list with filters, get chart view); `JobKindDto` / `JobStartDto` / `JobSummaryDto` variants + bindings regen. Route: delegated. Tier: medium. Commit: —
+- [x] T6 — app `library` feature: `IndexLibrary` job (7K per profile, played charts first, memo by (md5, vkey) in `derivation`, rayon, cancel, progress, item failures), chained after `SyncPlays`; query service (list with filters, get chart view); `JobKindDto` / `JobStartDto` / `JobSummaryDto` variants + bindings regen. Route: delegated. Tier: medium. Commit: `feat(app): index the chart library after each sync`
 - [ ] T7 — CLI `wolluf library index`, `wolluf library list [--keys --label --scale --limit]`, `wolluf chart show <md5> [--from s --to s --layout id]`. Route: delegated. Tier: medium. Commit: —
 - [ ] T8 — corpus acceptance test `corpus_library_index` + timing. Route: inline. Tier: medium. Commit: —
 - [ ] T9 — close: full gates + corpus; CLAUDE.md commands; remove this document. Route: inline. Tier: passive. Commit: —
@@ -71,5 +71,13 @@ F1 needs a chart model before anything else (architecture §12 F1 row, §3 chart
 - 2026-09-29 T3: RED 82 build errors → GREEN 43/43, plus a mutation check on the blob delta decode. The independent verifier (High tier: rows blob is a persisted encoding) approved with notes, and one scoped correction was applied: frozen v1 payload bytes, zstd content checksum (mutation check: without it a bit flip decoded a 15K chart), trailing-bytes reject, dense LN proptest, render width from the longest timestamp, and explicit golden formatting. Result: 49/49 engine tests, and `chart_parse` golden `ba3334e1…`.
 - Accepted change: xtask → wolluf-engine edge (ADR 0016); postcard pinned with `default-features = false`, because `heapless-cas` pulled in the unmaintained atomic-polyfill (RUSTSEC-2023-0089); `chart_label` is registered in the stage lock alongside `chart_parse`.
 
+- 2026-09-29 T6: RED 22 build errors → GREEN, app 117 → 130 tests. Mutation checks each failed their test: skip counted as memo, cancel check removed, played-first sort removed. Shell follow-ups: the CLI `jobs` match arm and the UI `LastSync` guard on the summary union. Parent added `KeymodeProfile::layout_by_id` (RED render with `k7.313_left_thumb` → GREEN) so render accepts any preset of the chart's keymode. Workspace 561 passed; clippy, check-layers, stage-lock, deny, bindings regenerated, and UI tsc/lint/vitest (126) all clean.
+- Accepted changes:
+  - An IO failure writes no derivation row, so it is retried.
+  - Missing file and md5 mismatch are recorded as skipped, not failed.
+  - Labels have their own memo and come from catalog names, so charts that are not on disk still get labels.
+  - `songs_dir()` moved to `context.rs`.
+  - `get()` re-parses the file for its diagnostics count; the store keeps none.
+
 ## Next step
-T6 (in progress): app `library` feature with the IndexLibrary job and LibraryService; then T7 CLI.
+T7: CLI `wolluf library index|list` and `wolluf chart show`.

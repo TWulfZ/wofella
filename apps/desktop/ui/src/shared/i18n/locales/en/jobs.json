@@ -9,12 +9,14 @@
     "kind": {
       "sync_plays": "Sync plays",
       "refresh_identity": "Refresh identity",
+      "index_library": "Index library",
       "unknown": "Job"
     },
     "stage": {
       "catalog": "Reading charts",
       "ingest": "Reading scores",
-      "archive": "Archiving replays"
+      "archive": "Archiving replays",
+      "index": "Indexing charts"
     },
     "status": {
       "queued": "Queued",

@@ -22,6 +22,11 @@ impl KeymodeProfile {
             .filter(|l| l.keymode() == self.keymode)
             .unwrap_or_else(|| Layout::default_for(self.keymode))
     }
+
+    /// A user-chosen preset, only if it belongs to this profile's keymode.
+    pub fn layout_by_id(&self, id: &str) -> Option<Layout> {
+        Layout::by_id(id).filter(|l| l.keymode() == self.keymode)
+    }
 }
 
 const BUILTIN: &[KeymodeProfile] = &[KeymodeProfile {
@@ -69,6 +74,18 @@ mod tests {
         let layout = k7.layout();
         assert_eq!(layout.id(), DEFAULT_K7);
         assert_eq!(layout.keymode(), Keymode::K7);
+    }
+
+    #[test]
+    fn layout_by_id_resolves_only_presets_of_the_profile_keymode() {
+        let k7 = Registry::builtin().profile(Keymode::K7).unwrap();
+        assert_eq!(
+            k7.layout_by_id("k7.313_left_thumb")
+                .map(|l| l.id().to_owned()),
+            Some("k7.313_left_thumb".to_owned())
+        );
+        assert!(k7.layout_by_id("k4.generic").is_none());
+        assert!(k7.layout_by_id("nope").is_none());
     }
 
     #[test]

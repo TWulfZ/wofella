@@ -84,7 +84,7 @@ export type CreateProfileInput = {
 export type DataChanged = DataChangedDto;
 
 export type DataChangedDto = {
-	/**  Query-key roots the UI invalidates (`plays`, `players`, `setup`, `jobs`). */
+	/**  Query-key roots the UI invalidates (`plays`, `players`, `setup`, `jobs`, `library`). */
 	domains: string[],
 };
 
@@ -99,6 +99,22 @@ export type EntryRefDto = { kind: "profile"; id: number } | { kind: "all_players
 
 /**  Wire mirror of core's `ErrorCode`: domain types never derive specta (D13). */
 export type ErrorCodeDto = "OSU_DIR_NOT_FOUND" | "UNSUPPORTED_FORMAT" | "PARSE_FAILED" | "OSU_RUNNING" | "CONSENT_REQUIRED" | "SIGNATURE_INVALID" | "NOT_FOUND" | "INVALID_INPUT" | "CONFLICT" | "CANCELLED" | "INTERNAL";
+
+/**
+ *  IndexLibrary counters. `failedItems` keeps the name every summary shares, which the job
+ *  tray reads without knowing the kind.
+ */
+export type IndexLibrarySummaryDto = {
+	/**  Catalog charts of a keymode with an engine profile. */
+	chartsTotal: number,
+	parsedNew: number,
+	/**  Already parsed, or already failed, under the current `chart_parse` key. */
+	skippedMemoized: number,
+	/**  Missing from `Songs/` or edited since osu!.db recorded its md5; retried next run. */
+	skippedUnavailable: number,
+	labelsWritten: number,
+	failedItems: number,
+};
 
 export type InstallCandidateDto = {
 	path: string,
@@ -158,7 +174,9 @@ export type JobId = string;
 /**  Persisted in `job_run.kind`: stable strings, never renumbered (§11). */
 export type JobKindDto = "sync_plays" | 
 /**  Chained after every `SyncPlays` (spec 004); never started from IPC. */
-"refresh_identity";
+"refresh_identity" | 
+/**  Chained after every `SyncPlays` too, and startable on its own. */
+"index_library";
 
 export type JobProgress = JobProgressDto;
 
@@ -172,17 +190,19 @@ export type JobProgressDto = {
 };
 
 /**  The step a job is in; the UI localises it (`jobs.stage.<id>`). */
-export type JobStageDto = "catalog" | "ingest" | "archive";
+export type JobStageDto = "catalog" | "ingest" | "archive" | "index";
 
 /**  `JobService::start` input, tagged on `kind` (spec 003 IPC). */
 export type JobStartDto = {
 	kind: "sync_plays",
-} & SyncPlaysStartDto;
+} & SyncPlaysStartDto | 
+/**  Indexes the charts of the current catalog, whichever install it came from. */
+{ kind: "index_library" };
 
 export type JobStatusDto = "queued" | "running" | "ok" | "failed" | "cancelled";
 
 /**  Per-kind result, stored as `job_run.summary_json`. */
-export type JobSummaryDto = { kind: "sync_plays"; counters: SyncSummaryDto };
+export type JobSummaryDto = { kind: "sync_plays"; counters: SyncSummaryDto } | { kind: "index_library"; counters: IndexLibrarySummaryDto };
 
 export type KeymodeCountDto = {
 	/**  `k1`..`k16` or `unknown` (`KeymodeBucket`). */

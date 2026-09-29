@@ -9,14 +9,11 @@ use wolluf_core::{
     BlobSha256, ChartMd5, DotNetTicks, ErrorCode, FileTime, Game, PlayId, StageId, UnixUs,
     VersionKey, VersionKeyBuilder,
 };
-use wolluf_source_osu::cfg_files::{list_user_cfgs, read_user_cfg};
 use wolluf_source_osu::codec::osr::{check_name_consistency, decode_osr};
 use wolluf_source_osu::codec::osu_db::{OsuDb, OsuDbBeatmap, decode_osu_db};
 use wolluf_source_osu::codec::replay_name::{ReplayFileKind, ReplayFileName};
 use wolluf_source_osu::codec::score_header::ScoreHeader;
 use wolluf_source_osu::codec::scores_db::decode_scores_db;
-use wolluf_source_osu::install::Platform;
-use wolluf_source_osu::paths::{is_drvfs_path, resolve_songs_dir};
 use wolluf_source_osu::replay_dir;
 use wolluf_source_osu::snapshot::{Snapshot, SnapshotPolicy, read_stable};
 use wolluf_source_osu::songs::{ChartReadError, read_chart_verified};
@@ -30,8 +27,9 @@ use wolluf_store::repo::ledger::{
     SnapshotKind, SourceSnapshot, UnlinkedPlay, alias, blob, game_install, play, source_snapshot,
 };
 
-use crate::context::blocking_join_error;
+use crate::context::{blocking_join_error, songs_dir};
 use crate::errors::AppError;
+use crate::features::library::IndexLibraryJob;
 use crate::features::players::RefreshIdentityJob;
 use crate::features::plays::record::{Links, PlayDraft, chart_md5, draft};
 use crate::jobs::dto::{JobKindDto, JobStageDto, JobSummaryDto, SyncSummaryDto};
@@ -243,23 +241,6 @@ fn vault_blob(
     })
 }
 
-/// The newest cfg decides `BeatmapDirectory` (002 R-d); anything unreadable means `Songs`.
-fn songs_dir(root: &Path) -> PathBuf {
-    let beatmap_directory = list_user_cfgs(root)
-        .ok()
-        .and_then(|cfgs| cfgs.into_iter().next())
-        .and_then(|cfg| read_user_cfg(&cfg.path).ok())
-        .and_then(|(cfg, _)| cfg.beatmap_directory);
-    let platform = if cfg!(windows) {
-        Platform::Windows
-    } else if is_drvfs_path(root) {
-        Platform::Wsl
-    } else {
-        Platform::Linux
-    };
-    resolve_songs_dir(root, beatmap_directory.as_deref(), platform)
-}
-
 fn chart_archive_key(
     md5: ChartMd5,
     osu_db_sha: BlobSha256,
@@ -452,8 +433,9 @@ impl SyncRun<'_> {
             } else {
                 Vec::new()
             },
-            // Every sync refreshes identity, so the wizard never reads stale stats (spec 004).
-            follow_ups: vec![Box::new(RefreshIdentityJob)],
+            // Every sync refreshes identity, so the wizard never reads stale stats (spec 004),
+            // and indexes the charts a new osu!.db may have brought.
+            follow_ups: vec![Box::new(RefreshIdentityJob), Box::new(IndexLibraryJob)],
         })
     }
 

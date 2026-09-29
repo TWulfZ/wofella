@@ -25,15 +25,18 @@ pub enum JobKindDto {
     SyncPlays,
     /// Chained after every `SyncPlays` (spec 004); never started from IPC.
     RefreshIdentity,
+    /// Chained after every `SyncPlays` too, and startable on its own.
+    IndexLibrary,
 }
 
 impl JobKindDto {
-    pub const ALL: &'static [Self] = &[Self::SyncPlays, Self::RefreshIdentity];
+    pub const ALL: &'static [Self] = &[Self::SyncPlays, Self::RefreshIdentity, Self::IndexLibrary];
 
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::SyncPlays => "sync_plays",
             Self::RefreshIdentity => "refresh_identity",
+            Self::IndexLibrary => "index_library",
         }
     }
 
@@ -59,6 +62,7 @@ pub enum JobStageDto {
     Catalog,
     Ingest,
     Archive,
+    Index,
 }
 
 /// `JobService::start` input, tagged on `kind` (spec 003 IPC).
@@ -66,6 +70,8 @@ pub enum JobStageDto {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum JobStartDto {
     SyncPlays(SyncPlaysStartDto),
+    /// Indexes the charts of the current catalog, whichever install it came from.
+    IndexLibrary,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -92,11 +98,28 @@ pub struct SyncSummaryDto {
     pub failed_items: u32,
 }
 
+/// IndexLibrary counters. `failedItems` keeps the name every summary shares, which the job
+/// tray reads without knowing the kind.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct IndexLibrarySummaryDto {
+    /// Catalog charts of a keymode with an engine profile.
+    pub charts_total: u32,
+    pub parsed_new: u32,
+    /// Already parsed, or already failed, under the current `chart_parse` key.
+    pub skipped_memoized: u32,
+    /// Missing from `Songs/` or edited since osu!.db recorded its md5; retried next run.
+    pub skipped_unavailable: u32,
+    pub labels_written: u32,
+    pub failed_items: u32,
+}
+
 /// Per-kind result, stored as `job_run.summary_json`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "kind", content = "counters", rename_all = "snake_case")]
 pub enum JobSummaryDto {
     SyncPlays(SyncSummaryDto),
+    IndexLibrary(IndexLibrarySummaryDto),
 }
 
 /// Why a job ended `failed` or `cancelled`; the UI localises `messageKey` (§7).
@@ -147,6 +170,23 @@ mod tests {
             serde_json::to_string(&JobStatusDto::Cancelled).unwrap(),
             r#""cancelled""#
         );
+        let start: JobStartDto = serde_json::from_str(r#"{"kind":"index_library"}"#).unwrap();
+        assert_eq!(start, JobStartDto::IndexLibrary);
+        let summary = JobSummaryDto::IndexLibrary(IndexLibrarySummaryDto {
+            charts_total: 3,
+            parsed_new: 2,
+            skipped_unavailable: 1,
+            ..IndexLibrarySummaryDto::default()
+        });
+        assert_eq!(
+            serde_json::to_string(&summary).unwrap(),
+            r#"{"kind":"index_library","counters":{"chartsTotal":3,"parsedNew":2,"skippedMemoized":0,"skippedUnavailable":1,"labelsWritten":0,"failedItems":0}}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&JobStageDto::Index).unwrap(),
+            r#""index""#
+        );
+        assert_eq!(JobKindDto::IndexLibrary.as_str(), "index_library");
         for kind in JobKindDto::ALL {
             assert_eq!(JobKindDto::parse(kind.as_str()), Some(*kind));
             assert_eq!(

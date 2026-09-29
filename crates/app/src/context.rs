@@ -7,11 +7,15 @@ use std::sync::Arc;
 use tokio::runtime::{Handle, Runtime};
 use tokio::sync::broadcast;
 use wolluf_core::{Clock, Game};
+use wolluf_source_osu::cfg_files::{list_user_cfgs, read_user_cfg};
+use wolluf_source_osu::install::Platform;
+use wolluf_source_osu::paths::{is_drvfs_path, resolve_songs_dir};
 use wolluf_store::repo::ledger::{GameInstall, InstallRow, game_install, install};
 use wolluf_store::{DbHandle, InstanceLock, Vault, open_cache_db, open_user_db};
 
 use crate::errors::{AppError, keys};
 use crate::events::AppEvent;
+use crate::features::library::LibraryService;
 use crate::features::players::PlayersService;
 use crate::features::plays::PlaysService;
 use crate::features::setup::SetupService;
@@ -161,6 +165,23 @@ impl Drop for RuntimeHolder {
     }
 }
 
+/// The newest cfg decides `BeatmapDirectory` (002 R-d); anything unreadable means `Songs`.
+pub(crate) fn songs_dir(root: &Path) -> PathBuf {
+    let beatmap_directory = list_user_cfgs(root)
+        .ok()
+        .and_then(|cfgs| cfgs.into_iter().next())
+        .and_then(|cfg| read_user_cfg(&cfg.path).ok())
+        .and_then(|(cfg, _)| cfg.beatmap_directory);
+    let platform = if cfg!(windows) {
+        Platform::Windows
+    } else if is_drvfs_path(root) {
+        Platform::Wsl
+    } else {
+        Platform::Linux
+    };
+    resolve_songs_dir(root, beatmap_directory.as_deref(), platform)
+}
+
 pub(crate) fn blocking_join_error(e: tokio::task::JoinError) -> AppError {
     AppError::internal(format!("blocking task failed: {e}"))
 }
@@ -289,6 +310,10 @@ impl AppContext {
 
     pub fn plays(&self) -> PlaysService<'_> {
         PlaysService::new(self)
+    }
+
+    pub fn library(&self) -> LibraryService<'_> {
+        LibraryService::new(self)
     }
 
     pub fn players(&self) -> PlayersService<'_> {

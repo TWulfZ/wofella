@@ -3,6 +3,7 @@
 
 use crate::context::{AppContext, InstallId};
 use crate::errors::AppError;
+use crate::features::library::LibraryService;
 use crate::features::plays::PlaysService;
 use crate::jobs::dto::{JobDto, JobId, JobStartDto};
 
@@ -22,6 +23,7 @@ impl<'a> JobService<'a> {
                     .sync(InstallId(i64::from(p.install_id)))
                     .await
             }
+            JobStartDto::IndexLibrary => LibraryService::new(self.ctx).index().await,
         }
     }
 

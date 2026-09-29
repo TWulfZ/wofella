@@ -9,12 +9,14 @@
     "kind": {
       "sync_plays": "Sincronizar jugadas",
       "refresh_identity": "Actualizar identidad",
+      "index_library": "Indexar biblioteca",
       "unknown": "Tarea"
     },
     "stage": {
       "catalog": "Leyendo mapas",
       "ingest": "Leyendo puntuaciones",
-      "archive": "Archivando replays"
+      "archive": "Archivando replays",
+      "index": "Indexando mapas"
     },
     "status": {
       "queued": "En cola",
