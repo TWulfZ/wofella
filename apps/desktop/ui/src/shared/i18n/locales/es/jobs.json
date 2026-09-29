@@ -1,0 +1,33 @@
+{
+  "jobs": {
+    "title": "Tareas",
+    "show": "Tareas",
+    "hide": "Ocultar tareas",
+    "running_one": "{{count}} en curso",
+    "running_other": "{{count}} en curso",
+    "empty": "Todavía no hay tareas.",
+    "kind": {
+      "sync_plays": "Sincronizar jugadas",
+      "refresh_identity": "Actualizar identidad",
+      "unknown": "Tarea"
+    },
+    "stage": {
+      "catalog": "Leyendo mapas",
+      "ingest": "Leyendo puntuaciones",
+      "archive": "Archivando replays"
+    },
+    "status": {
+      "queued": "En cola",
+      "running": "En curso",
+      "ok": "Terminada",
+      "failed": "Falló",
+      "cancelled": "Cancelada"
+    },
+    "progress": "{{done}} / {{total}}",
+    "eta": "quedan {{eta}}",
+    "cancel": "Cancelar",
+    "dismiss": "Descartar",
+    "failedItems_one": "{{count}} elemento falló",
+    "failedItems_other": "{{count}} elementos fallaron"
+  }
+}

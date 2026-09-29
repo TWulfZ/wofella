@@ -1,0 +1,33 @@
+{
+  "jobs": {
+    "title": "Jobs",
+    "show": "Jobs",
+    "hide": "Hide jobs",
+    "running_one": "{{count}} running",
+    "running_other": "{{count}} running",
+    "empty": "No jobs yet.",
+    "kind": {
+      "sync_plays": "Sync plays",
+      "refresh_identity": "Refresh identity",
+      "unknown": "Job"
+    },
+    "stage": {
+      "catalog": "Reading charts",
+      "ingest": "Reading scores",
+      "archive": "Archiving replays"
+    },
+    "status": {
+      "queued": "Queued",
+      "running": "Running",
+      "ok": "Finished",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    },
+    "progress": "{{done}} / {{total}}",
+    "eta": "{{eta}} left",
+    "cancel": "Cancel",
+    "dismiss": "Dismiss",
+    "failedItems_one": "{{count}} item failed",
+    "failedItems_other": "{{count}} items failed"
+  }
+}

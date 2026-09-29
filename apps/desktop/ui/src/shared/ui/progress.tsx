@@ -14,6 +14,8 @@ function Progress({
         "relative flex h-1 w-full items-center overflow-x-hidden rounded-full bg-muted",
         className
       )}
+      // Forwarded so Radix sets aria-valuenow; without it every bar is announced as indeterminate.
+      value={value}
       {...props}
     >
       <ProgressPrimitive.Indicator

@@ -1,11 +1,9 @@
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { useEffect, type ReactNode } from "react";
+import { jobTraySink } from "@/features/jobs";
 import { startEventBridge, type JobEventSink } from "@/ipc/eventBridge";
 import { Toaster } from "@/shared/ui/sonner";
 import { TooltipProvider } from "@/shared/ui/tooltip";
-
-// Until the jobs slice exists the bridge still has to run, so DataChanged invalidation works from day one.
-const NOOP_SINK: JobEventSink = { applyProgress: () => undefined, applyFinished: () => undefined };
 
 function useEventBridge(queryClient: QueryClient, sink: JobEventSink): void {
   useEffect(() => {
@@ -35,7 +33,7 @@ interface AppProvidersProps {
 }
 
 export function AppProviders({ queryClient, children }: AppProvidersProps) {
-  useEventBridge(queryClient, NOOP_SINK);
+  useEventBridge(queryClient, jobTraySink);
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>

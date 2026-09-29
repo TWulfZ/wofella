@@ -40,4 +40,9 @@ describe("app shell", () => {
     expect(await screen.findByText("/mnt/e/Games/osu!")).toBeInTheDocument();
     expect(screen.getByText("No sync has run yet.")).toBeInTheDocument();
   });
+
+  it("mounts the job tray in the root layout", async () => {
+    await bootApp("/");
+    expect(await screen.findByRole("button", { name: "Jobs" })).toBeInTheDocument();
+  });
 });

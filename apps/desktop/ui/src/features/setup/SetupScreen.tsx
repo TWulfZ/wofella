@@ -6,6 +6,7 @@ import { commands, type InstallCandidateDto } from "@/ipc/bindings";
 import { call } from "@/ipc/client";
 import { pickFolder } from "@/ipc/dialog";
 import { useErrorText } from "@/ipc/errorText";
+import { openJobTray } from "@/features/jobs";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
 import { IDENTITY_SETUP_PATH } from "./guard";
@@ -86,6 +87,7 @@ export function SetupScreen() {
       // The root guard re-reads setup status on navigation; it must not route on the pre-install cached value.
       // Only status: re-running detection would spawn reg.exe and a drive scan again for nothing.
       await queryClient.invalidateQueries({ queryKey: setupKeys.status() });
+      openJobTray();
       await navigate({ to: IDENTITY_SETUP_PATH });
     },
   });

@@ -1,6 +1,7 @@
 import { createRootRouteWithContext, Link, Outlet, redirect } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { NAV } from "@/app/nav";
+import { JobTray } from "@/features/jobs";
 import { firstRunRedirect, setupStatusQuery } from "@/features/setup";
 import type { RouterContext } from "@/shared/router";
 
@@ -39,6 +40,7 @@ function RootLayout() {
       <main className="flex-1">
         <Outlet />
       </main>
+      <JobTray />
     </div>
   );
 }

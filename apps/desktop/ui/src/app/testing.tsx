@@ -3,6 +3,7 @@ import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { render, waitFor } from "@testing-library/react";
 import { expect } from "vitest";
 import type { SetupStatusDto } from "@/ipc/bindings";
+import { resetJobTray } from "@/features/jobs";
 import { mockCommands, type CommandHandlers, type PluginHandlers } from "@/ipc/mocks";
 import { AppProviders } from "./providers";
 import { createQueryClient } from "./queryClient";
@@ -28,6 +29,7 @@ export function setupStatus(overrides: Partial<SetupStatusDto> = {}): SetupStatu
 }
 
 export async function bootApp(path: string, handlers: CommandHandlers = {}, plugins: PluginHandlers = {}) {
+  resetJobTray();
   const calls = mockCommands(
     { setupStatus: () => setupStatus(), setupDetectInstalls: () => [], jobsList: () => [], ...handlers },
     plugins,
