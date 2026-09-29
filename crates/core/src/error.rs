@@ -8,4 +8,8 @@ pub enum CoreError {
     InvalidFileTime(String),
     #[error("rate must be greater than zero")]
     ZeroRate,
+    #[error("keymode must have 1-16 columns, got {0}")]
+    InvalidKeymode(u8),
+    #[error("column {col} is outside a {keymode}-column keymode")]
+    ColumnOutOfRange { col: u8, keymode: u8 },
 }
