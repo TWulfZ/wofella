@@ -1,5 +1,6 @@
 //! Pure decoders and encoders over `&[u8]` (spec 002). No IO here.
 
+pub mod collection_db;
 pub mod reader;
 pub mod replay_name;
 pub mod version;
