@@ -2,3 +2,4 @@
 //! service (D12).
 
 pub mod players;
+pub mod plays;

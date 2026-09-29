@@ -277,6 +277,11 @@ impl AppContext {
     }
 
     #[cfg(test)]
+    pub(crate) fn user_db(&self) -> &DbHandle {
+        &self.user
+    }
+
+    #[cfg(test)]
     pub(crate) fn cache_db(&self) -> &DbHandle {
         &self.cache
     }

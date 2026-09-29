@@ -35,3 +35,5 @@ proptest.workspace = true
 # The fixture install for SyncPlays tests is built from 002's builders (spec 003 AC10).
 wolluf-source-osu = { workspace = true, features = ["test-support"] }
 tempfile.workspace = true
+# Fixture charts need their real md5 so the Songs verification path is exercised.
+md-5.workspace = true

@@ -5,12 +5,14 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use wolluf_core::ErrorCode;
+use wolluf_source_osu::SourceError;
 use wolluf_store::StoreError;
 
 /// Dotted i18n keys owned by the app slices; `error.json` in the UI carries each of them.
 pub mod keys {
     pub const INSTANCE_RUNNING: &str = "error.instance_running";
     pub const DATA_DIR_INSIDE_OSU: &str = "error.data_dir_inside_osu";
+    pub const LAZER_NOT_SUPPORTED: &str = "setup.error.lazer_not_supported";
 }
 
 /// Rust never builds user-facing prose: the UI localises `message_key` with `args` (§7).
@@ -112,6 +114,24 @@ impl From<StoreError> for AppError {
             StoreError::InstanceLocked(_) => base.with_key(keys::INSTANCE_RUNNING),
             _ => base,
         }
+    }
+}
+
+/// The code comes from `SourceError::code()` (ADR 0015 mapping); paths travel as `args.path` so
+/// the UI can name the folder without Rust building prose.
+impl From<SourceError> for AppError {
+    fn from(error: SourceError) -> Self {
+        let details = error.to_string();
+        let base = match &error {
+            SourceError::InvalidInstall { path, .. } => {
+                Self::osu_dir_not_found(path.to_string_lossy())
+            }
+            SourceError::LazerInstall { path } => Self::new(error.code())
+                .with_key(keys::LAZER_NOT_SUPPORTED)
+                .with_arg("path", path.to_string_lossy()),
+            _ => Self::new(error.code()),
+        };
+        base.with_details(details)
     }
 }
 
@@ -259,6 +279,24 @@ mod tests {
         assert_eq!(newer.code, ErrorCode::UnsupportedFormat);
         assert_eq!(newer.message_key, "error.code.UNSUPPORTED_FORMAT");
         assert!(newer.details.is_some());
+    }
+
+    #[test]
+    fn source_errors_map_to_codes_and_keys() {
+        let running = AppError::from(SourceError::Changing {
+            path: "/osu/scores.db".into(),
+        });
+        assert_eq!(running.code, ErrorCode::OsuRunning);
+        assert!(running.retryable);
+        let invalid = AppError::from(SourceError::InvalidInstall {
+            path: "/x".into(),
+            missing: vec!["osu!.db"],
+        });
+        assert_eq!(invalid.code, ErrorCode::OsuDirNotFound);
+        assert_eq!(invalid.args.get("path").map(String::as_str), Some("/x"));
+        let lazer = AppError::from(SourceError::LazerInstall { path: "/l".into() });
+        assert_eq!(lazer.code, ErrorCode::UnsupportedFormat);
+        assert_eq!(lazer.message_key, keys::LAZER_NOT_SUPPORTED);
     }
 
     #[test]
