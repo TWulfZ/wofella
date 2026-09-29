@@ -6127,6 +6127,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "wolluf-patterns"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "postcard",
+ "proptest",
+ "serde",
+ "thiserror 2.0.21",
+ "wolluf-chart",
+ "wolluf-core",
+]
+
+[[package]]
 name = "wolluf-source-osu"
 version = "0.1.0"
 dependencies = [
