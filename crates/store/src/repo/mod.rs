@@ -1,6 +1,9 @@
 //! Repositories over user.db and cache.db. They take and return store and core types; SQL
 //! never leaves this crate (D6).
 
+pub mod ledger;
+mod sql;
+
 #[cfg(test)]
 mod tests {
     use rusqlite::Connection;
