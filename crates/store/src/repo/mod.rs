@@ -1,6 +1,7 @@
 //! Repositories over user.db and cache.db. They take and return store and core types; SQL
 //! never leaves this crate (D6).
 
+pub mod cache;
 pub mod ledger;
 mod sql;
 

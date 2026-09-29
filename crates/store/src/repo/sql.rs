@@ -101,6 +101,10 @@ pub(crate) fn time(row: &Row<'_>, idx: usize) -> rusqlite::Result<UnixUs> {
     parsed(row, idx, parse_rfc3339_ms)
 }
 
+pub(crate) fn opt_time(row: &Row<'_>, idx: usize) -> rusqlite::Result<Option<UnixUs>> {
+    opt_parsed(row, idx, parse_rfc3339_ms)
+}
+
 pub(crate) fn to_i64(value: u64, what: &str) -> Result<i64, StoreError> {
     i64::try_from(value).map_err(|_| StoreError::InvalidData(format!("{what} {value} exceeds i64")))
 }
