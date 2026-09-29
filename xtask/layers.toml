@@ -145,9 +145,10 @@ allowed = ["wolluf-core", "wolluf-app"]
 # ---- tools ----
 
 # wolluf-source-osu with feature `test-support` builds 002's minimized DB fixtures (`cargo xtask fixtures`).
+# wolluf-engine with feature `test-support` supplies the stage goldens (`cargo xtask stage-lock`).
 [crates.xtask]
 layer = "tool"
-allowed = ["wolluf-source-osu"]
+allowed = ["wolluf-source-osu", "wolluf-engine"]
 
 # ---- L5: packages only the listed crates may depend on directly (any dependency kind) ----
 

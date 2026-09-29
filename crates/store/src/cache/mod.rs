@@ -8,9 +8,9 @@ use crate::db::{DbHandle, DbKind};
 use crate::error::StoreError;
 
 /// Bumped on any schema change; a mismatch deletes and rebuilds the file.
-pub const CACHE_SCHEMA_VERSION: u32 = 1;
+pub const CACHE_SCHEMA_VERSION: u32 = 2;
 
-const SCHEMA_V1: &str = include_str!("schema_v1.sql");
+const SCHEMA: &str = include_str!("schema.sql");
 const SIDECARS: [&str; 2] = ["-wal", "-shm"];
 
 /// Opens cache.db, first deleting it when its version differs or SQLite reports it corrupt.
@@ -23,7 +23,7 @@ pub fn open_cache_db(path: &Path) -> Result<DbHandle, StoreError> {
         let version: u32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         if version == 0 {
             let tx = conn.transaction()?;
-            tx.execute_batch(SCHEMA_V1)?;
+            tx.execute_batch(SCHEMA)?;
             tx.pragma_update(None, "user_version", CACHE_SCHEMA_VERSION)?;
             tx.commit()?;
         }
@@ -83,9 +83,11 @@ mod tests {
     use super::*;
     use crate::user::open_user_db;
 
-    const TABLES: [&str; 5] = [
+    const TABLES: [&str; 7] = [
         "alias_stats",
         "catalog_chart",
+        "chart_label",
+        "chart_parsed",
         "derivation",
         "item_failure",
         "job_run",
@@ -136,7 +138,7 @@ mod tests {
     }
 
     #[test]
-    fn fresh_cache_has_schema_v1() {
+    fn fresh_cache_has_current_schema() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("cache.db");
         let db = open_cache_db(&path).unwrap();
@@ -165,6 +167,28 @@ mod tests {
         assert_eq!(job_rows(&db), 0);
         drop(db);
         assert_eq!(version(&path), i64::from(CACHE_SCHEMA_VERSION));
+    }
+
+    #[test]
+    fn v1_cache_is_rebuilt_to_current_schema() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cache.db");
+        let v1 = Connection::open(&path).unwrap();
+        v1.execute_batch(
+            "CREATE TABLE job_run (id TEXT PRIMARY KEY, kind TEXT NOT NULL, params_json TEXT NOT NULL,
+                 status TEXT NOT NULL, started TEXT NULL, ended TEXT NULL, summary_json TEXT NULL) STRICT;
+             INSERT INTO job_run (id, kind, params_json, status) VALUES ('j', 'sync_plays', '{}', 'queued');
+             PRAGMA user_version = 1;",
+        )
+        .unwrap();
+        drop(v1);
+
+        let db = open_cache_db(&path).unwrap();
+        assert_eq!(tables(&db), TABLES);
+        assert_eq!(job_rows(&db), 0);
+        drop(db);
+        assert_eq!(CACHE_SCHEMA_VERSION, 2);
+        assert_eq!(version(&path), 2);
     }
 
     #[test]

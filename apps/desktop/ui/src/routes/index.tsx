@@ -24,7 +24,7 @@ function LastSync({ job }: { job: JobDto | null }) {
         {t(`common.home.jobStatus.${job.status}`)}
         {when !== null && <span className="text-muted-foreground"> · {formatDateTime(when, i18n.language)}</span>}
       </p>
-      {job.summary !== null && (
+      {job.summary?.kind === "sync_plays" && (
         <p className="text-muted-foreground text-sm">
           {t("common.home.syncSummary", {
             playsNew: job.summary.counters.playsNew,

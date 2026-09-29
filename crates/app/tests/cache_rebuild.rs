@@ -9,6 +9,7 @@ use md5::{Digest, Md5};
 use wolluf_app::context::{AppContext, AppPaths, InstallId};
 use wolluf_app::jobs::JobStatusDto;
 use wolluf_core::{BlobSha256, FixedClock, UnixUs};
+use wolluf_engine::stage::{chart_label, chart_parse};
 use wolluf_source_osu::testkit::{
     BeatmapBuilder, FakeInstall, OsrBuilder, OsuDbBuilder, ScoreBuilder, ScoresDbBuilder,
 };
@@ -170,11 +171,16 @@ async fn cache_rebuild_from_empty_equals_incremental() {
     );
 
     // cache.db has no row deletion for derivations yet, so the incremental history keeps the
-    // memo rows of the superseded osu!.db; nothing reads them once the sha changed.
+    // memo rows of the superseded osu!.db; nothing reads them once the sha changed. Library
+    // rows are keyed by chart md5 alone, so both histories must hold the same ones.
     let (live, stale): (Vec<Derivation>, Vec<Derivation>) = incremental
         .derivations
         .into_iter()
-        .partition(|d| derived_from(&current_osu_db, d));
+        .partition(|d| derived_from(&current_osu_db, d) || is_library(d));
+    assert!(
+        live.iter().any(is_library),
+        "the chained library index is part of the compared state: {live:?}"
+    );
     assert_eq!(live, rebuilt.derivations);
     assert!(
         live.iter().any(|d| d.input_key.starts_with(&inst.chart_b)),
@@ -184,6 +190,10 @@ async fn cache_rebuild_from_empty_equals_incremental() {
         stale.iter().all(|d| derived_from(&first_osu_db, d)),
         "only rows of the superseded osu!.db differ: {stale:?}"
     );
+}
+
+fn is_library(d: &Derivation) -> bool {
+    [chart_parse::STAGE, chart_label::STAGE].contains(&d.stage)
 }
 
 /// The osu!.db sha as the derivation keys spell it.

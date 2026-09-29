@@ -95,8 +95,57 @@ pub struct ItemFailure {
     pub message: String,
 }
 
+/// A normalized chart under one `chart_parse` key.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChartParsed {
+    pub md5: ChartMd5,
+    pub vkey: VersionKey,
+    /// Opaque to the store: the engine owns the encoding and its format-version header.
+    pub rows_blob: Vec<u8>,
+    pub n_notes: u32,
+    pub n_ln: u32,
+    pub ln_ratio: f64,
+    pub length_ms: u32,
+}
+
+/// One source label of a chart; the chart and key are given by the call that stores it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChartLabel {
+    pub source: String,
+    pub scale: String,
+    /// `None` when the level has no position on its scale (e.g. `gamma_entry`).
+    pub level_ord: Option<f64>,
+    pub level_text: String,
+    pub skill_tag: Option<String>,
+    pub is_variant: bool,
+}
+
+/// Level bounds are inclusive; a bound excludes labels without a `level_ord`.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct LabelFilter {
+    pub scale: Option<String>,
+    pub level_min: Option<f64>,
+    pub level_max: Option<f64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LabelCount {
+    pub rows: u64,
+    pub charts: u64,
+}
+
 fn ms(t: UnixUs) -> String {
     format_rfc3339_ms(t)
+}
+
+/// `DELETE … WHERE vkey NOT IN (keep)`; an empty `keep` clears the table.
+fn prune_vkeys_except(tx: &Tx<'_>, table: &str, keep: &[VersionKey]) -> Result<u64, StoreError> {
+    let placeholders = vec!["?"; keep.len()].join(", ");
+    let n = tx.0.execute(
+        &format!("DELETE FROM {table} WHERE vkey NOT IN ({placeholders})"),
+        rusqlite::params_from_iter(keep.iter().map(|v| v.0)),
+    )?;
+    Ok(n as u64)
 }
 
 pub mod catalog_chart {
@@ -170,6 +219,16 @@ pub mod catalog_chart {
             .0
             .prepare(&format!("SELECT {COLUMNS} FROM catalog_chart ORDER BY md5"))?;
         let rows = stmt.query_map([], from_row)?.collect::<Result<_, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn list_by_keymode(conn: Conn<'_>, keymode: u8) -> Result<Vec<CatalogChart>, StoreError> {
+        let mut stmt = conn.0.prepare_cached(&format!(
+            "SELECT {COLUMNS} FROM catalog_chart WHERE keymode = ?1 ORDER BY md5"
+        ))?;
+        let rows = stmt
+            .query_map([keymode], from_row)?
+            .collect::<Result<_, _>>()?;
         Ok(rows)
     }
 
@@ -382,6 +441,209 @@ pub mod item_failure {
     }
 }
 
+pub mod chart_parsed {
+    use super::*;
+
+    const COLUMNS: &str = "md5, vkey, rows_blob, n_notes, n_ln, ln_ratio, length_ms";
+
+    fn from_row(row: &Row<'_>) -> rusqlite::Result<ChartParsed> {
+        Ok(ChartParsed {
+            md5: parsed(row, 0, str::parse::<ChartMd5>)?,
+            vkey: VersionKey(fixed(row, 1)?),
+            rows_blob: row.get(2)?,
+            n_notes: int(row, 3)?,
+            n_ln: int(row, 4)?,
+            ln_ratio: row.get(5)?,
+            length_ms: int(row, 6)?,
+        })
+    }
+
+    /// Upsert: a rerun of the same (md5, vkey) keeps its latest output.
+    pub fn put(tx: &Tx<'_>, c: &ChartParsed) -> Result<(), StoreError> {
+        tx.0.prepare_cached(&format!(
+            "INSERT OR REPLACE INTO chart_parsed ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
+        ))?
+        .execute((
+            c.md5.to_string(),
+            c.vkey.0,
+            &c.rows_blob,
+            c.n_notes,
+            c.n_ln,
+            c.ln_ratio,
+            c.length_ms,
+        ))?;
+        Ok(())
+    }
+
+    pub fn get(
+        conn: Conn<'_>,
+        md5: ChartMd5,
+        vkey: VersionKey,
+    ) -> Result<Option<ChartParsed>, StoreError> {
+        Ok(conn
+            .0
+            .prepare_cached(&format!(
+                "SELECT {COLUMNS} FROM chart_parsed WHERE md5 = ?1 AND vkey = ?2"
+            ))?
+            .query_row((md5.to_string(), vkey.0), from_row)
+            .optional()?)
+    }
+
+    pub fn exists(conn: Conn<'_>, md5: ChartMd5, vkey: VersionKey) -> Result<bool, StoreError> {
+        Ok(conn
+            .0
+            .prepare_cached(
+                "SELECT EXISTS (SELECT 1 FROM chart_parsed WHERE md5 = ?1 AND vkey = ?2)",
+            )?
+            .query_row((md5.to_string(), vkey.0), |r| r.get(0))?)
+    }
+
+    pub fn count(conn: Conn<'_>, vkey: VersionKey) -> Result<u64, StoreError> {
+        Ok(conn
+            .0
+            .prepare_cached("SELECT count(*) FROM chart_parsed WHERE vkey = ?1")?
+            .query_row([vkey.0], |r| int(r, 0))?)
+    }
+
+    /// GC hook (§5.5 keeps recent keys); returns the number of rows deleted.
+    pub fn prune_except(tx: &Tx<'_>, keep: &[VersionKey]) -> Result<u64, StoreError> {
+        prune_vkeys_except(tx, "chart_parsed", keep)
+    }
+}
+
+pub mod chart_label {
+    use rusqlite::types::Value;
+
+    use super::*;
+
+    const COLUMNS: &str = "source, scale, level_ord, level_text, skill_tag, is_variant";
+    const ORDER: &str = "scale, level_ord IS NULL, level_ord, md5, level_text";
+
+    fn from_row(row: &Row<'_>, at: usize) -> rusqlite::Result<ChartLabel> {
+        Ok(ChartLabel {
+            source: row.get(at)?,
+            scale: row.get(at + 1)?,
+            level_ord: row.get(at + 2)?,
+            level_text: row.get(at + 3)?,
+            skill_tag: row.get(at + 4)?,
+            is_variant: row.get(at + 5)?,
+        })
+    }
+
+    /// Replaces the chart's labels under `vkey`; labels under other keys stay until
+    /// `prune_except`. Two labels with the same (scale, level_text) fail the transaction.
+    pub fn replace_for(
+        tx: &Tx<'_>,
+        md5: ChartMd5,
+        vkey: VersionKey,
+        labels: &[ChartLabel],
+    ) -> Result<(), StoreError> {
+        let md5 = md5.to_string();
+        tx.0.prepare_cached("DELETE FROM chart_label WHERE md5 = ?1 AND vkey = ?2")?
+            .execute((&md5, vkey.0))?;
+        let mut insert = tx.0.prepare_cached(&format!(
+            "INSERT INTO chart_label (md5, vkey, {COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
+        ))?;
+        for l in labels {
+            insert.execute(rusqlite::params![
+                md5,
+                vkey.0,
+                l.source,
+                l.scale,
+                l.level_ord,
+                l.level_text,
+                l.skill_tag,
+                l.is_variant,
+            ])?;
+        }
+        Ok(())
+    }
+
+    pub fn list_for(
+        conn: Conn<'_>,
+        md5: ChartMd5,
+        vkey: VersionKey,
+    ) -> Result<Vec<ChartLabel>, StoreError> {
+        let mut stmt = conn.0.prepare_cached(&format!(
+            "SELECT {COLUMNS} FROM chart_label WHERE md5 = ?1 AND vkey = ?2 ORDER BY {ORDER}"
+        ))?;
+        let rows = stmt
+            .query_map((md5.to_string(), vkey.0), |row| from_row(row, 0))?
+            .collect::<Result<_, _>>()?;
+        Ok(rows)
+    }
+
+    /// Ordered by scale, then level with unlevelled labels last, then md5.
+    pub fn list_filtered(
+        conn: Conn<'_>,
+        vkey: VersionKey,
+        filter: &LabelFilter,
+        limit: u32,
+    ) -> Result<Vec<(ChartMd5, ChartLabel)>, StoreError> {
+        // Clauses are added only when set, so the (vkey, scale, level_ord) index stays usable.
+        let mut clauses = vec!["vkey = ?"];
+        let mut params = vec![Value::Blob(vkey.0.to_vec())];
+        if let Some(scale) = &filter.scale {
+            clauses.push("scale = ?");
+            params.push(Value::Text(scale.clone()));
+        }
+        if let Some(min) = filter.level_min {
+            clauses.push("level_ord >= ?");
+            params.push(Value::Real(min));
+        }
+        if let Some(max) = filter.level_max {
+            clauses.push("level_ord <= ?");
+            params.push(Value::Real(max));
+        }
+        params.push(Value::Integer(i64::from(limit)));
+        let mut stmt = conn.0.prepare(&format!(
+            "SELECT md5, {COLUMNS} FROM chart_label WHERE {} ORDER BY {ORDER} LIMIT ?",
+            clauses.join(" AND ")
+        ))?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(params), |row| {
+                Ok((parsed(row, 0, str::parse::<ChartMd5>)?, from_row(row, 1)?))
+            })?
+            .collect::<Result<_, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn counts_by_scale(
+        conn: Conn<'_>,
+        vkey: VersionKey,
+    ) -> Result<BTreeMap<String, LabelCount>, StoreError> {
+        let mut stmt = conn.0.prepare_cached(
+            "SELECT scale, count(*), count(DISTINCT md5) FROM chart_label
+             WHERE vkey = ?1 GROUP BY scale",
+        )?;
+        let rows = stmt
+            .query_map([vkey.0], |row| {
+                Ok((
+                    row.get(0)?,
+                    LabelCount {
+                        rows: int(row, 1)?,
+                        charts: int(row, 2)?,
+                    },
+                ))
+            })?
+            .collect::<Result<_, _>>()?;
+        Ok(rows)
+    }
+
+    /// Distinct labelled charts; a chart on several scales counts once.
+    pub fn count_charts(conn: Conn<'_>, vkey: VersionKey) -> Result<u64, StoreError> {
+        Ok(conn
+            .0
+            .prepare_cached("SELECT count(DISTINCT md5) FROM chart_label WHERE vkey = ?1")?
+            .query_row([vkey.0], |r| int(r, 0))?)
+    }
+
+    /// GC hook (§5.5 keeps recent keys); returns the number of rows deleted.
+    pub fn prune_except(tx: &Tx<'_>, keep: &[VersionKey]) -> Result<u64, StoreError> {
+        prune_vkeys_except(tx, "chart_label", keep)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -451,6 +713,246 @@ mod tests {
         assert_eq!(got, Some(second[0].clone()));
         assert_eq!(missing, None);
         assert_eq!(keymodes, [(ChartMd5::from_str(MD5_C).unwrap(), 7)].into());
+    }
+
+    #[test]
+    fn catalog_list_by_keymode() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = open_cache_db(&dir.path().join("cache.db")).unwrap();
+        let four = CatalogChart {
+            keymode: 4,
+            ..chart(MD5_C, "C")
+        };
+        let rows = vec![chart(MD5_B, "B"), four, chart(MD5_A, "A")];
+        db.write(move |tx| catalog_chart::replace_all(tx, SnapshotId(1), &rows))
+            .unwrap();
+        let (seven, six) = db
+            .read(|c| {
+                Ok((
+                    catalog_chart::list_by_keymode(c, 7)?,
+                    catalog_chart::list_by_keymode(c, 6)?,
+                ))
+            })
+            .unwrap();
+        assert_eq!(seven, vec![chart(MD5_B, "B"), chart(MD5_A, "A")]);
+        assert!(six.is_empty());
+    }
+
+    const VKEY_1: VersionKey = VersionKey([1; 32]);
+    const VKEY_2: VersionKey = VersionKey([2; 32]);
+
+    fn md5(s: &str) -> ChartMd5 {
+        ChartMd5::from_str(s).unwrap()
+    }
+
+    fn parsed_chart(md5_hex: &str, vkey: VersionKey, n_notes: u32) -> ChartParsed {
+        ChartParsed {
+            md5: md5(md5_hex),
+            vkey,
+            rows_blob: vec![0x01, 0x28, 0xb5, 0x2f, 0xfd, n_notes as u8],
+            n_notes,
+            n_ln: n_notes / 4,
+            ln_ratio: 0.25,
+            length_ms: 123_456,
+        }
+    }
+
+    #[test]
+    fn chart_parsed_reads_are_keyed() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = open_cache_db(&dir.path().join("cache.db")).unwrap();
+        let a1 = parsed_chart(MD5_A, VKEY_1, 1_000);
+        let a2 = parsed_chart(MD5_A, VKEY_2, 1_004);
+        let b1 = parsed_chart(MD5_B, VKEY_1, 800);
+        let rows = [a1.clone(), a2.clone(), b1.clone()];
+        db.write(move |tx| rows.iter().try_for_each(|r| chart_parsed::put(tx, r)))
+            .unwrap();
+
+        let got = db
+            .read(|c| {
+                Ok((
+                    chart_parsed::get(c, md5(MD5_A), VKEY_1)?,
+                    chart_parsed::get(c, md5(MD5_A), VKEY_2)?,
+                    chart_parsed::get(c, md5(MD5_C), VKEY_1)?,
+                    chart_parsed::exists(c, md5(MD5_B), VKEY_1)?,
+                    chart_parsed::exists(c, md5(MD5_B), VKEY_2)?,
+                    chart_parsed::count(c, VKEY_1)?,
+                    chart_parsed::count(c, VKEY_2)?,
+                ))
+            })
+            .unwrap();
+        assert_eq!(got, (Some(a1), Some(a2.clone()), None, true, false, 2, 1));
+
+        // A rerun under the same key replaces the row instead of failing.
+        let again = ChartParsed { n_notes: 999, ..b1 };
+        let row = again.clone();
+        db.write(move |tx| chart_parsed::put(tx, &row)).unwrap();
+        assert_eq!(
+            db.read(|c| chart_parsed::get(c, md5(MD5_B), VKEY_1))
+                .unwrap(),
+            Some(again)
+        );
+
+        let deleted = db
+            .write(|tx| chart_parsed::prune_except(tx, &[VKEY_2]))
+            .unwrap();
+        assert_eq!(deleted, 2);
+        let left = db
+            .read(|c| {
+                Ok((
+                    chart_parsed::count(c, VKEY_1)?,
+                    chart_parsed::get(c, md5(MD5_A), VKEY_2)?,
+                ))
+            })
+            .unwrap();
+        assert_eq!(left, (0, Some(a2)));
+    }
+
+    fn label(scale: &str, level_ord: Option<f64>, level_text: &str) -> ChartLabel {
+        ChartLabel {
+            source: scale.split('_').next().unwrap().into(),
+            scale: scale.into(),
+            level_ord,
+            level_text: level_text.into(),
+            skill_tag: None,
+            is_variant: false,
+        }
+    }
+
+    #[test]
+    fn chart_label_replace_and_queries() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = open_cache_db(&dir.path().join("cache.db")).unwrap();
+        let stale = vec![label("bms_st", Some(9.0), "9")];
+        let a = vec![
+            label("bms_st", Some(3.0), "3"),
+            ChartLabel {
+                skill_tag: Some("jack".into()),
+                is_variant: true,
+                ..label("jinjin_dan", Some(12.0), "12th")
+            },
+        ];
+        let b = vec![
+            label("bms_st", Some(5.0), "5"),
+            label("jinjin_dan", None, "gamma_entry"),
+        ];
+        let c_other_key = vec![label("bms_st", Some(4.0), "4")];
+        let (s, a2, b2, c2) = (stale, a.clone(), b.clone(), c_other_key);
+        db.write(move |tx| {
+            chart_label::replace_for(tx, md5(MD5_A), VKEY_1, &s)?;
+            // Replacing drops the chart's previous labels under the same key.
+            chart_label::replace_for(tx, md5(MD5_A), VKEY_1, &a2)?;
+            chart_label::replace_for(tx, md5(MD5_B), VKEY_1, &b2)?;
+            chart_label::replace_for(tx, md5(MD5_C), VKEY_2, &c2)
+        })
+        .unwrap();
+
+        let (for_a, for_a_other_key) = db
+            .read(|c| {
+                Ok((
+                    chart_label::list_for(c, md5(MD5_A), VKEY_1)?,
+                    chart_label::list_for(c, md5(MD5_A), VKEY_2)?,
+                ))
+            })
+            .unwrap();
+        assert_eq!(for_a, a);
+        assert!(for_a_other_key.is_empty());
+
+        let all = LabelFilter::default();
+        let bms = LabelFilter {
+            scale: Some("bms_st".into()),
+            ..LabelFilter::default()
+        };
+        let mid = LabelFilter {
+            level_min: Some(4.0),
+            level_max: Some(12.0),
+            ..LabelFilter::default()
+        };
+        let (every, bms_rows, mid_rows, first) = db
+            .read(|c| {
+                Ok((
+                    chart_label::list_filtered(c, VKEY_1, &all, 100)?,
+                    chart_label::list_filtered(c, VKEY_1, &bms, 100)?,
+                    chart_label::list_filtered(c, VKEY_1, &mid, 100)?,
+                    chart_label::list_filtered(c, VKEY_1, &all, 1)?,
+                ))
+            })
+            .unwrap();
+        let (a_bms, a_dan) = ((md5(MD5_A), a[0].clone()), (md5(MD5_A), a[1].clone()));
+        let (b_bms, b_dan) = ((md5(MD5_B), b[0].clone()), (md5(MD5_B), b[1].clone()));
+        // By scale, then level with unlevelled rows last.
+        assert_eq!(
+            every,
+            vec![a_bms.clone(), b_bms.clone(), a_dan.clone(), b_dan]
+        );
+        assert_eq!(bms_rows, vec![a_bms.clone(), b_bms.clone()]);
+        assert_eq!(mid_rows, vec![b_bms, a_dan]);
+        assert_eq!(first, vec![a_bms]);
+
+        let (counts, charts, charts_other_key) = db
+            .read(|c| {
+                Ok((
+                    chart_label::counts_by_scale(c, VKEY_1)?,
+                    chart_label::count_charts(c, VKEY_1)?,
+                    chart_label::count_charts(c, VKEY_2)?,
+                ))
+            })
+            .unwrap();
+        assert_eq!(
+            counts,
+            BTreeMap::from([
+                ("bms_st".to_owned(), LabelCount { rows: 2, charts: 2 }),
+                ("jinjin_dan".to_owned(), LabelCount { rows: 2, charts: 2 }),
+            ])
+        );
+        assert_eq!((charts, charts_other_key), (2, 1));
+    }
+
+    #[test]
+    fn chart_label_duplicate_rolls_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = open_cache_db(&dir.path().join("cache.db")).unwrap();
+        let kept = vec![label("bms_st", Some(3.0), "3")];
+        let rows = kept.clone();
+        db.write(move |tx| chart_label::replace_for(tx, md5(MD5_A), VKEY_1, &rows))
+            .unwrap();
+        let dup = vec![
+            label("o2jam_hx", Some(1.0), "1"),
+            label("o2jam_hx", Some(2.0), "1"),
+        ];
+        assert!(
+            db.write(move |tx| chart_label::replace_for(tx, md5(MD5_A), VKEY_1, &dup))
+                .is_err()
+        );
+        assert_eq!(
+            db.read(|c| chart_label::list_for(c, md5(MD5_A), VKEY_1))
+                .unwrap(),
+            kept
+        );
+    }
+
+    #[test]
+    fn chart_label_prune_except() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = open_cache_db(&dir.path().join("cache.db")).unwrap();
+        db.write(|tx| {
+            chart_label::replace_for(tx, md5(MD5_A), VKEY_1, &[label("bms_st", Some(1.0), "1")])?;
+            chart_label::replace_for(tx, md5(MD5_A), VKEY_2, &[label("bms_st", Some(1.0), "1")])
+        })
+        .unwrap();
+        assert_eq!(
+            db.write(|tx| chart_label::prune_except(tx, &[VKEY_2]))
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            db.read(|c| chart_label::count_charts(c, VKEY_2)).unwrap(),
+            1
+        );
+        assert_eq!(
+            db.read(|c| chart_label::count_charts(c, VKEY_1)).unwrap(),
+            0
+        );
     }
 
     #[test]

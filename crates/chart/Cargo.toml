@@ -9,5 +9,15 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[features]
+# `chart!` DSL and the `.osu` text builder for this crate's tests and downstream fixture tests.
+test-support = []
+
 [dependencies]
 wolluf-core.workspace = true
+thiserror.workspace = true
+rosu-map.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+insta.workspace = true

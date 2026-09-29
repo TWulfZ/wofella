@@ -1,0 +1,51 @@
+---
+source: crates/chart/src/decode/osu.rs
+expression: snapshot
+---
+keymode: 7
+meta: ChartMeta {
+    title: "Fixture",
+    artist: "wolluf",
+    version: "7K Snapshot",
+    creator: "wolluf",
+    set_id: Some(
+        7,
+    ),
+    beatmap_id: Some(
+        42,
+    ),
+    od: 8.5,
+    hp: 8.0,
+    audio_filename: "audio.mp3",
+    format_version: Some(
+        14,
+    ),
+}
+timing: [
+    TimingPoint {
+        t: TimeUs(
+            0,
+        ),
+        kind: Uninherited {
+            beat_len_ms: 375.0,
+            meter: 4,
+        },
+    },
+    TimingPoint {
+        t: TimeUs(
+            1500000,
+        ),
+        kind: Inherited {
+            sv: 0.7500000000000019,
+        },
+    },
+]
+ln_pairs: [LnPair { head: TimeUs(0), tail: TimeUs(750000), col: 3 }, LnPair { head: TimeUs(750000), tail: TimeUs(1500000), col: 2 }]
+diagnostics: [Diagnostic { code: OverlappingNote, detail: "col=3 t_us=750000" }, Diagnostic { code: DuplicateNote, detail: "col=6 t_us=375000" }]
+rows:
+         0 x..[...
+    375000 .x.|..x
+    750000 ..[]...
+   1125000 ..|..x.
+   1500000 ..]....
+   1500500 ....x..

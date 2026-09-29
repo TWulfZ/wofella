@@ -4,6 +4,7 @@
 mod cli;
 mod cmd;
 mod exit;
+mod follow;
 mod progress;
 mod render;
 
@@ -73,6 +74,14 @@ async fn run(cli: Cli) -> anyhow::Result<ExitCode> {
                 cmd::jobs::run(ctx, cmd, json).await
             })
             .await
+        }
+        Command::Library(cmd) => {
+            let s = Session::open(data_dir, log).await?;
+            cmd::library::run(&s.ctx, cmd, json).await
+        }
+        Command::Chart(cmd) => {
+            let s = Session::open(data_dir, log).await?;
+            cmd::chart::run(&s.ctx, cmd, json).await
         }
     }
 }

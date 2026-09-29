@@ -9,14 +9,11 @@ use wolluf_core::{
     BlobSha256, ChartMd5, DotNetTicks, ErrorCode, FileTime, Game, PlayId, StageId, UnixUs,
     VersionKey, VersionKeyBuilder,
 };
-use wolluf_source_osu::cfg_files::{list_user_cfgs, read_user_cfg};
 use wolluf_source_osu::codec::osr::{check_name_consistency, decode_osr};
 use wolluf_source_osu::codec::osu_db::{OsuDb, OsuDbBeatmap, decode_osu_db};
 use wolluf_source_osu::codec::replay_name::{ReplayFileKind, ReplayFileName};
 use wolluf_source_osu::codec::score_header::ScoreHeader;
 use wolluf_source_osu::codec::scores_db::decode_scores_db;
-use wolluf_source_osu::install::Platform;
-use wolluf_source_osu::paths::{is_drvfs_path, resolve_songs_dir};
 use wolluf_source_osu::replay_dir;
 use wolluf_source_osu::snapshot::{Snapshot, SnapshotPolicy, read_stable};
 use wolluf_source_osu::songs::{ChartReadError, read_chart_verified};
@@ -30,8 +27,9 @@ use wolluf_store::repo::ledger::{
     SnapshotKind, SourceSnapshot, UnlinkedPlay, alias, blob, game_install, play, source_snapshot,
 };
 
-use crate::context::blocking_join_error;
+use crate::context::{blocking_join_error, songs_dir};
 use crate::errors::AppError;
+use crate::features::library::IndexLibraryJob;
 use crate::features::players::RefreshIdentityJob;
 use crate::features::plays::record::{Links, PlayDraft, chart_md5, draft};
 use crate::jobs::dto::{JobKindDto, JobStageDto, JobSummaryDto, SyncSummaryDto};
@@ -39,7 +37,7 @@ use crate::jobs::{ItemError, ItemResult, Job, JobCtx, JobFuture, JobSummary};
 
 pub const CATALOG_STAGE: StageId = StageId::from_static("catalog");
 /// Bump when the catalog rows derived from one osu!.db change (spec 003 "Versioned stages").
-pub const CATALOG_VERSION: u32 = 1;
+pub const CATALOG_VERSION: u32 = 2;
 const CHART_ARCHIVE_STAGE: StageId = StageId::from_static("chart_archive");
 /// Bump when the rule deciding "this chart cannot be archived" changes.
 const CHART_ARCHIVE_VERSION: u32 = 1;
@@ -174,7 +172,12 @@ fn catalog_row(md5: wolluf_core::ChartMd5, b: &OsuDbBeatmap) -> CatalogChart {
         creator: lossy(&b.creator),
         set_id: positive(b.beatmapset_id),
         beatmap_id: positive(b.beatmap_id),
-        path: format!("{}/{}", lossy(&b.folder), lossy(&b.osu_file)),
+        // osu! stable writes nested Songs folders with `\`, a separator only on Windows.
+        path: format!(
+            "{}/{}",
+            lossy(&b.folder).replace('\\', "/"),
+            lossy(&b.osu_file)
+        ),
         od: f64::from(b.overall_difficulty),
         hp: f64::from(b.hp_drain),
         length_ms: u32::try_from(b.total_time_ms).unwrap_or(0),
@@ -241,23 +244,6 @@ fn vault_blob(
         origin_path: origin_path(root, path),
         first_seen: now,
     })
-}
-
-/// The newest cfg decides `BeatmapDirectory` (002 R-d); anything unreadable means `Songs`.
-fn songs_dir(root: &Path) -> PathBuf {
-    let beatmap_directory = list_user_cfgs(root)
-        .ok()
-        .and_then(|cfgs| cfgs.into_iter().next())
-        .and_then(|cfg| read_user_cfg(&cfg.path).ok())
-        .and_then(|(cfg, _)| cfg.beatmap_directory);
-    let platform = if cfg!(windows) {
-        Platform::Windows
-    } else if is_drvfs_path(root) {
-        Platform::Wsl
-    } else {
-        Platform::Linux
-    };
-    resolve_songs_dir(root, beatmap_directory.as_deref(), platform)
 }
 
 fn chart_archive_key(
@@ -452,8 +438,9 @@ impl SyncRun<'_> {
             } else {
                 Vec::new()
             },
-            // Every sync refreshes identity, so the wizard never reads stale stats (spec 004).
-            follow_ups: vec![Box::new(RefreshIdentityJob)],
+            // Every sync refreshes identity, so the wizard never reads stale stats (spec 004),
+            // and indexes the charts a new osu!.db may have brought.
+            follow_ups: vec![Box::new(RefreshIdentityJob), Box::new(IndexLibraryJob)],
         })
     }
 

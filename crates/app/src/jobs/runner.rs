@@ -224,6 +224,26 @@ impl JobRunner {
         }
     }
 
+    /// A context outside the queue, so a test can drive one job's `run` with its own token.
+    /// It has no `job_run` row, so recording an item failure through it fails.
+    #[cfg(test)]
+    pub(crate) fn test_ctx(&self, kind: JobKindDto) -> JobCtx {
+        let deps = self.inner.deps.clone();
+        let ms = u64::try_from(deps.clock.now().0 / 1_000).unwrap_or(0);
+        let id = JobId(ulid::Ulid::from_parts(ms, 1).to_string());
+        JobCtx {
+            job_id: id.clone(),
+            cancel: CancellationToken::new(),
+            progress: ProgressSink::new(id, kind, deps.clock.clone(), deps.events.clone()),
+            user: deps.user,
+            cache: deps.cache,
+            vault: deps.vault,
+            cpu: deps.cpu,
+            clock: deps.clock,
+            failed: Arc::default(),
+        }
+    }
+
     pub fn submitter(&self) -> JobSubmitter {
         JobSubmitter {
             inner: Arc::downgrade(&self.inner),

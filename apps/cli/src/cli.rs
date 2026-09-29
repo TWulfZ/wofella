@@ -46,6 +46,12 @@ pub(crate) enum Command {
     /// Background job history.
     #[command(subcommand)]
     Jobs(JobsCmd),
+    /// The indexed chart library.
+    #[command(subcommand)]
+    Library(LibraryCmd),
+    /// One indexed chart.
+    #[command(subcommand)]
+    Chart(ChartCmd),
     /// `.osg` spike tools: they only read the given files and never open the data dir.
     #[command(subcommand)]
     Osg(OsgCmd),
@@ -80,6 +86,116 @@ pub(crate) enum JobsCmd {
         #[arg(long, value_name = "N")]
         limit: Option<u32>,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum LibraryCmd {
+    /// Parse and label the catalog's charts and wait for the job; Ctrl-C cancels.
+    Index,
+    /// Indexed charts of one keymode, filtered by label or text.
+    List(LibraryListArgs),
+    /// Label rows and charts per scale.
+    Scales,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct LibraryListArgs {
+    #[arg(long, value_name = "N", default_value_t = 7)]
+    pub(crate) keys: u8,
+    /// Only charts with a label of this scale.
+    #[arg(long, value_name = "SCALE")]
+    pub(crate) scale: Option<String>,
+    /// Inclusive lower bound on the label level.
+    #[arg(long, value_name = "X")]
+    pub(crate) level_min: Option<f64>,
+    /// Inclusive upper bound on the label level.
+    #[arg(long, value_name = "Y")]
+    pub(crate) level_max: Option<f64>,
+    /// Only charts with a label from this source.
+    #[arg(long, value_name = "SRC")]
+    pub(crate) source: Option<String>,
+    /// Case-insensitive substring of title, artist, difficulty name or creator.
+    #[arg(long, value_name = "T")]
+    pub(crate) text: Option<String>,
+    #[arg(long, value_name = "N", default_value_t = 50)]
+    pub(crate) limit: u32,
+    #[arg(long, value_name = "N", default_value_t = 0)]
+    pub(crate) offset: u32,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum ChartCmd {
+    /// Print an ASCII playfield of one time window.
+    Show(ChartShowArgs),
+    /// Print the chart's metadata, summary and labels.
+    Info {
+        #[arg(value_name = "MD5")]
+        md5: String,
+    },
+}
+
+/// Without `--to` the window is 20 s long, so a whole chart never floods the terminal.
+const DEFAULT_WINDOW_MS: i32 = 20_000;
+
+#[derive(Debug, Args)]
+pub(crate) struct ChartShowArgs {
+    #[arg(value_name = "MD5")]
+    pub(crate) md5: String,
+    /// Window start, in seconds (`30`, `30.5`) or `mm:ss[.fff]`.
+    #[arg(long, value_name = "TIME", default_value = "0", value_parser = parse_time_ms)]
+    pub(crate) from: i32,
+    /// Window end, exclusive, same format; defaults to 20 s after `--from`.
+    #[arg(long, value_name = "TIME", value_parser = parse_time_ms)]
+    pub(crate) to: Option<i32>,
+    /// Layout preset id (e.g. `k7.313_left_thumb`); defaults to the keymode's layout.
+    #[arg(long, value_name = "ID")]
+    pub(crate) layout: Option<String>,
+}
+
+impl ChartShowArgs {
+    /// `(from_ms, to_ms)`.
+    pub(crate) fn window(&self) -> (i32, i32) {
+        let to = self
+            .to
+            .unwrap_or_else(|| self.from.saturating_add(DEFAULT_WINDOW_MS));
+        (self.from, to)
+    }
+}
+
+const MS_PER_SECOND: f64 = 1_000.0;
+const SECONDS_PER_MINUTE: f64 = 60.0;
+
+/// `ss[.fff]` or `mm:ss[.fff]` to whole milliseconds, rounded. Input parsing only: the window
+/// itself is validated by the app.
+pub(crate) fn parse_time_ms(s: &str) -> Result<i32, String> {
+    let bad = || format!("`{s}` is not a time: use seconds (`30.5`) or `mm:ss[.fff]`");
+    let number = |part: &str| -> Result<f64, String> {
+        // `f64::from_str` also takes `inf`, `nan`, `1e3` and signs, none of which is a time.
+        if part.is_empty() || !part.chars().all(|c| c.is_ascii_digit() || c == '.') {
+            return Err(bad());
+        }
+        part.parse::<f64>().map_err(|_| bad())
+    };
+    let s = s.trim();
+    let seconds = match s.split_once(':') {
+        None => number(s)?,
+        Some((min, sec)) => {
+            if !min.chars().all(|c| c.is_ascii_digit()) {
+                return Err(bad());
+            }
+            let sec = number(sec)?;
+            if sec >= SECONDS_PER_MINUTE {
+                return Err(bad());
+            }
+            number(min)? * SECONDS_PER_MINUTE + sec
+        }
+    };
+    let ms = (seconds * MS_PER_SECOND).round();
+    if ms > f64::from(i32::MAX) {
+        return Err(bad());
+    }
+    // Non-negative and at most i32::MAX by the checks above, so the cast is exact.
+    Ok(ms as i32)
 }
 
 #[derive(Debug, Subcommand)]
@@ -177,6 +293,107 @@ mod tests {
         assert_eq!(args.corpus, PathBuf::from("/c"));
         assert!(args.strict);
         assert_eq!(args.max_files, Some(3));
+    }
+
+    #[test]
+    fn time_accepts_seconds_and_minutes() {
+        assert_eq!(parse_time_ms("0"), Ok(0));
+        assert_eq!(parse_time_ms("30"), Ok(30_000));
+        assert_eq!(parse_time_ms("30.25"), Ok(30_250));
+        assert_eq!(parse_time_ms("1:05"), Ok(65_000));
+        assert_eq!(parse_time_ms("01:05.5"), Ok(65_500));
+        assert_eq!(parse_time_ms(" 2:00 "), Ok(120_000));
+        assert_eq!(parse_time_ms("0.0004"), Ok(0));
+        assert_eq!(parse_time_ms("0.0005"), Ok(1));
+    }
+
+    #[test]
+    fn time_rejects_malformed_input() {
+        for bad in [
+            "", "abc", "-1", "1:60", "1:-5", ":30", "1:", "1:2:3", "nan", "inf", "1e3", "99999999",
+        ] {
+            assert!(parse_time_ms(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn library_list_defaults() {
+        let cli = Cli::try_parse_from(["wolluf", "library", "list"]).unwrap();
+        let Command::Library(LibraryCmd::List(args)) = cli.command else {
+            panic!("{:?}", cli.command);
+        };
+        assert_eq!((args.keys, args.limit, args.offset), (7, 50, 0));
+        assert_eq!(args.scale, None);
+        assert_eq!((args.level_min, args.level_max), (None, None));
+        assert_eq!((args.source, args.text), (None, None));
+    }
+
+    #[test]
+    fn library_list_filters() {
+        let cli = Cli::try_parse_from([
+            "wolluf",
+            "library",
+            "list",
+            "--keys",
+            "4",
+            "--scale",
+            "satellite",
+            "--level-min",
+            "1.5",
+            "--level-max",
+            "3",
+            "--source",
+            "bms",
+            "--text",
+            "x",
+            "--limit",
+            "5",
+            "--offset",
+            "10",
+        ])
+        .unwrap();
+        let Command::Library(LibraryCmd::List(args)) = cli.command else {
+            panic!("{:?}", cli.command);
+        };
+        assert_eq!((args.keys, args.limit, args.offset), (4, 5, 10));
+        assert_eq!(args.scale.as_deref(), Some("satellite"));
+        assert_eq!((args.level_min, args.level_max), (Some(1.5), Some(3.0)));
+        assert_eq!(args.source.as_deref(), Some("bms"));
+        assert_eq!(args.text.as_deref(), Some("x"));
+    }
+
+    #[test]
+    fn chart_show_window_defaults_to_the_first_20_seconds() {
+        let cli = Cli::try_parse_from(["wolluf", "chart", "show", "abc"]).unwrap();
+        let Command::Chart(ChartCmd::Show(args)) = cli.command else {
+            panic!("{:?}", cli.command);
+        };
+        assert_eq!(args.md5, "abc");
+        assert_eq!(args.window(), (0, 20_000));
+        assert_eq!(args.layout, None);
+
+        let cli = Cli::try_parse_from([
+            "wolluf", "chart", "show", "abc", "--from", "1:00", "--layout", "k7.43",
+        ])
+        .unwrap();
+        let Command::Chart(ChartCmd::Show(args)) = cli.command else {
+            panic!("{:?}", cli.command);
+        };
+        assert_eq!(args.window(), (60_000, 80_000));
+        assert_eq!(args.layout.as_deref(), Some("k7.43"));
+
+        let cli = Cli::try_parse_from(["wolluf", "chart", "show", "abc", "--to", "0:05"]).unwrap();
+        let Command::Chart(ChartCmd::Show(args)) = cli.command else {
+            panic!("{:?}", cli.command);
+        };
+        assert_eq!(args.window(), (0, 5_000));
+    }
+
+    #[test]
+    fn chart_show_rejects_a_bad_time() {
+        let err =
+            Cli::try_parse_from(["wolluf", "chart", "show", "abc", "--from", "x"]).unwrap_err();
+        assert_eq!(err.exit_code(), i32::from(exit::USAGE));
     }
 
     #[test]

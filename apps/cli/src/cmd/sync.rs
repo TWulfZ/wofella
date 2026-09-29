@@ -4,20 +4,19 @@
 use std::future::Future;
 use std::process::ExitCode;
 
-use tokio::sync::broadcast::error::RecvError;
 use wolluf_app::context::AppContext;
 use wolluf_app::errors::AppError;
-use wolluf_app::events::AppEvent;
 use wolluf_app::jobs::JobStatusDto;
 use wolluf_app::jobs::dto::{JobDto, JobStartDto, JobSummaryDto, SyncPlaysStartDto};
 use wolluf_core::ErrorCode;
 
 use crate::exit;
+use crate::follow;
 use crate::progress::Progress;
 use crate::render;
 
 pub(crate) async fn run(ctx: &AppContext, json: bool) -> anyhow::Result<ExitCode> {
-    let outcome = sync(ctx, &mut Progress::stderr(), ctrl_c()).await?;
+    let outcome = sync(ctx, &mut Progress::stderr(), follow::ctrl_c()).await?;
     if json {
         render::json(&outcome.job)?;
     } else {
@@ -29,14 +28,6 @@ pub(crate) async fn run(ctx: &AppContext, json: bool) -> anyhow::Result<ExitCode
         exit::for_job(outcome.job.status)
     };
     Ok(exit::exit_code(code))
-}
-
-/// Resolves on the first Ctrl-C. If the handler cannot be installed the sync simply runs
-/// uninterruptible instead of being cancelled at once.
-async fn ctrl_c() {
-    if tokio::signal::ctrl_c().await.is_err() {
-        std::future::pending::<()>().await;
-    }
 }
 
 pub(crate) struct Outcome {
@@ -64,31 +55,8 @@ pub(crate) async fn sync(
         }))
         .await?;
     tokio::pin!(interrupt);
-    let mut interrupted = false;
-    loop {
-        tokio::select! {
-            biased;
-            () = &mut interrupt, if !interrupted => {
-                interrupted = true;
-                match ctx.job_service().cancel(&id).await {
-                    // NOT_FOUND: the job already ended and its finish event is on the bus.
-                    Ok(()) => {}
-                    Err(e) if e.code == ErrorCode::NotFound => {}
-                    Err(e) => return Err(e),
-                }
-            }
-            event = rx.recv() => match event {
-                Ok(AppEvent::JobProgress(p)) if p.job_id == id => progress.update(&p),
-                Ok(AppEvent::JobFinished(f)) if f.job_id == id => break,
-                // A lagging receiver only lost progress; the history below is authoritative.
-                Ok(_) | Err(RecvError::Lagged(_)) => {}
-                Err(RecvError::Closed) => {
-                    return Err(AppError::internal("event bus closed during sync"));
-                }
-            },
-        }
-    }
-    progress.finish();
+    let mut interrupted =
+        follow::until_finished(ctx, &mut rx, &id, progress, interrupt.as_mut()).await?;
     // The chained identity refresh must finish before exit, or `players list` sees stale
     // rows; a Ctrl-C here stops waiting and dropping the context cancels it.
     if !interrupted {
@@ -98,13 +66,7 @@ pub(crate) async fn sync(
             () = ctx.jobs().wait_idle() => {}
         }
     }
-    let job = ctx
-        .job_service()
-        .list(None)
-        .await?
-        .into_iter()
-        .find(|j| j.id == id)
-        .ok_or_else(|| AppError::internal(format!("job {id} missing from history")))?;
+    let job = follow::history_entry(ctx, &id).await?;
     Ok(Outcome { job, interrupted })
 }
 
