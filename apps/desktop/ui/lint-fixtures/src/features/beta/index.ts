@@ -1,0 +1,1 @@
+export { betaLabel } from "./internal";

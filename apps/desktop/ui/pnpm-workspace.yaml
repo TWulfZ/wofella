@@ -1,0 +1,18 @@
+# Standalone project: this file exists only for pnpm 11 settings (spec 005, Design "Project").
+saveExact: true
+allowBuilds:
+  # The napi binding ships as a prebuilt optional dependency; its postinstall is only a fallback download.
+  unrs-resolver: false
+# typescript-eslint 8.71.0 is the pinned release (spec 005 Pins) and was younger than pnpm's default minimum release age.
+minimumReleaseAgeExclude:
+  - '@typescript-eslint/eslint-plugin@8.71.0'
+  - '@typescript-eslint/parser@8.71.0'
+  - '@typescript-eslint/project-service@8.71.0'
+  - '@typescript-eslint/scope-manager@8.71.0'
+  - '@typescript-eslint/tsconfig-utils@8.71.0'
+  - '@typescript-eslint/type-utils@8.71.0'
+  - '@typescript-eslint/types@8.71.0'
+  - '@typescript-eslint/typescript-estree@8.71.0'
+  - '@typescript-eslint/utils@8.71.0'
+  - '@typescript-eslint/visitor-keys@8.71.0'
+  - typescript-eslint@8.71.0

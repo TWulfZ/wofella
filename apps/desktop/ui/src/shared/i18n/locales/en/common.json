@@ -1,0 +1,13 @@
+{
+  "common": {
+    "appName": "wolluf",
+    "loading": "Loading…",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "close": "Close",
+    "home": {
+      "title": "Home",
+      "placeholder": "Nothing here yet."
+    }
+  }
+}
