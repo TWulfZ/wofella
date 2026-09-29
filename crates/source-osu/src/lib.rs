@@ -15,6 +15,7 @@ pub mod songs;
 mod stable;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testkit;
+pub mod watch;
 
 pub use diag::{DiagCode, Diagnostic, Diagnostics};
 pub use error::{CodecError, SourceError};

@@ -92,6 +92,8 @@ pub enum SourceError {
     /// The file kept changing across every stable-read retry: osu! is most likely writing it.
     #[error("{} kept changing while being read", .path.display())]
     Changing { path: PathBuf },
+    #[error("cannot watch {}: {detail}", .path.display())]
+    Watch { path: PathBuf, detail: String },
 }
 
 impl SourceError {
@@ -111,6 +113,7 @@ impl SourceError {
             Self::InvalidInstall { .. } => ErrorCode::OsuDirNotFound,
             Self::LazerInstall { .. } => ErrorCode::UnsupportedFormat,
             Self::Changing { .. } => ErrorCode::OsuRunning,
+            Self::Watch { .. } => ErrorCode::Internal,
         }
     }
 
