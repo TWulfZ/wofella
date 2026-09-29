@@ -8,7 +8,7 @@ pub mod time;
 pub mod vkey;
 
 pub use digest::{AliasId, BlobSha256, ChartMd5, Game, PlayId, ProfileId};
-pub use error::CoreError;
+pub use error::{CoreError, ErrorCode};
 pub use id::{AxisId, PatternId, StageId};
 pub use keymode::{ColMask, Keymode};
 pub use time::{DotNetTicks, FileTime, RateMilli, TimeUs, UnixUs};
