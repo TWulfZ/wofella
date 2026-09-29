@@ -1,6 +1,6 @@
 # 005 Desktop shell and CLI
 
-Status: Draft
+Status: In progress (open: T19 green PR run, T20 manual smokes; see Deviations)
 Phase: F0 · Owner: twulfz · Date: 2026-09-28
 Links: architecture §3 (layout), §4 (D1, D9, D11, D12, D13, D14), §5.2 (data dir), §5.6 (identity UX), §7 (jobs, errors, logging), §8 (IPC + UI), §10 (UI tests, CI), §12 (F0), §13 O10; ADR 0009 (IPC via tauri-specta, authored by 001); research `00-plan-es.md` l.217 (WSL toolchain), `02-7k-bms-stable-verified.txt` l.182/214 (WSL2 cannot read osu! memory, Windows is the real target).
 Sibling F0 specs: 001 workspace-foundation (workspace, pins, xtask `bindings` delegation, CI skeleton, core `ErrorCode`; assigns `AppError` and `SystemClock` to this spec), 002 osu-stable-codecs, 003 store-ledger-sync (`AppPaths`, `AppContext`, instance lock, `JobService`, `SyncPlays`, `AppEvent`), 004 players-identity (players service, DTOs, `commands/players.rs`, `features/players`, routes `setup.identity.tsx` / `settings.identity.tsx`), 006 osg-spike (`wolluf osg` subcommand under this spec's clap root).
@@ -326,42 +326,42 @@ After 001–004 the backend can ingest plays and select identities, but nobody c
 - Query keys: `["setup", "status"]`, `["setup", "candidates"]`, `["jobs", "list"]`.
 
 ## Acceptance criteria
-- [ ] AC1: Install discovery and validation are correct and read-only → owned by 002 AC10 (incl. env first, registry open-command parsing, file → parent, lazer, missing scores.db, 4-byte version read, dedupe) and 002 AC12 (`check-layers`, no write API).
-- [ ] AC2: The pilot install validates → owned by 002 AC14 `detect_finds_corpus_install` (valid, `osu_db_version == 20260924`, nothing written).
-- [ ] AC3: Error mapping → `cargo nextest run -p wolluf-app errors` passes `errors::tests::{error_code_dto_mirrors_core_all, ipc_error_json_per_code, details_stripped_without_flag, args_serialize_sorted}`. The insta snapshot shows all 11 codes as SCREAMING_SNAKE strings and camelCase field names.
-- [ ] AC4: Clock and logging → `clock::tests::system_clock_is_after_2026_09_01` and `logging::tests::writes_json_line_to_dir` pass.
-- [ ] AC5: Setup service → `cargo nextest run -p wolluf-app setup` passes `features::setup::tests::{set_valid_path_persists_and_emits_setup_changed, set_invalid_path_returns_osu_dir_not_found_with_path_arg, set_lazer_returns_unsupported_format, status_without_install, status_identity_ready_follows_players_service}`. The tests use in-memory SQLite with 003's real migrations and temp fake installs.
-- [ ] AC6: Commands are wired and thin → `cargo nextest run -p wolluf-desktop` passes `commands_smoke::{setup_status_ok, setup_set_install_path_error_has_code, jobs_start_returns_string_id}` through `tauri::test::mock_builder` + `get_ipc_response`. Every `#[tauri::command]` body is ≤ 10 lines (a PR review checklist item).
-- [ ] AC7: Event bridge → `event_bridge::{forwards_job_progress_payload, forwards_data_changed, lagged_receiver_emits_jobs_data_changed}` pass in `wolluf-desktop`.
-- [ ] AC8: Bindings are generated, deterministic and precision-safe:
+- [x] AC1: Install discovery and validation are correct and read-only → owned by 002 AC10 (incl. env first, registry open-command parsing, file → parent, lazer, missing scores.db, 4-byte version read, dedupe) and 002 AC12 (`check-layers`, no write API).
+- [x] AC2: The pilot install validates → owned by 002 AC14 `detect_finds_corpus_install` (valid, `osu_db_version == 20260924`, nothing written).
+- [x] AC3: Error mapping → `cargo nextest run -p wolluf-app errors` passes `errors::tests::{error_code_dto_mirrors_core_all, ipc_error_json_per_code, details_stripped_without_flag, args_serialize_sorted}`. The insta snapshot shows all 11 codes as SCREAMING_SNAKE strings and camelCase field names.
+- [x] AC4: Clock and logging → `clock::tests::system_clock_is_after_2026_09_01` and `logging::tests::writes_json_line_to_dir` pass.
+- [x] AC5: Setup service → `cargo nextest run -p wolluf-app setup` passes `features::setup::tests::{set_valid_path_persists_and_emits_setup_changed, set_invalid_path_returns_osu_dir_not_found_with_path_arg, set_lazer_returns_unsupported_format, status_without_install, status_identity_ready_follows_players_service}`. The tests use in-memory SQLite with 003's real migrations and temp fake installs.
+- [x] AC6: Commands are wired and thin → `cargo nextest run -p wolluf-desktop` passes `commands_smoke::{setup_status_ok, setup_set_install_path_error_has_code, jobs_start_returns_string_id}` through `tauri::test::mock_builder` + `get_ipc_response`. Every `#[tauri::command]` body is ≤ 10 lines (a PR review checklist item).
+- [x] AC7: Event bridge → `event_bridge::{forwards_job_progress_payload, forwards_data_changed, lagged_receiver_emits_jobs_data_changed}` pass in `wolluf-desktop`.
+- [x] AC8: Bindings are generated, deterministic and precision-safe:
   - `cargo xtask bindings && git diff --exit-code apps/desktop/ui/src/ipc/bindings.ts` exits 0;
   - `wolluf-desktop` tests `bindings::{committed_file_is_up_to_date, export_is_deterministic, bigint_field_fails_export}` pass.
-- [ ] AC9: UI contract client → `pnpm -C apps/desktop/ui exec vitest run --typecheck src/ipc` passes:
+- [x] AC9: UI contract client → `pnpm -C apps/desktop/ui exec vitest run --typecheck src/ipc` passes:
   - `client.test.ts`: unwraps ok; narrows `OSU_RUNNING`; a non-structured rejection → `INTERNAL` with `details`;
   - `eventBridge.test.ts`: `DataChanged{players}` invalidates `["players", …]` and not `["setup", …]`; progress and finished events reach the tray store;
   - `mocks.test-d.ts`: a handler returning the wrong type fails the typecheck.
-- [ ] AC10: Boundaries hold → `pnpm -C apps/desktop/ui lint` exits 0, and `src/__lint__/lint-rules.test.ts` asserts that:
+- [x] AC10: Boundaries hold → `pnpm -C apps/desktop/ui lint` exits 0, and `src/__lint__/lint-rules.test.ts` asserts that:
   - an `@tauri-apps/api/core` import in a feature → `no-restricted-imports`;
   - a feature importing another feature's non-index file → a `boundaries/*` violation;
   - `shared` importing a feature → a violation.
-- [ ] AC11: Localization is complete:
+- [x] AC11: Localization is complete:
   - `src/shared/i18n/i18n.test.ts` passes (en/es key sets identical per domain file; no empty strings);
   - the Rust `wolluf-desktop` test `i18n_error_keys::every_error_code_has_en_and_es_fallback` passes. It reads `ui/src/shared/i18n/locales/*/error.json` and checks `error.code.<CODE>` for every `ErrorCode::ALL`.
-- [ ] AC12: First-run guard → `src/routes/__root.test.tsx`: `install: null` → location `/setup/`; install set and `identityReady: false` → `/setup/identity`; both set → the requested route.
-- [ ] AC13: Setup screen → `src/features/setup/SetupScreen.test.tsx`:
+- [x] AC12: First-run guard → `src/routes/__root.test.tsx`: `install: null` → location `/setup/`; install set and `identityReady: false` → `/setup/identity`; both set → the requested route.
+- [x] AC13: Setup screen → `src/features/setup/SetupScreen.test.tsx`:
   - candidates render with source badges and missing files;
   - an invalid confirm shows the `error.code.OSU_DIR_NOT_FOUND` text with the path;
   - lazer shows `setup.error.lazer_not_supported`;
   - a valid confirm calls `setup_set_install_path`, then `jobs_start` (`sync_plays`), in that order, and navigates to `/setup/identity`;
   - Browse uses the mocked dialog result.
-- [ ] AC14: Job tray → `src/features/jobs/JobTray.test.tsx`:
+- [x] AC14: Job tray → `src/features/jobs/JobTray.test.tsx`:
   - it hydrates running jobs from `jobs_list`;
   - `job-progress` events update `done/total`;
   - Cancel calls `jobs_cancel(id)`;
   - `job-finished` with `failedItems: 37` shows "37 items failed" in en and the es string in es;
   - the 21st finished job evicts the oldest.
-- [ ] AC15: UI gates → `pnpm -C apps/desktop/ui exec tsc --noEmit && pnpm -C apps/desktop/ui lint && pnpm -C apps/desktop/ui test` exits 0, and `pnpm -C apps/desktop/ui build` produces `dist/index.html`.
-- [ ] AC16: CLI → `cargo nextest run -p wolluf-cli` passes:
+- [x] AC15: UI gates → `pnpm -C apps/desktop/ui exec tsc --noEmit && pnpm -C apps/desktop/ui lint && pnpm -C apps/desktop/ui test` exits 0, and `pnpm -C apps/desktop/ui build` produces `dist/index.html`.
+- [x] AC16: CLI → `cargo nextest run -p wolluf-cli` passes:
   - `cli_setup::{detect_json_lists_env_candidate, set_then_status_json}`;
   - `cli_errors::{sync_without_install_exits_2_osu_dir_not_found, bad_flag_exits_2, locked_data_dir_exits_1_conflict}`;
   - `cli_sync::{first_sync_reports_new_plays, second_sync_adds_zero}`, over 003's synthetic fixture install;
@@ -374,7 +374,7 @@ After 001–004 the backend can ingest plays and select identities, but nobody c
   - `/setup/` lists `/mnt/e/Games/osu!` with source `registry` (read through `reg.exe`; `drive_scan` if interop is disabled);
   - confirming starts a sync whose progress shows in the tray, then lands on `/setup/identity`.
 - [ ] AC18: Windows build → CI job `desktop-windows` (windows-2025) runs `cargo tauri build --bundles nsis` and uploads the installer artifact. A manual smoke on the pilot machine records that `/setup/` shows `E:\Games\osu!` with source `registry`.
-- [ ] AC19: Every `wolluf-sdd` §4 gate that exists runs clean: fmt, clippy `-D warnings`, check-layers, nextest, bindings drift, tsc/lint/vitest.
+- [x] AC19: Every `wolluf-sdd` §4 gate that exists runs clean: fmt, clippy `-D warnings`, check-layers, nextest, bindings drift, tsc/lint/vitest.
 
 ## Risks / open questions
 - **tauri-specta is an RC** (`=2.0.0-rc.25`, 2026-05-08, nothing released since). Its API for events and typed errors has shifted between RCs, so T10–T12 may need adjusting to rc.25 specifics. The fallback stays §8/O10 (ts-rs plus a hand-written wrapper confined to `ipc/`). That swap is cheap because commands are thin and uniformly named.
@@ -389,3 +389,50 @@ After 001–004 the backend can ingest plays and select identities, but nobody c
 - Registry discovery only finds installs made by the official installer, which registers the `.osz` handler. Portable copies are found through Browse or `WOLLUF_OSU_DIR`.
 
 ## Deviations (filled at close)
+Closed 2026-09-28 as far as it can be automated. Status stays **In progress**: T19's green PR run and T20's manual smokes need the user. Every automatable AC (AC1–AC16, AC19) passes on the final tree.
+
+**Open (blocks Done):**
+- **T19 / AC18 CI half:** `ci.yml` has the `desktop-windows` job and the Node 24.15 pin, and `actionlint` is clean, but nothing has been pushed. The `ui`, bindings drift and `desktop-windows` jobs have never run on GitHub; record the PR run link here.
+- **T20 / AC17, AC18 manual half:** the smokes below are not runnable from the close stage.
+
+**Manual checklist (tick and date each):**
+- [ ] WSL: `cargo tauri dev` from `apps/desktop/src-tauri` opens the window on WSLg (blank window → `WEBKIT_DISABLE_DMABUF_RENDERER=1`).
+- [ ] WSL: on a fresh data dir (`WOLLUF_DATA_DIR=$(mktemp -d)`), the root guard lands on `/setup/`, which lists `/mnt/e/Games/osu!` with source `registry` (via `reg.exe`; `drive_scan` if interop is off).
+- [ ] WSL: Confirm calls `setup_set_install_path` then `jobs_start(sync_plays)`, the tray shows progress, and the app lands on `/setup/identity`. While `sync_plays`/`refresh_identity` run, the wizard shows "Importing your plays…" with Confirm disabled.
+- [ ] WSL: the wizard ticks `TWulfZ` and `TWulfZasdasdasd d jSS||` with the auto chip; every other name is unticked, in play-count order.
+- [ ] WSL: a second instance on the same data dir exits with `error.instance_running` (the DESK lane saw the log line and exit 1, but not the dialog).
+- [ ] Windows: the NSIS installer from the `desktop-windows` artifact installs and starts; `/setup/` shows `E:\Games\osu!` with source `registry`.
+- [ ] Windows: record the build's cold time against the job's 90-minute timeout.
+
+**Shared app pieces (T3–T5):**
+- `AppError::new(code)` is retryable only for `OSU_RUNNING`. Logging splits a private `build()` (used by the test, no global subscriber) from `init()`.
+- `wolluf_app::logging::init` does not create the log dir; tracing-appender then prints "Error reading the log directory/files" to stderr. The CLI creates `<data>/logs` first; the desktop probably shows the same noise on a first run.
+- `SetupService::status().install` is the most recently registered install (highest id). `SetupService::new` calls `DetectEnv::from_system` on each call (reg.exe on WSL, up to 3 s), because source-osu keeps its platform constructor private; `with_env` takes a fixed env.
+
+**CLI (T6–T8):**
+- The tests build their install from 002's committed anonymized fixtures, not 003's synthetic fixture: that testkit is `cfg(test)`-only in wolluf-app and the CLI may depend only on core and app.
+- `players list --json` was written against a local view before `AliasListDto` existed. The DTO has since landed (004-T11) with the same field names and order, so the view and its RFC 3339 copy can now be replaced by `AliasListDto::try_from(list)`.
+- `sync` finds the install through `ctx.setup().status().install`. Ctrl-C while waiting for the chained identity refresh exits 130 and drops the context, which cancels the refresh.
+- Extra tests beyond AC16: `detect_text_is_a_table`, `invalid_install_path_exits_2_with_path_arg`, `text_summary_without_tty_has_no_progress`, `list_text_ticks_the_session_user`, `empty_history_is_an_empty_array`, and unit tests.
+- On WSL, `setup detect`/`set` also see the pilot install as a registry candidate (read-only). One run under parallel load took ~20 s (WSL interop latency).
+
+**Desktop (T9–T12):**
+- `run()` resolves `AppPaths` and inits logging before the builder, so the `LogGuard` flushes after `App::run_return`; the setup hook opens the context and creates the window (declared `create: false`), so a failed start never shows the webview. The fatal dialog is non-blocking and in English (i18n lives in the UI).
+- `generate_context!()` expands to `HashMap`, so it sits in `fn context()` with a local `#[allow(clippy::disallowed_types)]`.
+- `opener:allow-open-path` is scoped to `$LOCALDATA/wolluf/**`; a `WOLLUF_DATA_DIR` override is outside it, which does not affect `app_open_logs_dir` (the plugin's Rust API skips scope checks).
+- Icons are generated placeholders. Integration tests wrap their bodies in a module named after the file so nextest name filters select them. Commands use `#[tracing::instrument(skip_all)]` (specta's macro breaks on `%`/`?` fields). `app_open_logs_dir` is registered as `app_open_logs_dir::<tauri::Wry>`. `jobs_list` returns the full history; the tray caps at 20.
+- T12's DESK lane wrote and committed `apps/desktop/ui/src/ipc/bindings.ts` (outside its write set, but named by T12).
+- The tauri-specta rc.25 risk is resolved: events, typed errors, BigInt rejection and generic commands all work, so the ts-rs fallback is not needed.
+
+**UI (T13–T18):**
+- Extra exact-pinned deps: `eslint-import-resolver-typescript` (without it boundaries skips `@/` imports silently), `@types/node`, `@types/react(-dom)`, plus what `shadcn init` added. shadcn's `next-themes` dependency was removed; dark mode follows `prefers-color-scheme`.
+- One strict `tsconfig.json` instead of app/node references (a references-only root makes `tsc --noEmit` a no-op). `pnpm-workspace.yaml` disables the `unrs-resolver` build and exempts typescript-eslint 8.71.0 from pnpm 11's minimum release age.
+- eslint-plugin-boundaries 7.2 uses `boundaries/dependencies` with entity selectors. `src/routes/__root.tsx` and route tests may import `src/app` (one relaxation, with a violation fixture and a control fixture).
+- The first-run guard and loaders use `queryClient.query()` instead of the deprecated `ensureQueryData`, which would return stale data after an invalidation.
+- No `settings` feature slice: home and settings live in their route files, with a `settings` i18n domain. `mockCommands` accepts raw `plugin:<name>|<cmd>` handlers and returns a call log. Vitest typechecks `*.test-d.ts` in the plain `pnpm test`.
+- The shadcn `Progress` template never passed `value` to Radix; fixed in `src/shared/ui/progress.tsx`. Hydrating a new active job opens the tray. Header scope controls are hidden on `/setup*`; the router plugin ignores `*.test(-d).tsx` in `src/routes`.
+- **T15 / AC11:** the Rust test `i18n_error_keys::every_error_code_has_en_and_es_fallback` was outside the UI lane and was written at close (`e2712d3`); it failed on a scratch removal of `es: error.code.CANCELLED` and passes on the committed files.
+
+**CI (T19):** pnpm gets no second pin (action-setup reads `packageManager`; a `version:` input would conflict). `libgtk-3-dev` added to the apt list. `desktop-windows` also sets up pnpm/Node because `beforeBuildCommand` builds the UI; timeout 90 min; artifact via `actions/upload-artifact@v7`. The CLAUDE.md half of T19 was done at close.
+
+**Architecture (T20):** §3 now lists plugins dialog, opener and log (updater in F5), `setup` in the features list and the F0 CLI subcommands; §8 has the `app` group with `app_open_logs_dir`; §6.5/§9.4 and the other `wolluf-cli <cmd>` invocations now read `wolluf <cmd>`; §13 O10 is closed by ADR 0009.

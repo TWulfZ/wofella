@@ -1,6 +1,6 @@
 # 004 Players and identity
 
-Status: Draft
+Status: Done
 Phase: F0 · Owner: TWulfZ · Date: 2026-09-28
 Links: architecture §3, §4 (D2, D6, D11–D14, D17), §5.2–§5.6, §6.1, §7, §8, §10, §12 (F0) · ADR 0005 (identity scopes and auto-selection; amended by T1 to the session-user rule) · research `03-maniahub-rejudge-drills-sessions-audit.txt` (scores.db findings, lines ~307, 343, 347), `00-plan-es.md` (§ "Selección de jugadores", item 10) · oracle `research/scripts/audit/osudb.py`, `plays.py`
 Depends on: 001 workspace-foundation (crates, `VersionKey`, lints, check-layers), 002 osu-stable-codecs (scores.db + cfg codecs, `cfg_files`), 003 store-ledger-sync (user.db baseline with the identity/profile tables, `play`/`alias` ledger, cache.db skeleton, `SyncPlays` job and follow-up chaining), 005 T3 (`AppError`), 005 desktop-shell-cli (Tauri shell, specta export, UI skeleton, setup flow). 006 osg-spike is **not** a dependency (see Domain rules R9).
@@ -215,37 +215,37 @@ All DTOs live in `app::features::players::dto`, derive `serde` (camelCase) + `sp
   - all strings are in es/en i18n.
 
 ## Acceptance criteria
-- [ ] AC1: Normalization matches R4 on the table (`TWulfZasdasdasd d jSS||`→`twulfzasdasdasddjss`, fullwidth `ＴＷｕｌｆＺ`→`twulfz`, `Straße`→`strasse`, `x_Wulf-`→`xwulf`, `||`→``, `""`→``) → `cargo nextest run -p wolluf-app -E 'test(players::names::tests::normalize_table)'`.
-- [ ] AC2: The session-user match follows R5:
+- [x] AC1: Normalization matches R4 on the table (`TWulfZasdasdasd d jSS||`→`twulfzasdasdasddjss`, fullwidth `ＴＷｕｌｆＺ`→`twulfz`, `Straße`→`strasse`, `x_Wulf-`→`xwulf`, `||`→``, `""`→``) → `cargo nextest run -p wolluf-app -E 'test(players::names::tests::normalize_table)'`.
+- [x] AC2: The session-user match follows R5:
   - `twulfz` matches the garbage cfg (prefix), and the garbage alias matches it (equal);
   - `twulfs` does not (no fuzzy match);
   - `""`, `w`, `s` and `wulf` do not;
   - a 3-char alias equal to a 3-char login does not (length guard).
   → `test(players::names::tests::session_match_table)`.
-- [ ] AC3: On the synthetic pilot-shaped fixture (third-party names anonymized to `Rosalind`/`Kovacs`/`Sterling`, with the R2 counts preserved), the selection is exactly the Design pilot table: `TWulfZ` (and the cfg-string alias) selected with an auto match; `""`, `W`, `w`, `Wulf`, `s`, `Rosalind`, `Kovacs` and `Sterling` unselected with `auto_match = None`, sorted by play count desc → `test(players::selection::tests::pilot_like_selection)`.
-- [ ] AC4: No alias with normalized length < 4 is ever auto-selected, whatever the login (proptest over random names with the login forced to equal or extend the alias) → `test(players::selection::tests::short_alias_never_auto)`.
-- [ ] AC5: The output is independent of input order (proptest shuffling aliases; the result is byte-equal) → `test(players::selection::tests::order_independent)`.
-- [ ] AC6: With the cfg missing, or a login that matches no alias, nothing is selected. A `not_me` decision on the matching alias unselects it, and a `me` decision on `""` selects it; no other row changes → `test(players::selection::tests::{no_match_preselects_nothing, decisions_override_auto})`.
-- [ ] AC7: `alias_stats` aggregation is correct: keymode buckets incl. `unknown`/`non_mania`, date range, online/offline, replay count and top-chart tie-break → `test(players::stats::tests::aggregates_table)`.
-- [ ] AC8: The scope canonical bytes and hash match a committed golden. The hash is invariant to alias order and changes when any alias, the keymode or the policy changes. Alias ids do not enter the hash → `test(players::scope::tests::)` (`canonical_form_golden`, `hash_invariants`).
-- [ ] AC9: `resolve` gives merged → 1 scope; separate over 3 aliases → 3 scopes in byte order; All players → the union of all aliases; a self profile with zero aliases → 0 scopes → `test(players::scope::tests::resolve_table)`.
-- [ ] AC10: Store repositories on in-memory SQLite with real migrations cover:
+- [x] AC3: On the synthetic pilot-shaped fixture (third-party names anonymized to `Rosalind`/`Kovacs`/`Sterling`, with the R2 counts preserved), the selection is exactly the Design pilot table: `TWulfZ` (and the cfg-string alias) selected with an auto match; `""`, `W`, `w`, `Wulf`, `s`, `Rosalind`, `Kovacs` and `Sterling` unselected with `auto_match = None`, sorted by play count desc → `test(players::selection::tests::pilot_like_selection)`.
+- [x] AC4: No alias with normalized length < 4 is ever auto-selected, whatever the login (proptest over random names with the login forced to equal or extend the alias) → `test(players::selection::tests::short_alias_never_auto)`.
+- [x] AC5: The output is independent of input order (proptest shuffling aliases; the result is byte-equal) → `test(players::selection::tests::order_independent)`.
+- [x] AC6: With the cfg missing, or a login that matches no alias, nothing is selected. A `not_me` decision on the matching alias unselects it, and a `me` decision on `""` selects it; no other row changes → `test(players::selection::tests::{no_match_preselects_nothing, decisions_override_auto})`.
+- [x] AC7: `alias_stats` aggregation is correct: keymode buckets incl. `unknown`/`non_mania`, date range, online/offline, replay count and top-chart tie-break → `test(players::stats::tests::aggregates_table)`.
+- [x] AC8: The scope canonical bytes and hash match a committed golden. The hash is invariant to alias order and changes when any alias, the keymode or the policy changes. Alias ids do not enter the hash → `test(players::scope::tests::)` (`canonical_form_golden`, `hash_invariants`).
+- [x] AC9: `resolve` gives merged → 1 scope; separate over 3 aliases → 3 scopes in byte order; All players → the union of all aliases; a self profile with zero aliases → 0 scopes → `test(players::scope::tests::resolve_table)`.
+- [x] AC10: Store repositories on in-memory SQLite with real migrations cover:
   - decision upsert and clear;
   - self singleton and default uniqueness enforced by index;
   - `profile_alias` origin preserved;
   - the identity `feedback_event` written in the same transaction;
   - `alias_stats` read requires the vkey.
   → `cargo nextest run -p wolluf-store -E 'test(players::)'`.
-- [ ] AC11: The service, seeded with the pilot-shaped fixture, behaves as follows:
+- [x] AC11: The service, seeded with the pilot-shaped fixture, behaves as follows:
   - first refresh creates the self profile with exactly the auto aliases (`origin=auto`) as default;
   - `decide(not_me)` on an auto alias removes it, and it stays removed after another `refresh()` with new plays;
   - `decide(me)` on `""` adds it with `origin=user`;
   - clearing a decision restores the auto rule's result (selected only if it matches the login);
   - changing the self alias set changes the self `scope_hash`.
   → `cargo nextest run -p wolluf-app -E 'test(players::service::tests::)'`.
-- [ ] AC12: Profile invariants: creating a second self profile → `CONFLICT`; an `other` profile containing a self alias → `CONFLICT`, and so does the reverse via `decide(me)`; an empty label or empty aliases → `INVALID_INPUT`; `set_default` leaves exactly one default; All players is never persisted → `test(players::service::tests::profile_invariants)`.
-- [ ] AC13: The six commands are registered, and `bindings.ts` is regenerated and clean → `cargo xtask bindings && git diff --exit-code apps/desktop/ui/src/ipc/bindings.ts`. The DTO snapshot (insta over `specta` export of the players types) shows the `autoMatch` shape and no `bigint` field → `test(players::dto::tests::dto_shape)`.
-- [ ] AC14: UI (vitest + typed `mockIPC` fixture mirroring AC3):
+- [x] AC12: Profile invariants: creating a second self profile → `CONFLICT`; an `other` profile containing a self alias → `CONFLICT`, and so does the reverse via `decide(me)`; an empty label or empty aliases → `INVALID_INPUT`; `set_default` leaves exactly one default; All players is never persisted → `test(players::service::tests::profile_invariants)`.
+- [x] AC13: The six commands are registered, and `bindings.ts` is regenerated and clean → `cargo xtask bindings && git diff --exit-code apps/desktop/ui/src/ipc/bindings.ts`. The DTO snapshot (insta over `specta` export of the players types) shows the `autoMatch` shape and no `bigint` field → `test(players::dto::tests::dto_shape)`.
+- [x] AC14: UI (vitest + typed `mockIPC` fixture mirroring AC3):
   - auto rows are ticked and listed first with the auto-match chip; every other row is unticked, has no suggestion, and keeps the DTO's play-count order;
   - with no auto match, nothing is ticked and the "tick the names that are yours" prompt shows;
   - Select all ticks every row;
@@ -253,13 +253,13 @@ All DTOs live in `app::features::players::dto`, derive `serde` (camelCase) + `sp
   - the banner shows for `other` and `all_players` and is absent for self;
   - the toggle is hidden for single-alias entries.
   → `pnpm -C apps/desktop/ui test -- features/players`.
-- [ ] AC15: F0 exit on the real corpus (read-only, through 003's in-memory snapshots):
+- [x] AC15: F0 exit on the real corpus (read-only, through 003's in-memory snapshots):
   - `TWulfZ` is selected with an auto match (cfg prefix);
   - `""`, `W`, `w`, `Wulf`, `s`, `Madeline`, `Klinsx` and `StevenS` are unselected with `autoMatch = null`;
   - the self profile holds exactly the auto-selected aliases.
   → `WOLLUF_CORPUS="/mnt/e/Games/osu!" cargo nextest run -p wolluf-app --run-ignored only -E 'test(players_corpus_selection)'`.
-- [ ] AC16: The layer rules hold (no `rusqlite` in app, no new internal edge) → `cargo xtask check-layers`. `cargo clippy --workspace --all-targets -- -D warnings` is clean.
-- [ ] AC17: ADR 0005 records the R3 amendment with the R2 evidence, and architecture §5.6 and §8 describe the session-user rule with no tiers → `grep -q 'session user' docs/architecture.md && grep -q 'session user' docs/adr/0005-*.md && ! grep -qiE 'probably you|tiers pre-applied|jaro-winkler' docs/architecture.md CLAUDE.md`.
+- [x] AC16: The layer rules hold (no `rusqlite` in app, no new internal edge) → `cargo xtask check-layers`. `cargo clippy --workspace --all-targets -- -D warnings` is clean.
+- [x] AC17: ADR 0005 records the R3 amendment with the R2 evidence, and architecture §5.6 and §8 describe the session-user rule with no tiers → `grep -q 'session user' docs/architecture.md && grep -q 'session user' docs/adr/0005-*.md && ! grep -qiE 'probably you|tiers pre-applied|jaro-winkler' docs/architecture.md CLAUDE.md`.
 
 ## Risks / open questions
 - **Resolved (user decision 2026-09-28):** no heuristic suggestions. Only the session user is auto-selected (R3, R5); the `distinct_nickname` question is moot. Cost: a user with many offline names ticks them by hand once, and decisions persist.
@@ -270,3 +270,26 @@ All DTOs live in `app::features::players::dto`, derive `serde` (camelCase) + `sp
 - Selection is per person, over all keymodes together; counts per keymode are informational only.
 
 ## Deviations (filled at close)
+Closed 2026-09-28. All tasks and ACs pass.
+
+**AC15, pilot result (corpus run 2026-09-28):** `TWulfZ` 3,036 plays, cfg prefix, selected; `TWulfZasdasdasd d jSS||` 27 plays, cfg equal, selected; the self profile holds exactly these two. Unselected with `autoMatch = null`: `""` 1,381, `W` 362, `Madeline` 68, `s` 62, `w` 33, `Klinsx` 31, `Wulf` 10, `StevenS` 1. AC15's text omits the cfg-string alias; the F0 index exit table expects it to be auto, and the test asserts it as Equal and selected when present.
+
+**Open inconsistency:** the `non_mania` keymode bucket is always 0, because 003's ingest skips mode ≠ 3 (the pilot's 19 std plays under `""` never reach the ledger). Needs a spec decision: fill it from the snapshot, or drop the bucket.
+
+**Domain (T3–T7):**
+- T5: `PlayFact` uses `played_at: UnixUs` instead of `t: TimeUs` (conventions reserve `TimeUs` for map time); `compute` takes `&[AliasId]`.
+- T4: `AliasSelection.auto_match` is reported even when a decision overrides it, and rows sort by having an auto match rather than by being selected, so a `not_me` decision neither reorders rows nor drops the chip. `selected` follows R6/R7 exactly. Extra test `linked_account_matches_after_cfg`.
+- T7: the scope golden is an insta snapshot under `crates/app/src/features/players/snapshots/`, not `fixtures/golden/players/` (outside the lane). The bytes and hash `0bcdcc78…0873` are also pinned as constants and were checked with an independent Python blake3. `resolve` takes an extra `all_aliases` slice (All players is a unit variant). All players defaults to merged. Game is fixed to `osu_stable`.
+
+**Service and IPC (T8–T11):**
+- T8–T10 share files and landed as one commit (`427dbad`) after a runner commit (`4622642`). The service returns domain types; T11 maps them to DTOs.
+- An alias in an `other` profile is never auto-added to self, even when it matches the login (keeps self and other disjoint when the login changes). The spec is silent here.
+- `create_profile`/`set_profile_aliases` return entries with 7K scopes (their inputs carry no keymode). Duplicate ids → `INVALID_INPUT`; self/other overlap → `CONFLICT` with `args.profileIds`.
+- Added message key `players.error.invalid_keymode`: `players_list_profiles` takes `keymode: u32` and validates it, so bad input is a structured `INVALID_INPUT` rather than a Tauri deserialization error.
+- **AC13:** `dto_shape` does not snapshot the TypeScript export. In specta rc.25 serde renames are applied by `specta_serde::Format`, and `specta-serde` is not pinned at the root, so an app-side TS snapshot would show snake_case fields. The test exports every players DTO with specta-typescript (checks success and no `bigint`; a temporary `u64` field proved it fails) and snapshots the serde JSON wire. The real TS shape is covered by the committed `bindings.ts` and the desktop drift test. `specta-typescript` is a new dev-dep of wolluf-app.
+- Input DTOs travel as one Tauri argument named `input`. `ScopeDto` is `{scopeHash, aliasIds, keymode}` only.
+
+**UI (T12–T13):**
+- The `not_me` rule is "the backend had the row selected and it is now unticked", which is Behaviour 4 in wizard mode and keeps settings mode coherent. One `IdentityWizard` serves both routes (`mode="wizard"|"settings"`). Wizard `done` navigates to `/` (F0 has no per-profile route).
+- Before navigating, the wizard invalidates `["setup","status"]` itself, because `players_decide_alias` emits `DataChanged{players}` only.
+- The three T13 test files share `scopeControls.testkit.tsx`. `validateGlobalSearch` always returns all three keys (set to `undefined` when invalid) because TanStack merges validated params over raw ones.

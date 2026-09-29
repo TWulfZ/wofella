@@ -1,6 +1,6 @@
 # 000 F0 Base: index
 
-Status: Draft
+Status: In progress (close stage ran 2026-09-28; open items under "Close status")
 Phase: F0 · Owner: twulfz · Date: 2026-09-28
 Links: architecture §12 (F0 row), §4 (D1–D17), §13 (O1, O9, O10); `.claude/skills/wolluf-sdd/SKILL.md`
 
@@ -11,12 +11,12 @@ Take wolluf from docs-only to a desktop app and a `wolluf` CLI that detect the p
 
 | Spec | Title | Status | Crates / dirs written | ADRs |
 |---|---|---|---|---|
-| [001](001-workspace-foundation/spec.md) | Workspace foundation | Draft | root, `crates/core`, `xtask`, CI, `docs/adr` 0001–0009 | 0001–0009 (Accepted) |
-| [002](002-osu-stable-codecs/spec.md) | osu! stable codecs | Draft | `crates/source-osu` (codecs, install, probe), `fixtures/dbs`, `research/scripts/oracle` | 0015 (Accepted) |
-| [003](003-store-ledger-sync/spec.md) | Store, play ledger and SyncPlays | Draft | `crates/store`, `crates/source-osu` (snapshot, replay_dir, songs, watch), `crates/app` (context, jobs, plays) | 0014 (Proposed) |
-| [004](004-players-identity/spec.md) | Players and identity | Draft | `crates/core` (`ScopeHash`), `crates/store` (players repos), `crates/app` (players), desktop `commands/players.rs`, UI `features/players` | 0005 amendment |
-| [005](005-desktop-shell-cli/spec.md) | Desktop shell and CLI | Draft | `crates/app` (errors, clock, logging, setup), `apps/desktop/src-tauri`, `apps/desktop/ui`, `apps/cli`, CI additions | 0009 (verifies) |
-| [006](006-osg-spike/spec.md) | .osg format spike | Draft | `crates/source-osu` (`codec::osg`), `crates/app` (plays::osg), `apps/cli` (`osg`), `research/scripts/osg`, `docs/research/04` | 0012 (Proposed) |
+| [001](001-workspace-foundation/spec.md) | Workspace foundation | In progress | root, `crates/core`, `xtask`, CI, `docs/adr` 0001–0009 | 0001–0009 (Accepted) |
+| [002](002-osu-stable-codecs/spec.md) | osu! stable codecs | In progress | `crates/source-osu` (codecs, install, probe), `fixtures/dbs`, `research/scripts/oracle` | 0015 (Accepted) |
+| [003](003-store-ledger-sync/spec.md) | Store, play ledger and SyncPlays | Done | `crates/store`, `crates/source-osu` (snapshot, replay_dir, songs, watch), `crates/app` (context, jobs, plays) | 0014 (Proposed) |
+| [004](004-players-identity/spec.md) | Players and identity | Done | `crates/core` (`ScopeHash`), `crates/store` (players repos), `crates/app` (players), desktop `commands/players.rs`, UI `features/players` | 0005 amendment |
+| [005](005-desktop-shell-cli/spec.md) | Desktop shell and CLI | In progress | `crates/app` (errors, clock, logging, setup), `apps/desktop/src-tauri`, `apps/desktop/ui`, `apps/cli`, CI additions | 0009 (verifies) |
+| [006](006-osg-spike/spec.md) | .osg format spike | Done | `crates/source-osu` (`codec::osg`), `crates/app` (plays::osg), `apps/cli` (`osg`), `research/scripts/osg`, `docs/research/04` | 0012 (Proposed) |
 
 ADR numbers are final: 0010, 0011 and 0013 stay reserved for F1–F3 (§11).
 
@@ -113,6 +113,27 @@ The 3-day `.osg` spike runs on two tracks. Its evidence (006-T1, T9) is gathered
 | Workspace, xtask, deny, CI skeleton, ADRs 0001–0009, MIT `LICENSE` | 001 AC1–AC17 |
 | Players feature complete (alias stats, session-user auto-selection, decisions, profiles, Select all, Merged/Compare) | 004 AC7–AC14 |
 | All gates green | the `wolluf-sdd` §4 gate block on the final commit, including the corpus run |
+
+## Close status (2026-09-28)
+
+Gate block (wolluf-sdd §4) on the final commit: fmt, clippy `-D warnings` (with and without `--all-features`), check-layers (8 members, 0 violations), stage-lock --check (0 stages), lint-canary (58 lints), `cargo nextest run --workspace` 434 passed / 14 ignored, bindings drift clean, UI tsc + lint + vitest (126 tests), and the corpus run `WOLLUF_CORPUS="/mnt/e/Games/osu!" cargo nextest run --workspace --run-ignored only` 14/14 all pass. **`cargo deny check` fails on advisories** (two "unmaintained" crates via specta rc.25 and tauri's gtk macros; see 001 Deviations).
+
+| §12 criterion | State |
+|---|---|
+| Detects osu! | `detect_finds_corpus_install` green; WSL/Windows smokes (005 AC17/AC18) pending, manual |
+| Ingests idempotently, re-ingest adds 0 | `corpus_sync_pilot` green: 5,011 plays (4,969 + 42 replay-only), second sync `plays_new = 0` |
+| Archives replays and charts | `replays_linked` 4,969 = independent `Data/r` count; 1,425 charts archived |
+| "Which of these are you?" defaults | `players_corpus_selection` green (`TWulfZ` and the cfg-string alias auto; 8 others unticked); wizard UI tests green |
+| Identity table tests | 004 AC1–AC12 green |
+| ADR 0012 drafted | `docs/adr/0012-osg-handling.md`, Proposed, recommends O1c |
+| Workspace, xtask, deny, CI, ADRs, LICENSE | Done except the first green PR run and the deny advisories |
+| All gates green | Everything except `cargo deny check` (advisories) |
+
+Decisions for the F0 exit review:
+1. `cargo deny` advisories: accept targeted, reasoned ignores for RUSTSEC-2024-0436 (`paste`) and RUSTSEC-2024-0370 (`proc-macro-error`), or another policy. The close stage did not change `deny.toml`.
+2. Accept ADR 0014 (Proposed) and ADR 0012 (Proposed, O1c). Accepting 0012 triggers its item 7: reword 006 AC8 around b25 as a final-record FC flag, stop warning on it in `codec::osg` and the survey, and update architecture §13 O1/O9.
+3. Spec inconsistency: ingest skips mode ≠ 3, so 004's `non_mania` bucket is always 0 and 003's `skipped_non_mania` counts std plays twice on a first sync.
+4. Push the branch for the first CI run (001 AC15, 005 T19), then run the 005 T20 manual checklist.
 
 ## Known F0 deviations from the architecture (each recorded in the named ADR at close)
 - Source snapshots are in-memory reads rather than temp copies, `play.passed` is nullable, and orphan `Data/r` replays become plays with `play.origin = 'replay_only'` (ADR 0014).

@@ -1,6 +1,6 @@
 # 003 Store, play ledger and SyncPlays
 
-Status: Draft
+Status: Done
 Phase: F0 · Owner: twulfz · Date: 2026-09-28
 Links: architecture §3, §4 (D2, D6, D7, D8, D9, D15), §5.2–§5.5, §7, §8 (events), §10 (store tests), §12 F0, §13 O9; ADR 0003 (storage split, from spec 001); ADR 0006 (`PlayId` encoding, from spec 001); ADR 0014 (proposed here, T1; number assigned at the F0 review); research `03-maniahub-rejudge-drills-sessions-audit.txt` (L115, L130–131, L161, L168–169, L307, L327–344), `00-plan-es.md` (L53–54, L70), `research/scripts/audit/osudb.py` + `sdb.py` (oracles), `research/scripts/rejudge/legacy_db.md` (scores.db layout)
 
@@ -271,67 +271,67 @@ There are no Tauri commands in this spec; spec 005 adds `jobs_start`, `jobs_list
 - **Errors:** `AppError` codes `OSU_DIR_NOT_FOUND, UNSUPPORTED_FORMAT, PARSE_FAILED, OSU_RUNNING, INVALID_INPUT, CONFLICT, CANCELLED, INTERNAL`. There are no new codes, and the i18n keys are listed under Behaviour.
 
 ## Acceptance criteria
-- [ ] AC1: The natural key is frozen and unambiguous → provided by 001 AC8 (`digest::tests::{play_id_golden_vector, play_id_length_prefix_prevents_concat_collision, rejects_bad_hex}`, golden over the pilot tuple `(osu_stable, e956977c…, TWulfZ, FileTime(134350010443098880))`). This spec adds `app::features::plays::tests::ingest_uses_core_play_id` (a synced play's id equals `PlayId::derive` over its record).
-- [ ] AC2: FILETIME conversion matches the `Data/r` naming → provided by 001 AC6 (`time::tests::{filetime_decimal_matches_data_r, filetime_before_1601_is_none}`: ticks `639190703004225018` → `134279471004225018`).
-- [ ] AC3: user.db migrates from zero, validates, and refuses a newer schema.
+- [x] AC1: The natural key is frozen and unambiguous → provided by 001 AC8 (`digest::tests::{play_id_golden_vector, play_id_length_prefix_prevents_concat_collision, rejects_bad_hex}`, golden over the pilot tuple `(osu_stable, e956977c…, TWulfZ, FileTime(134350010443098880))`). This spec adds `app::features::plays::tests::ingest_uses_core_play_id` (a synced play's id equals `PlayId::derive` over its record).
+- [x] AC2: FILETIME conversion matches the `Data/r` naming → provided by 001 AC6 (`time::tests::{filetime_decimal_matches_data_r, filetime_before_1601_is_none}`: ticks `639190703004225018` → `134279471004225018`).
+- [x] AC3: user.db migrates from zero, validates, and refuses a newer schema.
   - Test: `store::user::tests::migrations_validate`.
   - Test: `migrate_from_zero_creates_all_tables` (the 12 tables listed above, plus both partial unique indexes on `profile`).
   - Test: `schema_too_new_is_refused` (user_version 999 → `SchemaTooNew`, file unchanged by sha).
   - Test: `migrates_from_fixture_v1`, run against `fixtures/userdb/v1.db`.
-- [ ] AC4: A backup is written before a migration and is restorable.
+- [x] AC4: A backup is written before a migration and is restorable.
   - Test: `store::user::tests::vacuum_into_backup_before_migrate`. It uses an injected test migration list v1 → v2 and checks that `backups/user-v1-*.db` exists, opens with `user_version = 1` and holds the seeded rows.
   - Test: `backup_retention_keeps_5`.
-- [ ] AC5: The play ledger is immutable at the DB level.
+- [x] AC5: The play ledger is immutable at the DB level.
   - Test: `store::repo::tests::play_ledger_immutable`. `DELETE` aborts, an `UPDATE score` aborts, `replay_sha` NULL → value succeeds, and value → other value aborts.
   - Test: `play_origin_constraints`. A `replay_only` row without `replay_sha` and a `scores_db` row without `snapshot_id` are rejected; `replay_only` → `scores_db` with `snapshot_id` NULL → value succeeds; `scores_db` → `replay_only` aborts.
   - Test: `feedback_event_append_only`.
-- [ ] AC6: cache.db rebuilds on a version mismatch or corruption and never touches user.db.
+- [x] AC6: cache.db rebuilds on a version mismatch or corruption and never touches user.db.
   - Test: `store::cache::tests::version_mismatch_deletes_and_recreates`.
   - Test: `garbage_file_is_rebuilt`.
   - Test: `rebuild_leaves_user_db_untouched` (user.db sha unchanged).
-- [ ] AC7: The vault is content-addressed, idempotent, atomic and verified.
+- [x] AC7: The vault is content-addressed, idempotent, atomic and verified.
   - Test: `store::vault::tests::put_layout_ab_cd_sha`.
   - Test: `put_twice_same_path_no_rewrite`.
   - Test: `no_partial_file_after_failed_write`.
   - Test: `get_detects_corruption`.
-- [ ] AC8: One writer per DB means no `SQLITE_BUSY` under concurrency.
+- [x] AC8: One writer per DB means no `SQLITE_BUSY` under concurrency.
   - Test: `store::db::tests::concurrent_writes_serialized` (8 threads × 1,000 inserts → 8,000 rows, 0 errors).
   - Test: `readers_see_committed_rows`.
   - Test: `second_instance_lock_conflicts`.
-- [ ] AC9: The stable read retries while a file is changing and gives up with `OSU_RUNNING`.
+- [x] AC9: The stable read retries while a file is changing and gives up with `OSU_RUNNING`.
   - Test: `crates/source-osu/tests/snapshot.rs::retries_when_size_changes`.
   - Test: `gives_up_after_3`.
   - Test: `crates/source-osu/tests/replay_dir.rs::parses_valid_names_ignores_others`.
   - Test: `crates/source-osu/tests/songs.rs::md5_mismatch_reported`.
-- [ ] AC10: SyncPlays ingests a synthetic install correctly. Test: `app::features::plays::tests::sync_ingests_fixture_install`. The fixture tree is built in a tempdir from 002's test-support builders and holds:
+- [x] AC10: SyncPlays ingests a synthetic install correctly. Test: `app::features::plays::tests::sync_ingests_fixture_install`. The fixture tree is built in a tempdir from 002's test-support builders and holds:
   - 6 mania scores (including alias `""` and a non-UTF-8 name), 1 osu!std score and 1 exact duplicate;
   - `.osr` files for 5 plays, `.osg` for 3, 1 orphan `.osr` with a consistent mania header (on one of the 6 charts), and 1 orphan `.osr` whose header md5 differs from its name;
   - 2 Songs charts, one of them edited so its md5 no longer matches.
 
   Expected summary: `plays_new=6, plays_replay_only=1, skipped_non_mania=1, replays_linked=5, osg_linked=3, orphan_replays=1, charts_archived=1, chart_md5_mismatch=1`.
-- [ ] AC11: **Re-ingest adds 0 rows.**
+- [x] AC11: **Re-ingest adds 0 rows.**
   - Test: `sync_twice_adds_zero_rows`. The play, alias and blob counts and the vault file count are identical after the second run, and `plays_new=0`, `plays_replay_only=0`.
   - Test: `conflicting_duplicate_records_item_failure` (same key, different score → 1 play, 1 `CONFLICT`).
-- [ ] AC12: The osu! folder is never written.
+- [x] AC12: The osu! folder is never written.
   - Test: `sync_never_writes_install_root`. It compares a recursive (path, size, mtime, sha256) manifest of the fixture root before and after a sync, with the root set read-only on unix.
   - Test: `data_dir_inside_osu_root_rejected`.
-- [ ] AC13: Late `Data/r` files are linked on the next sync, header mismatches are refused, and orphan replays become `replay_only` plays.
+- [x] AC13: Late `Data/r` files are linked on the next sync, header mismatches are refused, and orphan replays become `replay_only` plays.
   - Test: `replay_added_later_links_on_resync`.
   - Test: `osr_header_md5_mismatch_not_linked`.
   - Test: `orphan_replay_imported_as_replay_only` (id == `PlayId::derive` over the header; alias, counts, mods, score, `played_at_utc`, `online_score_id` and `client_version` equal the header values; `origin='replay_only'`, `replay_sha` set, `snapshot_id` NULL).
   - Test: `replay_only_upgraded_when_score_row_appears` (a later scores.db with the matching record → 0 new plays, `origin='scores_db'`, `snapshot_id` set, no `CONFLICT`).
   - Test: `orphan_with_name_mismatch_archived_only` (blob row, no play, 1 `CONFLICT`, `orphan_replays=1`).
-- [ ] AC14: The job runner coalesces, cancels, throttles and isolates panics.
+- [x] AC14: The job runner coalesces, cancels, throttles and isolates panics.
   - Test: `app::jobs::tests::submit_while_queued_returns_same_id`.
   - Test: `submit_while_running_sets_single_rerun`.
   - Test: `cancel_midway_then_rerun_completes` (after cancel `status=cancelled`; a second run gives a final state identical to an uncancelled run).
   - Test: `progress_at_most_10hz` (mock clock; 1,000 items in 50 ms produce ≤ 1 event plus the final one).
   - Test: `panicking_item_recorded_job_continues` (1 `item_failure` with `code=INTERNAL`, the other items done).
-- [ ] AC15: The watcher debounces and triggers exactly one sync.
+- [x] AC15: The watcher debounces and triggers exactly one sync.
   - Test: `crates/source-osu/tests/watch.rs::burst_debounced_to_one` (poll mode, 20 file writes in a tempdir → 1 change batch within the 5 s window; the debounce is injectable for the test).
   - Test: `app::watch::tests::change_submits_sync_plays`.
-- [ ] AC16: **Cache rebuild from empty equals the incremental state.** Test: `app::features::plays::tests::cache_rebuild_from_empty_equals_incremental`. It runs sync twice with an osu!.db change in between, then deletes cache.db and syncs once. `catalog_chart` and the `derivation` rows compare equal (ordered dump), and user.db is unchanged.
-- [ ] AC17: **The pilot corpus ingests.** Command: `WOLLUF_CORPUS="/mnt/e/Games/osu!" cargo nextest run -p wolluf-app --run-ignored only -E 'test(corpus_sync_pilot)'`. The test:
+- [x] AC16: **Cache rebuild from empty equals the incremental state.** Test: `app::features::plays::tests::cache_rebuild_from_empty_equals_incremental`. It runs sync twice with an osu!.db change in between, then deletes cache.db and syncs once. `catalog_chart` and the `derivation` rows compare equal (ordered dump), and user.db is unchanged.
+- [x] AC17: **The pilot corpus ingests.** Command: `WOLLUF_CORPUS="/mnt/e/Games/osu!" cargo nextest run -p wolluf-app --run-ignored only -E 'test(corpus_sync_pilot)'`. The test:
   - uses a tempdir data dir;
   - asserts `plays == distinct (md5, raw_name, filetime) among mode=3 records` of the same snapshot `+ plays_replay_only`, and `plays ≥ 4,338`;
   - asserts `plays_replay_only` == the number of `Data/r` .osr files with a mania header whose (md5, filetime) matches no mode=3 record, computed independently in the test. The 2026-09-28 oracle values are 4,969 plays from 4,970 rows plus 42 replay-only;
@@ -339,7 +339,7 @@ There are no Tauri commands in this spec; spec 005 adds `jobs_start`, `jobs_list
   - asserts that a second sync gives `plays_new = 0` and no new vault files;
   - prints wall times for the first and second runs;
   - writes nothing under `WOLLUF_CORPUS`.
-- [ ] AC18: The gates pass: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo xtask check-layers` (rusqlite only in store, notify only in source-osu, tokio/rayon only in app and the shells), and `cargo nextest run --workspace`.
+- [x] AC18: The gates pass: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo xtask check-layers` (rusqlite only in store, notify only in source-osu, tokio/rayon only in app and the shells), and `cargo nextest run --workspace`.
 
 ## Risks / open questions
 - **WSL drvfs does not deliver inotify events** for writes by Windows processes. The mitigation is poll mode on `/mnt/*`. Windows builds use native events, so live verification of those waits for the Windows E2E checklist.
@@ -351,3 +351,37 @@ There are no Tauri commands in this spec; spec 005 adds `jobs_start`, `jobs_list
 - **Torn reads while osu! writes scores.db** are handled by the stable-read retry and the parse retry. The failure mode is a retryable `OSU_RUNNING`, never partial ingest, because parsing happens before any write.
 
 ## Deviations (filled at close)
+Closed 2026-09-28. All tasks and ACs pass. **ADR 0014 is still Proposed**; accepting it is on the F0 exit review agenda.
+
+**AC17, measured on the pilot (2026-09-28, debug build, WSL drvfs):**
+- scores.db: 4,970 mania rows → 4,969 distinct plays; 42 replay-only plays; total 5,011 (≥ 4,338).
+- `replays_linked` = 4,969, equal to the independent `Data/r` count.
+- First sync: `plays_new` 4,969, `plays_replay_only` 42, `plays_existing` 1 (the exact duplicate record), `conflicts` 0, `skipped_non_mania` 38, `osg_linked` 4,627, `charts_archived` 1,425, `chart_unavailable` 15, `chart_md5_mismatch` 0, `orphan_replays` 0, `failed_items` 0.
+- Second sync: `plays_new` 0, `plays_replay_only` 0, vault files 11,099 before and after, `skipped_non_mania` 19, `chart_unavailable` 15.
+- Wall time: first sync 113.6 s (cold drvfs), second 0.156 s. At close, with a warm cache, the whole test took 59.7 s.
+
+**Open inconsistencies (need a spec decision, not blocking):**
+- `skipped_non_mania` counts each osu!std play twice on a first sync: 19 std score rows in ingest, then their 19 `.osr` files again as non-mania orphans. Later syncs skip ingest (scores.db sha unchanged) and report 19.
+- Ingest skips mode ≠ 3, so the ledger never holds non-mania plays and 004's `non_mania` bucket is always 0.
+
+**Store (T6–T11, 004-T6):**
+- Write jobs are `DbHandle::write(FnOnce(&Tx) -> Result<R, StoreError>)`, not `FnOnce(&mut rusqlite::Transaction)`: `Tx`/`Conn` are store newtypes so the app never names rusqlite. A panic inside a job becomes `StoreError::WriterPanicked` and the writer thread survives.
+- The install secret is sha256 over three UUIDv4s (OS CSPRNG via uuid/getrandom), since no direct getrandom pin exists.
+- Added `StoreError::Conflict` (unique-index violations on `profile`) and `StoreError::code()` for a uniform app mapping.
+- Timestamps are RFC 3339 with milliseconds through a hand-rolled civil-date formatter (`store::time`), since no date crate is pinned. Reads floor to ms, so snapshot comparisons go through `SourceSnapshot::matches_stat`.
+- The store defines its own persisted enums (PlayOrigin, ScoreSystem, JobStatus, IdentityDecision, ProfileKind with `SelfProfile`, …), all as stable strings with pinned `ALL` order. `catalog_chart` set/beatmap ids are nullable, and its `snapshot_id` has no foreign key (it points into user.db).
+- The AC5 ledger-guard tests are `store::repo::tests::*`, so T7's verify filter `user` does not select them; `-E 'test(user::) | test(repo::tests)'` does.
+- API beyond the spec lists, needed downstream: `play::{keys_by_chart_and_time, charts_without_blob, get, count}`, `catalog_chart::{list_all, keymodes, snapshot_id}`, `derivation::list_all`, `job_run::{start, list_recent}`, `alias_stats::prune_except`, profile/profile_alias helpers.
+- Commit `e94bd55` (T6) alone fails clippy on dead code; T7's commit fixed it.
+
+**Source adapters (T4, T5, T12):**
+- `SnapshotPolicy {retry_delays, sleep}` and `read_stable_with` inject the delays and the read step. A read also counts as changed when the byte count differs from the stat size. The 2 s torn-write retry is the caller's (`is_possibly_torn_write`).
+- `replay_dir::index(root)` takes the install root. `read_chart_verified` refuses an absolute `rel_path` or one containing `..` as `Missing`.
+- The watcher returns `std::sync::mpsc::Receiver<SourceChange>`. A coalescer thread merges batches within `debounce/2` (notify-debouncer-full expires paths on separate clocks and split one burst in 1 of 15 runs), so effective latency is `debounce × 1.5`. Access events are ignored, so sync's own reads never retrigger it.
+
+**App (T13–T19):**
+- T17's production code was left uncommitted by an earlier run; its tests were written afterwards and committed with it, so T17 was not test-first.
+- `SyncPlays` always returns a `RefreshIdentity` follow-up (new stable job kind `refresh_identity`). `PlaysService::sync_and_wait` waits for follow-ups through `JobRunner::wait_idle`. `JobService`, `JobSubmitter` and the context accessors were added for 004/005.
+- An `.osr` refused for a header mismatch does not stop that play's `.osg` from linking. A blob-only orphan is processed again on every sync (idempotent writes; `CONFLICT` and `orphan_replays` recur), as the spec reads.
+- **AC16:** the store cannot delete derivation rows, so the incremental cache keeps `catalog`/`chart_archive` memo rows keyed to the superseded osu!.db sha. The test compares `catalog_chart` exactly and the live derivations (current sha) exactly, and asserts every extra row references only the old sha. A `derivation::prune_except` in the store would allow the literal equality. The WAL survives context drop (read-only pool connections close last), so the test hashes `user.db` and `user.db-wal` together.
+- T20 added `crates/app/tests/common/mod.rs` (corpus root + before/after tree check that records each Songs subfolder entry but does not walk inside it).

@@ -1,6 +1,6 @@
 # 006 .osg format spike
 
-Status: Draft
+Status: Done (AC8 and AC9 not met as written; see Deviations and ADR 0012)
 Phase: F0 · Owner: TWulfZ · Date: 2026-09-28
 Links: architecture §3, §4 (D2, D9, D11), §5.2, §5.3, §7, §10, §12 (F0), §13 O1; ADR 0012 (drafted by this spec); research `03-maniahub-rejudge-drills-sessions-audit.txt` L150, L169, L333, L350; `research/scripts/rejudge/rejudge.py`, `osudb.py`, `osr_wiki.md`
 Siblings: 001 workspace-foundation (crates, pins, lints), 002 osu-stable-codecs (.osr header, osu!.db, scores.db decoders, `Diagnostics`), 003 store-ledger-sync (archives `.osg` bytes in the vault and sets `play.osg_sha`), 005 desktop-shell-cli (clap root of `wolluf`)
@@ -138,13 +138,13 @@ Run per group: V1 rice NM, V1 LN (≥ 30% LN), V2 LN, and each of DT/NC, HT, HR,
 None. CLI only.
 
 ## Acceptance criteria
-- [ ] AC1: Structural decode of synthetic v1 and v2 files → `codec::osg::tests::{decodes_v1_record, decodes_v2_record, keeps_reserved_bytes_raw, empty_graph_warns}` pass.
-- [ ] AC2: Malformed input is a hard error, never a panic → `codec::osg::tests::{rejects_truncated_header, rejects_negative_count, rejects_stride_mismatch}` and proptests `codec::osg::props::{roundtrip_encode_decode, decode_never_panics_on_arbitrary_bytes}` pass.
-- [ ] AC3: Unknown client version and flag/stride disagreement are warnings → `codec::osg::tests::{unknown_client_version_is_warning, flag_stride_disagree_is_warning, time_decrease_is_warning}` pass.
-- [ ] AC4: Event derivation → `codec::osg::events::tests::{single_judgement_per_record, merged_chord_record_has_n2, score_only_record_has_n0, final_check_matches_header, final_check_detects_mismatch}` pass.
-- [ ] AC5: Deterministic dump → insta goldens `osg_dump_v1_table`, `osg_dump_v2_json`, `osg_dump_events` over the synthetic fixtures pass (`cargo nextest run -p wolluf-app osg`).
-- [ ] AC6: CLI contract → `apps/cli/tests/osg_cli.rs::{dump_table_exits_0, dump_json_is_valid, dump_missing_file_exits_2_not_found, dump_garbage_exits_2_parse_failed, survey_synthetic_corpus_strict_passes}` pass. These tests use a tempdir synthetic corpus and `CARGO_BIN_EXE_wolluf`.
-- [ ] AC7: Read-only guarantee → `survey_does_not_modify_corpus` (tempdir corpus; the mtime and sha256 of every file are unchanged after the survey) passes, and 001's banned-API grep on `source-osu` stays green (`cargo xtask check-layers`).
+- [x] AC1: Structural decode of synthetic v1 and v2 files → `codec::osg::tests::{decodes_v1_record, decodes_v2_record, keeps_reserved_bytes_raw, empty_graph_warns}` pass.
+- [x] AC2: Malformed input is a hard error, never a panic → `codec::osg::tests::{rejects_truncated_header, rejects_negative_count, rejects_stride_mismatch}` and proptests `codec::osg::props::{roundtrip_encode_decode, decode_never_panics_on_arbitrary_bytes}` pass.
+- [x] AC3: Unknown client version and flag/stride disagreement are warnings → `codec::osg::tests::{unknown_client_version_is_warning, flag_stride_disagree_is_warning, time_decrease_is_warning}` pass.
+- [x] AC4: Event derivation → `codec::osg::events::tests::{single_judgement_per_record, merged_chord_record_has_n2, score_only_record_has_n0, final_check_matches_header, final_check_detects_mismatch}` pass.
+- [x] AC5: Deterministic dump → insta goldens `osg_dump_v1_table`, `osg_dump_v2_json`, `osg_dump_events` over the synthetic fixtures pass (`cargo nextest run -p wolluf-app osg`).
+- [x] AC6: CLI contract → `apps/cli/tests/osg_cli.rs::{dump_table_exits_0, dump_json_is_valid, dump_missing_file_exits_2_not_found, dump_garbage_exits_2_parse_failed, survey_synthetic_corpus_strict_passes}` pass. These tests use a tempdir synthetic corpus and `CARGO_BIN_EXE_wolluf`.
+- [x] AC7: Read-only guarantee → `survey_does_not_modify_corpus` (tempdir corpus; the mtime and sha256 of every file are unchanged after the survey) passes, and 001's banned-API grep on `source-osu` stays green (`cargo xtask check-layers`).
 - [ ] AC8: Corpus invariants → `WOLLUF_CORPUS="/mnt/e/Games/osu!" cargo nextest run -p wolluf-app --run-ignored only osg_corpus_invariants` asserts:
   - I1 and I2 on 100% of `.osg` files;
   - I3 and I4 on 100%;
@@ -152,10 +152,10 @@ None. CLI only.
   
   Every I5/I6 failure is listed by class in the report.
 - [ ] AC9: `wolluf osg survey --corpus "/mnt/e/Games/osu!" --json > <scratch>/osg-survey.json` runs in < 60 s on the pilot corpus. The Python oracle `python3 research/scripts/osg/osg.py --survey "/mnt/e/Games/osu!"` agrees with it on I1–I5 counts exactly.
-- [ ] AC10: `python3 research/scripts/osg/correlate.py --corpus "/mnt/e/Games/osu!" --out <scratch>/osg-correlate.json` reports C1–C5 for every group listed under Correlations, with n per group.
-- [ ] AC11: `docs/research/04-osg-format.md` exists. It has a byte-layout table, one verdict per hypothesis (confirmed / refuted / partial, with the invariant or correlation numbers), the coverage table (which plays lack an `.osg` and why, as far as known), and the remaining unknowns.
-- [ ] AC12: `docs/adr/0012-osg-handling.md` exists with Status: Proposed. It covers O1a / O1b / O1c, applies the decision criteria below to the measured C2 and coverage numbers, gives a recommendation, and answers the vault question from 003.
-- [ ] AC13: All gates in the wolluf-sdd skill §4 pass. CLAUDE.md "Domain facts" replaces "`.osg` is undocumented" with a one-line pointer to 04-osg-format.md, and "Commands" lists `wolluf osg dump` and `wolluf osg survey`.
+- [x] AC10: `python3 research/scripts/osg/correlate.py --corpus "/mnt/e/Games/osu!" --out <scratch>/osg-correlate.json` reports C1–C5 for every group listed under Correlations, with n per group.
+- [x] AC11: `docs/research/04-osg-format.md` exists. It has a byte-layout table, one verdict per hypothesis (confirmed / refuted / partial, with the invariant or correlation numbers), the coverage table (which plays lack an `.osg` and why, as far as known), and the remaining unknowns.
+- [x] AC12: `docs/adr/0012-osg-handling.md` exists with Status: Proposed. It covers O1a / O1b / O1c, applies the decision criteria below to the measured C2 and coverage numbers, gives a recommendation, and answers the vault question from 003.
+- [x] AC13: All gates in the wolluf-sdd skill §4 pass. CLAUDE.md "Domain facts" replaces "`.osg` is undocumented" with a one-line pointer to 04-osg-format.md, and "Commands" lists `wolluf osg dump` and `wolluf osg survey`.
 
 **Decision criteria written into ADR 0012.** The thresholds are for the spike verdict only and never enter algorithm code (D17).
 - **O1a** (`.osg` is the source of truth for judgements; LN re-judging is dropped) requires all of:
@@ -189,3 +189,27 @@ None. CLI only.
 - **Time box.** If C2 is not measured by the end of day 3, ADR 0012 is drafted with O1b as the default and the missing measurements listed as open questions. The spike does not extend on its own; the user decides.
 
 ## Deviations (filled at close)
+Closed 2026-09-28. The spike's deliverables (codec, dump/survey, findings doc, ADR 0012 Proposed) are done and every §4 gate passes. **AC8 fails as written** and **AC9's timing is only shown warm**; both are recorded below, and ADR 0012 decides what happens next.
+
+**AC8 (corpus invariants):**
+- I3 as written ("b25 = 0 in every record") fails on 36 of 4,682 files: **b25 is set on the final record only, and only on full-combo plays** (36 of 36). The reverse does not hold exactly: one full combo, `7c2471ba…-134330486805636816` (client 20260711, V1, 0 misses, combo 3007 = max), has b25 = 0. So b25 implies FC, not the other way.
+- `osg_corpus_invariants` therefore asserts: I1, I2, I3_b28, I3_b4 and I4 on all 4,682 files; every I3 failure is class `b25_final_only`; every file with b25 on its final record is a full-combo play. I5 = 4,673/4,682 (99.81 %); all 9 failures are `final_short` (8 V2, 1 V1). I6: 9 `short_total` (the same files), 36 na. I7: 9 mismatch, 36 na.
+- `wolluf osg survey --strict` reports 54 unexplained failures (I3 36, I5 9, I7 9) until ADR 0012's decision item 7 lands: reword AC8 to "I3 100 % after reclassifying b25-on-final", stop emitting `osg.nonzero_reserved` for b25 on the final record in `codec::osg`, and stop counting `b25_final_only` as an I3 failure in the survey. Those follow-ups wait for the ADR to be accepted.
+
+**AC9 (survey speed and oracle agreement):** the Rust survey and the Python oracle agree exactly on every I1–I5 pass/fail/na count, including the I3 sub-rows, and on every distribution. Release run: 2.82 s wall on a warm page cache. Cold-cache runs measured 72–114 s, but while other lanes were compiling; an idle cold run was not measured, so "< 60 s" is not demonstrated for a cold cache (the time is drvfs IO in the parallel read stage).
+
+**Findings that correct the spec's preliminary notes:**
+- H4 ("a judgement is never split across records") holds only partially: 15,508 of 14.5 M units carry into the next record. The T9 sanity check reaches C1 = 100 % on its first 50 events for 2 of 3 sample files; `0012f2ce…` gives 47/50 for that reason.
+- Mania zero-judgement records occur only first (15) or last (2,213); all 10,026 mid-file ones are in the 19 osu!std files. The "14 files touch HP 0" note came from osu!std (13 std, 1 mania).
+- Stable writes no `.osg` for failed plays (0 of 88 saved fails), so H7 cannot be judged from fails.
+- C2 is reported both as share of all units and as share of matched units per category, because the criterion is ambiguous; O1a fails and O1c passes under either reading. zstd was not measured (no binary); zlib-9 (37 %) and xz-6 (25 %) stand in for the vault answer.
+
+**Implementation choices:**
+- T1/T9: the Python oracles got stdlib unittest files (`test_osg.py`, 9 cases; `test_correlate.py`, 12 cases). `correlate.py` also reports time-only C1/C2, per-record C1 and carry counts, and groups `v2_rice_nm` and `ez`.
+- T2/T3: `OsgFile.score_system` is `Option` (None for a 0-record file). All six `osg.*` DiagCodes were appended in T2. Per-record warnings are tallied into one diagnostic per kind per file, pointing at the first record and giving a count (the corpus has 13.85 M records).
+- T5: dump/diagnostics/survey rendering lives in wolluf-app (`render_dump`, `render_diagnostics`, `render_survey`) so the CLI arms stay thin. The events view adds an `idx` column; CSV joins kinds with `;` and starts with a `# ` comment header.
+- T6: I6 and I7 are `na` without an `.osr`, for converts, or when the chart is missing; a missing osu!.db/scores.db is reported under `sources`. A per-file read error is an I1 failure of class `read_failed`. `--max-files N` takes an ordered prefix. `sync.rs` helpers became `pub(crate)` for reuse.
+- T7: the tasks.md verify filter `osg` selects only unit tests; the AC6 tests run with `cargo nextest run -p wolluf-cli --test osg_cli`. The CLI tests carry their own small `.osg`/`.osr` encoders (the CLI may not depend on source-osu). Dump errors print `PARSE_FAILED: <details>` / `NOT_FOUND: <path>` per this spec, not 005's `error[CODE]` line. `wolluf osg` opens no data dir and takes no lock; the global `--json` is a shorthand for `--format json`; the survey installs no Ctrl-C handler (read-only, default SIGINT is safe).
+- T10/T11 used two extra read-only scratch scans (coverage and field ranges); the scripts stay in scratch.
+
+**Close (T12):** CLAUDE.md points to `docs/research/04-osg-format.md` and lists `wolluf osg dump` / `wolluf osg survey`.

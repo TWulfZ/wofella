@@ -1,6 +1,6 @@
 # 001 Workspace foundation
 
-Status: Draft
+Status: In progress (open: AC15 first PR run, AC14/AC17 `cargo deny check` advisories; see Deviations)
 Phase: F0 · Owner: twulfz · Date: 2026-09-28
 Links: architecture §3, §4 (D1–D3, D6, D9, D16, D17), §5.1, §5.5, §7 (errors), §10 (CI), §11, §12 (F0); ADRs 0001–0009 (written by this spec's tasks); research `03-maniahub-rejudge-drills-sessions-audit.txt` l.161/168 (Data/r FILETIME = ticks − offset), `01-landscape-verified.txt` l.63/76/106/119 (licences: slider LGPL, tosu LGPL, gosumemory GPL, Quaver MPL, prelude MIT).
 Sibling F0 specs: 002 osu-stable-codecs, 003 store-ledger-sync, 004 players-identity, 005 desktop-shell-cli, 006 osg-spike. They all build on this one.
@@ -100,22 +100,22 @@ Nothing exists yet but docs. Every other F0 spec needs a compiling Cargo workspa
 none. The `bindings` delegation contract for 005: a bin target `export-bindings` in `wolluf-desktop` that writes `apps/desktop/ui/src/ipc/bindings.ts`.
 
 ## Acceptance criteria
-- [ ] AC1: The workspace has exactly the 8 F0 members and builds → `cargo metadata --no-deps --format-version 1 | jq '.packages | length'` = 8; `cargo build --workspace --all-targets` passes.
-- [ ] AC2: Toolchain pinned → `rustc --version` in the repo prints `rustc 1.98.1`.
-- [ ] AC3: Format and lints clean → `cargo fmt --all --check`; `cargo clippy --workspace --all-targets -- -D warnings`.
-- [ ] AC4: Lint policy is live → `cargo xtask lint-canary` exits 0 (all expected lints fire, no unknown config key, no unresolved path); test `lint_canary::tests::canary_lints_match_root` keeps the canary's copied `[lints]` identical to the root.
-- [ ] AC5: Core ids → tests `id::tests::{parses_dotted_lowercase, rejects_uppercase_empty_and_long, from_static_in_const, serde_is_plain_string}` pass.
-- [ ] AC6: Core time/rate → tests `time::tests::{ms_floor_rounds_down_for_negatives, dotnet_ticks_unix_epoch_is_zero, filetime_epoch_is_zero, filetime_before_1601_is_none, filetime_roundtrip, filetime_decimal_matches_data_r}` (ticks `639190703004225018` → FileTime text `134279471004225018`) and `rate_zero_rejected` pass; proptest `time::props::filetime_ticks_bijective` passes.
-- [ ] AC7: Keymode/ColMask → tests `keymode::tests::{rejects_0_and_17, k7_has_7_columns}` and proptests `keymode::props::{mirror_is_involution, ops_stay_within_keymode, iter_is_ascending_and_matches_len}` pass.
-- [ ] AC8: Digests and ids → tests `digest::tests::{md5_hex_roundtrip, rejects_bad_hex, play_id_golden_vector, play_id_distinguishes_empty_alias, play_id_length_prefix_prevents_concat_collision}` pass (`""` and `"W"` give distinct ids; moving bytes between adjacent fields changes the id).
-- [ ] AC9: Version keys → tests `vkey::tests::{golden_vector, section_order_is_irrelevant, duplicate_section_rejected, any_field_change_changes_key}` pass.
-- [ ] AC10: Error codes are the closed §7 list → `error::tests::roundtrip_all` and insta golden `error_code_strings` (the ordered string list) pass.
-- [ ] AC11: Clock → `clock::tests::fixed_clock_set_and_advance` passes; `cargo tree -p wolluf-core -e normal --depth 1` lists only thiserror, serde, blake3.
-- [ ] AC12: Layer checker → `cargo xtask check-layers` exits 0 on the repo, and `cargo nextest run -p xtask` passes `check_layers::tests::{rejects_unlisted_crate, rejects_upward_edge, rejects_cli_to_store, rejects_cycle_in_layers_toml, rejects_tokio_in_domain_tree, rejects_rusqlite_outside_store, rejects_tokio_direct_in_store, rejects_std_fs_in_domain, rejects_braced_use_std_fs_in_domain, ignores_commented_tokens, rejects_file_create_in_source_osu, rejects_allow_disallowed_in_domain, rejects_non_workspace_dep, rejects_missing_workspace_lints}`.
-- [ ] AC13: Stage lock / bindings stubs → `cargo xtask stage-lock --check` exits 0 and prints the 0-stage line; tests `stage_lock::tests::{empty_lock_passes, malformed_lock_fails, unregistered_stage_fails}` and `bindings::tests::skips_without_export_bin` pass; `cargo xtask bindings` exits 0 with the skip line.
+- [x] AC1: The workspace has exactly the 8 F0 members and builds → `cargo metadata --no-deps --format-version 1 | jq '.packages | length'` = 8; `cargo build --workspace --all-targets` passes.
+- [x] AC2: Toolchain pinned → `rustc --version` in the repo prints `rustc 1.98.1`.
+- [x] AC3: Format and lints clean → `cargo fmt --all --check`; `cargo clippy --workspace --all-targets -- -D warnings`.
+- [x] AC4: Lint policy is live → `cargo xtask lint-canary` exits 0 (all expected lints fire, no unknown config key, no unresolved path); test `lint_canary::tests::canary_lints_match_root` keeps the canary's copied `[lints]` identical to the root.
+- [x] AC5: Core ids → tests `id::tests::{parses_dotted_lowercase, rejects_uppercase_empty_and_long, from_static_in_const, serde_is_plain_string}` pass.
+- [x] AC6: Core time/rate → tests `time::tests::{ms_floor_rounds_down_for_negatives, dotnet_ticks_unix_epoch_is_zero, filetime_epoch_is_zero, filetime_before_1601_is_none, filetime_roundtrip, filetime_decimal_matches_data_r}` (ticks `639190703004225018` → FileTime text `134279471004225018`) and `rate_zero_rejected` pass; proptest `time::props::filetime_ticks_bijective` passes.
+- [x] AC7: Keymode/ColMask → tests `keymode::tests::{rejects_0_and_17, k7_has_7_columns}` and proptests `keymode::props::{mirror_is_involution, ops_stay_within_keymode, iter_is_ascending_and_matches_len}` pass.
+- [x] AC8: Digests and ids → tests `digest::tests::{md5_hex_roundtrip, rejects_bad_hex, play_id_golden_vector, play_id_distinguishes_empty_alias, play_id_length_prefix_prevents_concat_collision}` pass (`""` and `"W"` give distinct ids; moving bytes between adjacent fields changes the id).
+- [x] AC9: Version keys → tests `vkey::tests::{golden_vector, section_order_is_irrelevant, duplicate_section_rejected, any_field_change_changes_key}` pass.
+- [x] AC10: Error codes are the closed §7 list → `error::tests::roundtrip_all` and insta golden `error_code_strings` (the ordered string list) pass.
+- [x] AC11: Clock → `clock::tests::fixed_clock_set_and_advance` passes; `cargo tree -p wolluf-core -e normal --depth 1` lists only thiserror, serde, blake3.
+- [x] AC12: Layer checker → `cargo xtask check-layers` exits 0 on the repo, and `cargo nextest run -p xtask` passes `check_layers::tests::{rejects_unlisted_crate, rejects_upward_edge, rejects_cli_to_store, rejects_cycle_in_layers_toml, rejects_tokio_in_domain_tree, rejects_rusqlite_outside_store, rejects_tokio_direct_in_store, rejects_std_fs_in_domain, rejects_braced_use_std_fs_in_domain, ignores_commented_tokens, rejects_file_create_in_source_osu, rejects_allow_disallowed_in_domain, rejects_non_workspace_dep, rejects_missing_workspace_lints}`.
+- [x] AC13: Stage lock / bindings stubs → `cargo xtask stage-lock --check` exits 0 and prints the 0-stage line; tests `stage_lock::tests::{empty_lock_passes, malformed_lock_fails, unregistered_stage_fails}` and `bindings::tests::skips_without_export_bin` pass; `cargo xtask bindings` exits 0 with the skip line.
 - [ ] AC14: Licence gate → `cargo deny check` exits 0; test `deny_config::tests::allowlist_is_exact` asserts the allowlist equals {MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, BSD-2-Clause, BSD-3-Clause, MPL-2.0, Zlib, ISC, Unicode-3.0, CC0-1.0} and contains no GPL/LGPL/AGPL id.
 - [ ] AC15: CI → `actionlint .github/workflows/ci.yml` is clean, and the first PR run of `ci` is green on ubuntu-24.04 and windows-2025 (link recorded under Deviations at close).
-- [ ] AC16: Docs and licence → `NOTICE`, `docs/conventions.md` exist; `LICENSE` is the MIT text and contains `Copyright (c) 2026 TWulfZ`; `cargo metadata --no-deps --format-version 1 | jq -c '[.packages[] | [.license, .publish]] | unique'` = `[["MIT",[]]]`; `ls docs/adr/000[1-9]-*.md | wc -l` = 9; each ADR has `Status: Accepted` and the four template headings (`grep -c '^## ' ≥ 4`).
+- [x] AC16: Docs and licence → `NOTICE`, `docs/conventions.md` exist; `LICENSE` is the MIT text and contains `Copyright (c) 2026 TWulfZ`; `cargo metadata --no-deps --format-version 1 | jq -c '[.packages[] | [.license, .publish]] | unique'` = `[["MIT",[]]]`; `ls docs/adr/000[1-9]-*.md | wc -l` = 9; each ADR has `Status: Accepted` and the four template headings (`grep -c '^## ' ≥ 4`).
 - [ ] AC17: Every gate command of `wolluf-sdd` §4 that exists after this spec runs clean locally from a fresh clone (fmt, clippy, check-layers, stage-lock --check, nextest, deny).
 
 ## Risks / open questions
@@ -130,3 +130,36 @@ none. The `bindings` delegation contract for 005: a bin target `export-bindings`
 - rustup auto-install from `rust-toolchain.toml` is not relied on in CI: the workflow runs `rustup toolchain install` explicitly.
 
 ## Deviations (filled at close)
+Closed 2026-09-28 by the F0 close stage. Status stays **In progress** because two items are open; everything else is done and green.
+
+**Open (blocks Done):**
+- **AC15, second half:** no branch has been pushed, so there is no PR run yet. `actionlint .github/workflows/ci.yml` is clean (actionlint 1.7.12 + shellcheck 0.11.0). The first green run link on ubuntu-24.04 and windows-2025 still has to be recorded here.
+- **AC14 / AC17, `cargo deny check`:** licences, bans and sources pass; **advisories fail** on two "unmaintained" notices with no safe upgrade: RUSTSEC-2024-0436 (`paste`, reached only through `specta =2.0.0-rc.25`) and RUSTSEC-2024-0370 (`proc-macro-error`, reached only through tauri 2.12's gtk/glib macros on Linux). Both arrived with the desktop dependency tree in Stage 4. Changing the advisory policy (for example targeted `[advisories] ignore` entries with reasons in `deny.toml`) is a user decision; the close stage did not change it. CI's `deny` job fails the same way until it is decided.
+
+**T1 (skeleton):**
+- `LICENSE` moved to T15 so two lanes never wrote the same path. `toml = "1.1.6"` resolves to crates.io's `1.1.6+spec-1.1.0` (build metadata is ignored when matching).
+- Workspace pins carry every feature the sibling specs need (specta/tauri-specta `derive`, clap `derive, env`, tracing-subscriber `json, env-filter`, rusqlite `bundled`, sysinfo `system` only, …), so members never add features locally. `winreg` is pinned without a target; members declare it under `cfg(windows)`.
+- Root also has `exclude = ["xtask/lint-canary"]`; `crates/core` got `insta` as a dev-dep in T1 so the profile override for insta/similar matches a package.
+
+**T2–T8 (core):**
+- Encodings go past the spec wording and are frozen in ADR 0006: the domain tag is raw (no length prefix); every byte string, fixed-size ones included, is `u32 LE length + bytes`; integers are fixed-width LE. `VersionKey` writes a **u32 section count** after `VERSION` so the encoding is unambiguous. Goldens (checked with an independent Python blake3): pilot PlayId `f3ad5bfc…c6b7`, empty-alias PlayId `f356a414…2a63`, VersionKey `55d34b84…ae68`.
+- `TimeUs::from_ms` takes `i32` (osu! stores ms as 32-bit, so it is lossless). Hex parsing accepts lowercase at the exact length only; `FileTime::parse_decimal` accepts canonical digits only, so `parse(s).to_string() == s`. `FileTime::new(i64)` returns `Option`.
+- `ColMask` constructors take the `Keymode` and return `Result<_, CoreError::ColumnOutOfRange>`; `bits()`, `is_empty()` and `ColIter` added.
+- All hex digests share one `hex_bytes!` macro (Display/FromStr/serde as lowercase hex, not only `ScopeHash`); `Game` and `ErrorCode` share `stable_str_enum!`.
+- `FieldHasher` saturates a byte-string length above `u32::MAX`, keeping `PlayId::derive` infallible (injectivity is only lost above 4 GiB).
+- Extra tests: `time_arithmetic`, `filetime_to_ticks_inverts`, `column_ops_reject_out_of_range`, `mirror_maps_leftmost_to_rightmost`, `game_stable_strings`, `vkey::tests::serde_is_hex_string`. 004-T2's tests sit in `digest::tests::scope_hash::*` so the `test(scope_hash)` filter selects them.
+
+**T9–T13 (xtask, deny):**
+- `layers.toml` gives every crate above core an explicit direct edge to `wolluf-core`. L5 restricted deps apply to every dependency kind, dev-deps included.
+- The L6 banned-API scan blanks string-literal contents as well as comments, otherwise xtask flags its own fixtures.
+- **lint-canary is stricter than AC4:** it expects the 3 base lints plus every path in `clippy.toml` (58 checks), because clippy 1.98.1 stays silent on a typo'd primitive path such as `f64::powfx`. Adding a path to `clippy.toml` now requires a matching call in `xtask/lint-canary/src/lib.rs` and a refreshed recording.
+- `stage_versions.lock` (root) was written by `cargo xtask stage-lock` in T11. Commit `bfb1029` (T11) alone fails clippy; `531d7de` (T12) fixed it.
+
+**T14 (CI):**
+- The `ui` job's `hashFiles` guard is per step: actionlint rejects it at job level ("calling function hashFiles is not allowed here").
+- The `lint` job also installs the Tauri apt deps (`cargo xtask bindings` builds `wolluf-desktop`). The toolchain comes from `rust-toolchain.toml` via a bare `rustup toolchain install`; only `cargo-deny-action` needs `rust-version: "1.98.1"` hardcoded.
+- Concurrency cancels in-progress runs for pull requests only. The bindings drift step also runs `git ls-files --error-unmatch` so an untracked generated file cannot pass.
+
+**T15–T24 (docs):** `docs/conventions.md` adds an ADR amendment rule (dated `## Amendment` section; reversal = new ADR). ADR 0004 got a wording fix in `68d2678`. 005-T1 needed no amendment.
+
+**Close:** the lanes left `Cargo.lock` uncommitted from Stage 2 on; it was committed at close (`2c9eb7e`), so the committed tree now resolves exactly what the gates ran. Gate results on that tree: fmt, clippy (with and without `--all-features`), check-layers (8 members, 0 violations), stage-lock (0 stages), lint-canary (58 lints), nextest (434 passed, 14 skipped as ignored corpus tests) all pass; `cargo deny check` fails advisories as above.
