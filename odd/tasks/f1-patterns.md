@@ -40,7 +40,7 @@ Deliverable 2 of F1 (architecture §3 patterns crate, §9.2, §12 F1 row). Rules
 ## Tasks
 - [x] T1: `wolluf-patterns` skeleton: `ChartView` + `RowFeat` primitives (press/release/held masks, jacks, per-hand masks from Layout, gaps, direction/roll, snap from red lines, density), `PatternRule` trait, `Candidate`, `PatternParams` (Default + canonical hash). Fetch the Interlude `Patterns.fs` / primitives constants from YAVSRG source (MIT) for reference. Route: delegated. Tier: medium. Commit: `feat(patterns): add ChartView primitives, rule trait and params`
 - [x] T2: jack rules (minijack, longjack, chordjack, anchor). Route: delegated. Tier: medium. Commit: `feat(patterns): add jack rules`
-- [ ] T3: stream rules (single, jumpstream, handstream, chordstream light/dense, roll, trill, jumptrill, split_trill, bracket, chordbracket). Route: delegated. Tier: medium. Commit: —
+- [x] T3: stream rules (single, jumpstream, handstream, chordstream light/dense, roll, trill, jumptrill, split_trill, bracket, chordbracket). Route: delegated. Tier: medium. Commit: `feat(patterns): add stream rules`
 - [ ] T4: tech + speed rules (irregular, hand_imbalance, thumb, burst) and LN rules (density, chord, hybrid, shield, inverse gap, release timing). Route: delegated. Tier: medium. Commit: —
 - [ ] T5: segmenter: merge, min/max length, overlap resolution by priority, purity, secondary tags. Route: delegated. Tier: medium. Commit: —
 - [ ] T6: engine `patterns` stage + golden + vkey; store `segment` table; app pass in IndexLibrary + query; CLI `--segments`; corpus test. Route: delegated. Tier: high (persisted encoding + vkey). Commit: —
@@ -55,5 +55,16 @@ Deliverable 2 of F1 (architecture §3 patterns crate, §9.2, §12 F1 row). Rules
   - anchor = the same column every 2nd press row for ≥ 4 hits, excluding trills.
   - Overlap to settle in T5: a chord repeated unchanged yields both chordjack and per-column longjacks.
 
+- 2026-09-29 T3: RED unresolved rule types → GREEN 96/96; workspace 748 passed. A shaped proptest generator was added so every rule actually fires.
+- Hand-dependent rules verified under both 313 layouts: split_trill and bracket (MinaCalc `is_bracket` per hand bucket, thumb follows the layout).
+- Stream gap: ≤ 250 ms and ≤ ½ beat.
+- Overlaps T5 must resolve by priority:
+  - split_trill > trill/jumptrill;
+  - bracket ⊃ trills;
+  - roll vs single;
+  - jumptrill vs chordstreams;
+  - chordbracket inside chordstream_light;
+  - nested same-family runs.
+
 ## Next step
-T3: stream rules (same writer continues).
+T4: tech/speed + LN rules (same writer continues).

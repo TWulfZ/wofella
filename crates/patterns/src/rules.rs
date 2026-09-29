@@ -1,22 +1,60 @@
 //! The rule registry. Rules live in `rules/<id>.rs`, one file each (architecture §9.2).
 
 mod anchor;
+mod bracket;
+mod chordbracket;
 mod chordjack;
+mod chordstream_dense;
+mod chordstream_light;
 mod common;
+mod handstream;
+mod jumpstream;
+mod jumptrill;
 mod longjack;
 mod minijack;
+mod roll;
+mod single;
+mod split_trill;
+mod trill;
 
 pub use anchor::Anchor;
+pub use bracket::Bracket;
+pub use chordbracket::Chordbracket;
 pub use chordjack::Chordjack;
+pub use chordstream_dense::ChordstreamDense;
+pub use chordstream_light::ChordstreamLight;
+pub use handstream::Handstream;
+pub use jumpstream::Jumpstream;
+pub use jumptrill::Jumptrill;
 pub use longjack::Longjack;
 pub use minijack::Minijack;
+pub use roll::Roll;
+pub use single::Single;
+pub use split_trill::SplitTrill;
+pub use trill::Trill;
 
 use crate::rule::PatternRule;
 
 /// Fixed order: overlap resolution falls back to it after priority and strength, so appending
 /// is safe and reordering changes outputs. Taxonomy order within each axis.
 pub fn all() -> &'static [&'static dyn PatternRule] {
-    &[&Minijack, &Chordjack, &Longjack, &Anchor]
+    &[
+        &Minijack,
+        &Chordjack,
+        &Longjack,
+        &Anchor,
+        &Single,
+        &Jumpstream,
+        &Handstream,
+        &ChordstreamLight,
+        &ChordstreamDense,
+        &Roll,
+        &Trill,
+        &Jumptrill,
+        &SplitTrill,
+        &Bracket,
+        &Chordbracket,
+    ]
 }
 
 #[cfg(test)]
@@ -154,6 +192,17 @@ mod tests {
                 "regular.jack.chordjack",
                 "regular.jack.longjack",
                 "regular.jack.anchor",
+                "regular.stream.single",
+                "regular.stream.jumpstream",
+                "regular.stream.handstream",
+                "regular.stream.chordstream_light",
+                "regular.stream.chordstream_dense",
+                "regular.stream.roll",
+                "regular.stream.trill",
+                "regular.stream.jumptrill",
+                "regular.stream.split_trill",
+                "regular.stream.bracket",
+                "regular.stream.chordbracket",
             ]
         );
         assert!(all().iter().all(|r| r.version() >= 1));
@@ -195,8 +244,30 @@ mod props {
                 meter: 4,
             },
         });
+        let scattered = prop::collection::vec(note, 0..200);
+        // Alternations of disjoint masks and repeated shapes, which scattered notes almost
+        // never form (jumptrills, dense chordstreams, brackets).
+        let segment = (1u16..128, any::<u16>(), 2usize..9, any::<bool>());
+        let shaped = prop::collection::vec(segment, 1..12).prop_map(|segments| {
+            let mut notes = Vec::new();
+            let mut row = 0i64;
+            for (a, raw, len, alternate) in segments {
+                let rest = !a & 0x7f;
+                let b = if rest & raw == 0 { rest } else { rest & raw };
+                for step in 0..len {
+                    let mask = if alternate && step % 2 == 1 { b } else { a };
+                    notes.extend((0u8..7).filter(|c| mask & (1 << c) != 0).map(|col| Note {
+                        t: TimeUs(row * 80_000),
+                        col,
+                        kind: NoteKind::Tap,
+                    }));
+                    row += 1;
+                }
+            }
+            notes
+        });
         (
-            prop::collection::vec(note, 0..200),
+            prop_oneof![scattered, shaped],
             prop::collection::vec(red, 0..3),
             0usize..5,
         )
@@ -249,7 +320,7 @@ mod props {
         }
 
         #[test]
-        fn jack_rules_are_mirror_symmetric((notes, timing, preset) in arb_input()) {
+        fn hand_agnostic_rules_are_mirror_symmetric((notes, timing, preset) in arb_input()) {
             let flipped: Vec<Note> = notes.iter().map(|n| Note { col: 6 - n.col, ..*n }).collect();
             let chart = build(notes, timing.clone());
             let mirror_chart = build(flipped, timing);
@@ -257,8 +328,28 @@ mod props {
             let params = PatternParams::default();
             let a = ChartView::new(&chart, &layout, &params).unwrap();
             let b = ChartView::new(&mirror_chart, &layout, &params).unwrap();
-            let jack_rules: [&dyn PatternRule; 4] = [&Minijack, &Chordjack, &Longjack, &Anchor];
-            for rule in jack_rules {
+            let agnostic: [&dyn PatternRule; 13] = [
+                &Minijack, &Chordjack, &Longjack, &Anchor, &Single, &Jumpstream, &Handstream,
+                &ChordstreamLight, &ChordstreamDense, &Roll, &Trill, &Jumptrill, &Chordbracket,
+            ];
+            for rule in agnostic {
+                let mut expected: Vec<Candidate> = rule.detect(&a, &params).iter().map(mirrored).collect();
+                expected.sort();
+                prop_assert_eq!(rule.detect(&b, &params), expected, "{}", rule.id());
+            }
+        }
+
+        #[test]
+        fn every_rule_is_mirror_symmetric_with_a_mirrored_layout((notes, timing, preset) in arb_input()) {
+            let flipped: Vec<Note> = notes.iter().map(|n| Note { col: 6 - n.col, ..*n }).collect();
+            let chart = build(notes, timing.clone());
+            let mirror_chart = build(flipped, timing);
+            let layout = layout(preset);
+            let mirror_layout = layout.mirror();
+            let params = PatternParams::default();
+            let a = ChartView::new(&chart, &layout, &params).unwrap();
+            let b = ChartView::new(&mirror_chart, &mirror_layout, &params).unwrap();
+            for rule in all() {
                 let mut expected: Vec<Candidate> = rule.detect(&a, &params).iter().map(mirrored).collect();
                 expected.sort();
                 prop_assert_eq!(rule.detect(&b, &params), expected, "{}", rule.id());

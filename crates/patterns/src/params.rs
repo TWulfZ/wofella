@@ -97,12 +97,27 @@ impl Default for JackParams {
 /// are vocabulary (ADR 0017, taxonomy) and stay out of here.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct StreamParams {
-    /// Interlude `Core.STREAM`: 5 single-note rows without jacks.
+    /// Interlude `Core.STREAM`: 5 single-note rows without jacks. Also the jumpstream and
+    /// handstream minimum.
     pub min_rows: u32,
+    /// Consecutive press rows further apart than this are not one stream.
+    pub max_gap_us: i64,
+    /// The same cap relative to the active red line; half a beat keeps 1/2-snapped streams of
+    /// charts timed at half BPM.
     pub max_gap_ticks: u32,
+    /// Share of 2-note rows from which a single-note stream is a jumpstream.
+    pub jumpstream_min_chord_permille: u32,
+    /// Share of 3-note rows from which a stream is a handstream.
+    pub handstream_min_chord_permille: u32,
+    /// Share of 2–3-note rows from which a stream is a light chordstream rather than a
+    /// jumpstream or handstream.
+    pub chordstream_light_min_chord_permille: u32,
+    /// Share of 4+-note rows for a dense chordstream. Jackless 7K rows cannot hold 4+ notes
+    /// twice in a row, so this stays under half.
+    pub chordstream_dense_min_chord_permille: u32,
     /// Interlude `Core.CHORDSTREAM`: 4 jackless rows.
     pub chordstream_min_rows: u32,
-    /// Interlude `Stream_4K.ROLL`: 3 rows in one direction.
+    /// Interlude `Stream_4K.ROLL`: 3 moves in one direction, counted as links between rows.
     pub roll_min_rows: u32,
     /// Interlude `Stream_4K.TRILL`: 4 rows, `a b a b`.
     pub trill_min_rows: u32,
@@ -119,7 +134,12 @@ impl Default for StreamParams {
     fn default() -> Self {
         Self {
             min_rows: 5,
-            max_gap_ticks: TICKS_PER_BEAT / 4,
+            max_gap_us: 250_000,
+            max_gap_ticks: TICKS_PER_BEAT / 2,
+            jumpstream_min_chord_permille: 200,
+            handstream_min_chord_permille: 150,
+            chordstream_light_min_chord_permille: 750,
+            chordstream_dense_min_chord_permille: 400,
             chordstream_min_rows: 4,
             roll_min_rows: 3,
             trill_min_rows: 4,
@@ -233,7 +253,7 @@ mod tests {
 
     // Frozen on first computation: any change to a default or to the params layout moves every
     // pattern vkey, so it must be deliberate.
-    const DEFAULT_HASH: &str = "27c46fec456c861f83a8e5afe2cf1999c0151fe4139b305ef06aa924047521b2";
+    const DEFAULT_HASH: &str = "68599a3f40a24d2b189333c813fcc7155d9022cd37292691d4755d1715cfac96";
 
     #[test]
     fn default_params_hash_is_frozen() {
