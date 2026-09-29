@@ -31,3 +31,9 @@ wolluf is built by one developer, with agents doing much of the implementation. 
 - ADRs 0001–0009 are written in F0 from the baseline architecture. Later ADRs are written when their decision is made, not in advance.
 - The architecture document can stay a readable statement of "what is", because the "why" and the "why not" live here.
 - Writing an ADR costs a little time on every cross-cutting change, and that cost is intended.
+
+## Amendment 2026-09-29: ODD replaces per-feature specs
+The context still holds; only the coupling to specs changes. From F1 on, work follows the `wolluf-odd` skill: small work leaves no document, and a substantial feature keeps one transient `odd/tasks/<feature-name>.md` that is removed at close. The permanent spec + tasks pair was dropped because it restated ADRs and code. Keeping finished feature documents, as upstream Gentle-AI ODD does, was rejected for the same reason.
+- The template is `.claude/skills/wolluf-odd/templates/adr.md`.
+- "An ADR is not needed for a choice local to one module that the code and its spec already explain" now reads "…that the code and its tests already explain".
+- "A spec links the ADRs it relies on. An ADR links the spec that produced it." is replaced by: an ADR cites its evidence directly (research lines, measurements, commits) and never links an `odd/tasks/` document. ADRs written in F0 keep their spec links; `docs/specs/` stays as the F0 record.
