@@ -2,6 +2,7 @@
 
 pub mod commands;
 pub mod error;
+pub mod events;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -35,17 +36,19 @@ pub fn with_plugins<R: Runtime>(builder: Builder<R>) -> Builder<R> {
 
 /// Append-only: 004 adds its `players_*` commands here, and the bindings follow this list.
 pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
-    tauri_specta::Builder::<R>::new().commands(tauri_specta::collect_commands![
-        commands::setup::setup_detect_installs,
-        commands::setup::setup_set_install_path,
-        commands::setup::setup_status,
-        commands::jobs::jobs_list,
-        commands::jobs::jobs_start,
-        commands::jobs::jobs_cancel,
-        // The specta half only reads argument types, and `AppHandle` is skipped there; the Tauri half
-        // strips the generic and infers `R`, so a concrete runtime here serves every `R`.
-        commands::app::app_open_logs_dir::<tauri::Wry>,
-    ])
+    tauri_specta::Builder::<R>::new()
+        .events(events::collect())
+        .commands(tauri_specta::collect_commands![
+            commands::setup::setup_detect_installs,
+            commands::setup::setup_set_install_path,
+            commands::setup::setup_status,
+            commands::jobs::jobs_list,
+            commands::jobs::jobs_start,
+            commands::jobs::jobs_cancel,
+            // The specta half only reads argument types, and `AppHandle` is skipped there; the Tauri half
+            // strips the generic and infers `R`, so a concrete runtime here serves every `R`.
+            commands::app::app_open_logs_dir::<tauri::Wry>,
+        ])
 }
 
 pub fn manage_context<R: Runtime>(app: &App<R>, ctx: Arc<AppContext>) {
@@ -86,7 +89,11 @@ pub fn run(runtime: Handle) -> ExitCode {
             // A setup error panics inside Tauri's event loop, so every failure goes to the dialog.
             let started = opened.and_then(|ctx| {
                 let logs_dir = ctx.paths().logs_dir();
+                let bus = ctx.subscribe();
                 manage_context(app, Arc::new(ctx));
+                specta.mount_events(app);
+                // Detached: it ends by itself when the context, and with it the bus, is dropped.
+                drop(events::spawn_bridge(app.handle().clone(), bus));
                 open_main_window(app).map_err(|e| StartupFailure {
                     error: AppError::internal(e.to_string()),
                     logs_dir: Some(logs_dir),
