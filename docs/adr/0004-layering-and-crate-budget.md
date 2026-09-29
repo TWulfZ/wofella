@@ -52,7 +52,7 @@ Domain crates may not `#[allow]` a disallowed lint at all (L6). `cargo xtask lin
 - **One big crate with module privacy.** Rejected: `pub(crate)` cannot stop a domain module from importing an IO module. Domain builds would also pull tokio, rusqlite and tauri, and fixture tests would slow down.
 - **A crate per feature or per concern (layout, identity, jobs).** Rejected by the crate budget: each crate adds build and manifest overhead without a distinct footprint.
 - **Relying on review or on cargo-deny `bans` alone.** Rejected: review misses transitive edges, and cargo-deny cannot express "allowed for crate X only" or grep for banned APIs.
-- **Transcendental bans only in domain crates via the L6 grep.** Kept as the fallback in spec 001, but not needed: clippy's `disallowed-methods` resolves primitive paths such as `f64::powf` on toolchain 1.98.1, which lint-canary verified.
+- **Transcendental bans only in domain crates via the L6 grep.** Kept as the fallback in spec 001, but not needed: clippy's `disallowed-methods` resolves primitive paths such as `f64::powf` on toolchain 1.98.1 (checked when the workspace skeleton landed), and `lint-canary` keeps checking it.
 
 ## Consequences
 - An upward or sideways edge fails CI with a precise message, and fixing it means either restructuring or writing an ADR.
