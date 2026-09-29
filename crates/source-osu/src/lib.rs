@@ -7,6 +7,7 @@ pub mod diag;
 pub mod error;
 pub mod install;
 pub mod paths;
+pub mod probe;
 mod process;
 mod stable;
 #[cfg(any(test, feature = "test-support"))]
