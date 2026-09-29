@@ -191,7 +191,7 @@ wolluf/
 └─ .github/workflows/      # ci.yml, release.yml, pack.yml
 ```
 
-**Crate budget.** A new crate must earn a **distinct dependency footprint or a distinct fixture set**. Anything else is a module. That is why `layout` lives inside `chart` and identity heuristics live in `app::features::players`, and why product features are modules, not crates. Crates are created only when their roadmap phase starts (§12). F0 has 7 crates plus xtask.
+**Crate budget.** A new crate must earn a **distinct dependency footprint or a distinct fixture set**. Anything else is a module. That is why `layout` lives inside `chart` and identity selection lives in `app::features::players`, and why product features are modules, not crates. Crates are created only when their roadmap phase starts (§12). F0 has 7 crates plus xtask.
 
 ---
 
@@ -277,7 +277,7 @@ play(id PK = blake3(game, chart_md5, raw_name, filetime), alias_id, chart_md5, o
      passed NULL, online_score_id TEXT NULL, client_version, replay_sha NULL, osg_sha NULL, chart_sha NULL,
      snapshot_id NULL, ingested_at)
                                                               -- immutable ledger; re-ingest is idempotent through the natural key
-identity_decision(alias_id PK, decision [me|not_me], decided_at)   -- the user's answer; heuristics never override it
+identity_decision(alias_id PK, decision [me|not_me], decided_at)   -- the user's answer; the auto rule never overrides it
 profile(id, kind [self|other], label, is_default, merge_mode [merged|separate], created_at)
 profile_alias(profile_id, alias_id, origin [auto|user], added_at, PK(profile_id, alias_id))
 linked_account(provider 'osu_api', user_id, username, previous_usernames_json, keyring_ref)  -- token lives in the OS keychain
@@ -359,22 +359,14 @@ scores.db mixes the user's own plays (under several aliases, some offline like `
 
 **Listing.** `alias_stats` gives every raw name with play count, count per keymode, date range, online/offline split, replay availability and top charts.
 
-**Scoring** happens in `app::features::players::heuristics`, which is pure and table-tested. It is a transparent additive model, and every signal becomes a visible "why" reason.
+**Auto-selection: the session user only** (ADR 0005, amended 2026-09-28). Offline names are often nothing like the user's alias, and nothing in the pilot data separates the user's offline names from other people's local plays, so wolluf does not guess which other names are theirs. It pre-selects only the current session user:
+- **Normalize** with NFKC → full Unicode case fold → NFKC, then keep only alphanumerics: `TWulfZasdasdasd d jSS||` → `twulfzasdasdasddjss`.
+- **Match.** An alias is the session user when its normalized length is **≥ 4** and the normalized `Username` of the newest `osu!.<account>.cfg` either equals it or starts with it. There is no fuzzy match. F3 adds the same test against the linked osu! account username (only `/me` is ever queried).
+- **Auto set** = every undecided alias that matches. On the pilot that is `TWulfZ` (prefix) and the cfg-string alias itself (equal). `""`, `W`, `w`, `s` and `Wulf` can never match. If no alias matches, nothing is preselected and the wizard asks the user to tick their names.
+- **Everything else** is listed unticked, with no suggestion, sorted by play count descending. The user adds any of it by hand, once.
+- The rule is pure and table-tested in `app::features::players::selection`; its threshold lives in `IdentityParams` (D17). The cfg is read live at refresh time and never persisted; the auto outcome is persisted as `profile_alias(origin=auto)`.
 
-| Signal | Strength | Detail |
-|---|---|---|
-| Exact match to the linked osu! account `username` or `previous_usernames` | strong + | Optional; only `/me` is ever queried |
-| cfg `Username` match | strong + | Normalize with NFKC + casefold + strip non-alphanumerics, then match if equal, if the cfg name starts with the alias, or if Jaro-Winkler ≥ 0.92 on the prefix. **Only for aliases whose normalized length is ≥ 4.** `TWulfZasdasdasd d jSS\|\|` → `twulfzasdasdasddjss` matches `twulfz`. `""` and `W` can never match |
-| Most frequent name among plays with an online score id | medium + | |
-| Temporal interleaving: share of the alias's plays within 30 min of a confirmed-self play | medium + | The key signal for offline aliases |
-| Online scores that never interleave, charts never otherwise played, dates before the first self play | − | The typical downloaded-replay signature |
-
-**Tiers.**
-- **Auto-included (≥ 0.9):** requires at least one *strong* positive signal. Aliases shorter than 4 normalized characters are never auto-included.
-- **"Probably you" (0.5–0.9):** highlighted and **unchecked**, with sample plays for one-click confirmation.
-- **Everything else:** listed normally, or flagged "probably another player".
-
-**Decisions persist.** `identity_decision` stores the user's answer, and heuristics only ever *propose* for aliases without one.
+**Decisions persist.** `identity_decision` stores the user's answer and always wins. The auto rule only ever *proposes* for aliases without one, and a later refresh (new plays, a changed cfg) never adds or removes a decided alias.
 
 **Selection.**
 - The user can multi-select, use "Select all", or create `other` profiles for comparison.
@@ -547,7 +539,7 @@ Gate rules live in `params/gates.toml`. A pack cannot be released without a comm
 | Group | Commands |
 |---|---|
 | setup | `setup_detect_installs`, `setup_set_install_path`, `setup_status` |
-| players | `players_list_aliases` (stats + suggestion + reasons), `players_list_profiles`, `players_set_profile_aliases`, `players_decide_alias`, `players_create_profile`, `players_set_default` |
+| players | `players_list_aliases` (stats + session-user match + decision), `players_list_profiles`, `players_set_profile_aliases`, `players_decide_alias`, `players_create_profile`, `players_set_default` |
 | library / chart | `library_search`, `chart_get` (rows, segments, difficulty per rate) |
 | plays | `plays_list(scope)`, `plays_get_breakdown(play_id)` |
 | skill | `skill_overview(scope)`, `skill_axis_history(scope, axis)`, `skill_pattern_offsets(scope)`, `skill_compare(scope_a, scope_b)` |
@@ -578,7 +570,7 @@ Gate rules live in `params/gates.toml`. A pack cannot be released without a comm
   - TanStack Table + Virtual for the 18k-chart library.
 - **Layout:** `src/app/` (providers, router, error boundary) · `src/ipc/` (generated bindings, client, eventBridge, typed mocks) · `src/shared/` (ui kit, charts, formatters, i18n es/en) · `src/features/<slice>/` (components, `queries.ts` with a key factory, `index.ts` public API) · `src/routes/`. The features mirror `app::features` one to one.
 - **Identity UX:**
-  - A first-run wizard, "Which of these are you?", lists every name with play counts, date ranges, online/offline split and top charts, with tiers pre-applied (§5.6), reasons shown, and "Select all".
+  - A first-run wizard, "Which of these are you?", lists every name with play counts, date ranges, online/offline split and top charts, with the session user pre-ticked and marked "matches your osu! login" (§5.6), every other name unticked with no suggestion, and "Select all".
   - The header has a persistent **ScopePicker** (Me / other profiles / All players) and the Merged/Compare toggle, plus a banner whenever the view is not a self profile.
   - Settings → Identity reopens the same list.
 - The UI never computes domain values (accuracy, θ, d). It formats DTOs, and the "Why" panels render backend-provided reasons only.
@@ -660,7 +652,7 @@ Gate rules live in `params/gates.toml`. A pack cannot be released without a comm
 | Goldens | Segments, difficulty, judge outputs, drill rewrites, session reports on synthetic fixtures; hashes over **quantised** outputs feed `stage_versions.lock` | insta + xtask stage-lock |
 | Adapter tests | Codecs over committed minimized DB extracts and synthetic .osr/.osg; the Python audit reader's outputs serve as cross-check oracles | fixtures/ |
 | Store tests | Migrations from zero and from every `fixtures/userdb/vN.db`; idempotent re-ingest (same scores.db → 0 new rows); cache rebuild from empty == incremental state | in-memory + temp SQLite |
-| App tests | In-memory SQLite with real migrations, seeded from fixtures. Cases: the identity tiers (garbage cfg → `TWulfZ` auto; `""`/`W` never auto; downloaded replays flagged); exclusion → refold removes the play's influence; alias change → new scope_hash; **telemetry never includes plays outside self scopes or excluded plays** | nextest |
+| App tests | In-memory SQLite with real migrations, seeded from fixtures. Cases: the session-user rule (garbage cfg → `TWulfZ` auto; `""`/`W` never auto; every other alias unticked; decisions win); exclusion → refold removes the play's influence; alias change → new scope_hash; **telemetry never includes plays outside self scopes or excluded plays** | nextest |
 | Compile-fail | Export without `ExportPermit`; telemetry without `ConsentToken`/`SelfScope` | trybuild |
 | Corpus harnesses (`#[ignore]`, `WOLLUF_CORPUS=/mnt/e/Games/osu!`) | Re-judge parity over ~4.3k 7K replays by mods × LN ratio × V1/V2 (≥ 98% exact on rice without mods; LN tagged with confidence); library index smoke test (< 0.5% parse failures); S1–S6 on real data. Reports are committed to `reports/` and a threshold file blocks regressions | `cargo xtask parity`, `wolluf-cli eval` |
 | UI | vitest + testing-library with typed `mockIPC` fixtures; a few Playwright smokes against `vite dev`. Windows E2E (play → replay → θ moves → report → drill imported) starts as a manual checklist and is automated once the flow stabilises | vitest, Playwright |
@@ -704,7 +696,7 @@ Real beatmaps, audio and replays are **never committed**. Every bug found in the
 
 | Phase | Builds | Crates added | Exists at the end (user-visible) | Exit criteria |
 |---|---|---|---|---|
-| **F0 Base** | Workspace, xtask (check-layers, bindings), deny, CI skeleton, ADRs 0001–0009. Ports of the audited osu!.db/scores.db/collection.db/cfg readers; in-memory snapshots (ADR 0014); vault (.osr/.osg/.osu bytes); user.db ledger + cache.db skeleton + writer thread. `SyncPlays` job + watcher. **Players feature complete:** alias stats, heuristics, tiers, decisions, profiles, Select all, Merged/Compare. **.osg spike** (`wolluf osg dump`) | core, chart (types), source-osu, store, app, desktop, cli | The app detects osu!, ingests 4.3k plays idempotently, archives replays and charts, and shows the "Which of these are you?" list with correct defaults (`TWulfZ` auto; `""`/`W`/`Wulf` suggested) | Re-ingest adds 0 rows; identity table tests pass; ADR 0012 drafted from the spike |
+| **F0 Base** | Workspace, xtask (check-layers, bindings), deny, CI skeleton, ADRs 0001–0009. Ports of the audited osu!.db/scores.db/collection.db/cfg readers; in-memory snapshots (ADR 0014); vault (.osr/.osg/.osu bytes); user.db ledger + cache.db skeleton + writer thread. `SyncPlays` job + watcher. **Players feature complete:** alias stats, session-user auto-selection, decisions, profiles, Select all, Merged/Compare. **.osg spike** (`wolluf osg dump`) | core, chart (types), source-osu, store, app, desktop, cli | The app detects osu!, ingests 4.3k plays idempotently, archives replays and charts, and shows the "Which of these are you?" list with correct defaults (`TWulfZ` auto; every other name listed unticked, with no suggestion) | Re-ingest adds 0 rows; identity table tests pass; ADR 0012 drafted from the spike |
 | **F1 Charts** | Chart decoder + layout; pattern rules + segmenter; Sunny clean-room, minacalc/rosu features, LeoBlack; engine (registry, k7 profile, manifest, planner); default pack; stage-lock; eval metrics; `IndexLibrary`/`AnalyzeCharts` jobs; Library + Playfield with segment overlay; **relabel capture** (builds the gold set) | patterns, difficulty, engine, eval | Browse 18.9k charts, see pattern segments and difficulty per rate, correct labels | Beats NPS on bms_st, bms_oj and O2Jam [H] and on same-dan pairs; KomeijiDove 8-class slot prediction; per-pattern precision on 200–300 hand-labelled segments |
 | **F2 Replays** | .osr/.osg decode stage, judge rulesets (V1/V2), re-judge job, parity harness + committed report, NNLS fallback (play-level stats only, never per-axis evidence), play breakdown screen | judge | For every play: per-note offsets, per-finger bias, parity status | ≥ 98% exact parity on rice without mods; LN offset-based metrics carry a confidence tag |
 | **F3 Player + session + recommend** | Evidence stage; skill filter (τ_p, pattern offsets); prequential `skill_trace`; sessions + reports + `report_impression`; recommender + `rec_impression`/`rec_outcome`; explicit feedback on recs, reports and plays; preference derivation; isotonic calibration (n ≥ 30); interactive/bulk pools; optional osu! `/me` link for identity | skill, session, recommend, online (API only) | θ ± σ per axis over time for any scope, session reports ("what improved, what worsened, what to practise"), recommendations with "why", and feedback that visibly moves things | Temporal split (train < 2026-09-01, test September, 897 plays): log-loss and Brier beat SR and NPS; pilot sanity check (Jack strongest, Speed weakest) reviewed |
@@ -746,7 +738,7 @@ The base is the vertical-slices proposal, which had the highest judge total. The
 | Double-buffered active vkey, fold checkpoints, generic Stage framework | Dropped. Old-key rows coexist until GC, reads fall back to the previous key, full refold | Two of three judges; a refold takes seconds at this scale |
 | Where SQL lives (per-feature repo.rs vs a store crate) | Only `wolluf-store` has SQL | A single owner of the schema; stops the app crate becoming a god crate |
 | Python in the fitting path | Rust fitters on the release path; Python only for notebooks; fitters built in F5, when data exists | Removes train/serve skew without building IRT before there is data |
-| Identity auto-selection: top-1 only vs confidence tiers | Tiers with a strong-signal requirement and a ≥ 4-char guard; persisted decisions win | Auto-includes clearly own aliases and fixes the `""` prefix-match bug |
+| Identity auto-selection: top-1 only vs confidence tiers | Tiers with a strong-signal requirement and a ≥ 4-char guard; persisted decisions win. **Superseded** by the ADR 0005 amendment (2026-09-28): only the session user is auto-selected | Auto-includes clearly own aliases and fixes the `""` prefix-match bug |
 | Ratings as skill evidence vs preference | Mainly preference (derived from events, bounded) plus a ≤ 0.2-weight ordinal term | "Too hard" is ambiguous; a pure derivation keeps it replayable |
 | Pilot axis ordering as a hard gate | Phase exit review only | It would block legitimate model improvements |
 | Job progress via Channel vs global events | Global typed events plus an immediate `JobId` | Jobs outlive the view that started them |

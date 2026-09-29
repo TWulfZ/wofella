@@ -30,7 +30,7 @@ Any feature, phase task or behavioural change goes through the **`wolluf-sdd` sk
 ## Domain facts that are easy to get wrong
 - The 7K Regular axes are **jack, tech, speed, stream**. Stamina is derived. The LN axes are general, tech, inverse, release.
 - This stable build (osu!.db 20260924) saves **failed plays** to scores.db and `Data/r` (fails appear from 2026-04 on). The `Data/r` naming is `<beatmap md5>-<FILETIME>.osr`, and `.osg` is undocumented (F0 spike).
-- The cfg `Username` can be garbage (`TWulfZasdasdasd d jSS||`), so identity uses the tiered heuristics in architecture §5.6.
+- The cfg `Username` can be garbage (`TWulfZasdasdasd d jSS||`), so identity matches by normalized prefix: only the session user (aliases equal to, or a prefix of, the newest cfg login, normalized length ≥ 4) is auto-selected; every other alias is listed unticked, with no suggestion (architecture §5.6, ADR 0005).
 - Replay time must accumulate **all** frames, including lead-in; osrparse is wrong here. Rate-mod windows are `floor(base × rate)` in map time. Under ScoreV2, LN heads and tails are judged separately. LN judging is approximate, so tag it with a confidence.
 - `osu-db` on crates.io: 0.3.0 (2021) cannot read the current osu!.db. Prefer our own codec, validated against `research/scripts/*/osudb.py` and `sdb.py`.
 
