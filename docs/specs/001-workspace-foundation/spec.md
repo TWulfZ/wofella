@@ -16,13 +16,14 @@ Nothing exists yet but docs. Every other F0 spec needs a compiling Cargo workspa
   - `wolluf-core` F0 types: stable string ids (`AxisId`, `PatternId`, `StageId`), `TimeUs`, `UnixUs`, `DotNetTicks`, `FileTime`, `RateMilli`, `Keymode`, `ColMask`, `Game`, `ChartMd5`, `BlobSha256`, `PlayId`, `AliasId`, `ProfileId`, `VersionKey` (+ builder), `ErrorCode`, `Clock` trait + `FixedClock`.
   - xtask: `check-layers` (full), `lint-canary` (full), `stage-lock [--check]` (real parser, no stages yet), `bindings` (delegating stub).
   - `xtask/layers.toml`, `stage_versions.lock` (empty), `deny.toml`, `.github/workflows/ci.yml`, `NOTICE`, `docs/conventions.md`.
+  - The project licence (Q1, resolved): `LICENSE` with the MIT text and `Copyright (c) 2026 TWulfZ`; `license = "MIT"` in `[workspace.package]`, inherited by every member (`license.workspace = true`). `publish = false` stays until the first release.
   - ADRs 0001–0009 (§11), written as tasks of this spec.
 - Out (non-goals):
-  - Any format codec, snapshot, watcher (002, 003). Any SQL, migration, vault, writer thread (003). Identity heuristics, profiles (004). Tauri app, `tauri.conf.json`, React UI, real CLI commands, `SystemClock`, `AppError` (005). `.osg` (006).
+  - Any format codec, snapshot, watcher (002, 003). Any SQL, migration, vault, writer thread (003). Identity selection, profiles (004). Tauri app, `tauri.conf.json`, React UI, real CLI commands, `SystemClock`, `AppError` (005). `.osg` (006).
   - `wolluf-chart` types (`Chart`, rows, LN pairs, layout, `chart!` DSL): F1 spec. The F0 crate is an empty shell so the member set matches §12.
   - `Evidence`, `SegmentAnchor`, `AccuracyCurve` in core: F1/F3 (no F0 consumer).
   - xtask `fixtures`, `parity`, `eval`, `pack-sign`, `nightly`; `release.yml`, `pack.yml`; param-pack schema validation and synthetic eval in CI (F1+).
-  - The project's own licence (open question Q1). Third-party licence bundle for installers (release spec, F4).
+  - Third-party licence bundle for installers (release spec, F4). Publishing any crate (`publish = false` until the first release).
 
 ## Behaviour
 - `cargo build --workspace` / `cargo nextest run --workspace` succeed on ubuntu-24.04 and windows-2025 with the pinned toolchain; the repo's `rustc --version` is `1.98.1`.
@@ -54,7 +55,7 @@ Nothing exists yet but docs. Every other F0 spec needs a compiling Cargo workspa
 - `thiserror` in libraries, `anyhow` only in CLI and xtask (§7, §11). `unwrap/expect/panic` denied in libraries (§7).
 
 ## Design
-- **Workspace** (`Cargo.toml`): `resolver = "3"`; `[workspace.package]` `version = "0.1.0"`, `edition = "2024"`, `rust-version = "1.98"`, `publish = false`, `license` omitted until Q1. Internal crates are listed in `[workspace.dependencies]` by path so members write `wolluf-core.workspace = true`. `[profile.dev.package.insta]` and `similar` at `opt-level = 3` (insta docs). No release-profile tuning yet, and no profile ever sets `panic = "abort"`: 003's per-item `catch_unwind` needs unwinding.
+- **Workspace** (`Cargo.toml`): `resolver = "3"`; `[workspace.package]` `version = "0.1.0"`, `edition = "2024"`, `rust-version = "1.98"`, `publish = false` (until the first release), `license = "MIT"` (Q1); every member inherits `version`, `edition`, `rust-version`, `license` and `publish` with `.workspace = true`. Internal crates are listed in `[workspace.dependencies]` by path so members write `wolluf-core.workspace = true`. `[profile.dev.package.insta]` and `similar` at `opt-level = 3` (insta docs). No release-profile tuning yet, and no profile ever sets `panic = "abort"`: 003's per-item `catch_unwind` needs unwinding.
 - **Pinned dependencies** (crates.io, checked 2026-09-28; the orchestrator owns this table, siblings only add `x.workspace = true`):
 
   | Use | Pins |
@@ -63,7 +64,7 @@ Nothing exists yet but docs. Every other F0 spec needs a compiling Cargo workspa
   | codecs / hashing (002, 003) | `md-5 0.11.0`, `sha2 0.11.0`, `zstd 0.14.0`, `postcard 1.1.3` (alloc) |
   | source-osu IO (002, 003) | `sysinfo 0.39.6` (no default features, `system`), `winreg 0.56.0` (`cfg(windows)` only), `notify 8.2.0`, `notify-debouncer-full 0.7.0` |
   | store (003) | `rusqlite 0.40.2` (bundled), `rusqlite_migration 2.6.0`, `crossbeam-channel 0.5.17` |
-  | app / jobs (003–005) | `tokio 1.53.1`, `tokio-util 0.7.19`, `rayon 1.12.0`, `uuid 1.26.1` (v4), `ulid 3.0.0`, `directories 6.0.0`, `unicode-normalization 0.1.25`, `caseless 0.2.2`, `strsim 0.11.1`, `tracing 0.1.44`, `tracing-subscriber 0.3.23`, `tracing-appender 0.2.5`, `serde_json 1.0.151` |
+  | app / jobs (003–005) | `tokio 1.53.1`, `tokio-util 0.7.19`, `rayon 1.12.0`, `uuid 1.26.1` (v4), `ulid 3.0.0`, `directories 6.0.0`, `unicode-normalization 0.1.25`, `caseless 0.2.2`, `tracing 0.1.44`, `tracing-subscriber 0.3.23`, `tracing-appender 0.2.5`, `serde_json 1.0.151` |
   | shells (005) | `tauri 2.12.0`, `tauri-build 2.7.0`, `tauri-plugin-dialog 2.8.0`, `tauri-plugin-opener 2.6.0`, `tauri-plugin-log 2.10.0`, `specta =2.0.0-rc.25`, `tauri-specta =2.0.0-rc.25`, `specta-typescript 0.0.12`, `clap 4.6.7` (derive), `anyhow 1.0.104` |
   | xtask | `cargo_metadata 0.23.1`, `toml 1.1.6`, `regex 1.13.1`, `anyhow`, `clap` |
   | tests | `proptest 1.11.0`, `insta 1.48.0`, `trybuild 1.0.121`, `tempfile 3.27.0`, `assert_cmd 2.2.2`, `predicates 3.1.4` |
@@ -114,11 +115,11 @@ none. The `bindings` delegation contract for 005: a bin target `export-bindings`
 - [ ] AC13: Stage lock / bindings stubs → `cargo xtask stage-lock --check` exits 0 and prints the 0-stage line; tests `stage_lock::tests::{empty_lock_passes, malformed_lock_fails, unregistered_stage_fails}` and `bindings::tests::skips_without_export_bin` pass; `cargo xtask bindings` exits 0 with the skip line.
 - [ ] AC14: Licence gate → `cargo deny check` exits 0; test `deny_config::tests::allowlist_is_exact` asserts the allowlist equals {MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, BSD-2-Clause, BSD-3-Clause, MPL-2.0, Zlib, ISC, Unicode-3.0, CC0-1.0} and contains no GPL/LGPL/AGPL id.
 - [ ] AC15: CI → `actionlint .github/workflows/ci.yml` is clean, and the first PR run of `ci` is green on ubuntu-24.04 and windows-2025 (link recorded under Deviations at close).
-- [ ] AC16: Docs → `NOTICE`, `docs/conventions.md` exist; `ls docs/adr/000[1-9]-*.md | wc -l` = 9; each ADR has `Status: Accepted` and the four template headings (`grep -c '^## ' ≥ 4`).
+- [ ] AC16: Docs and licence → `NOTICE`, `docs/conventions.md` exist; `LICENSE` is the MIT text and contains `Copyright (c) 2026 TWulfZ`; `cargo metadata --no-deps --format-version 1 | jq -c '[.packages[] | [.license, .publish]] | unique'` = `[["MIT",[]]]`; `ls docs/adr/000[1-9]-*.md | wc -l` = 9; each ADR has `Status: Accepted` and the four template headings (`grep -c '^## ' ≥ 4`).
 - [ ] AC17: Every gate command of `wolluf-sdd` §4 that exists after this spec runs clean locally from a fresh clone (fmt, clippy, check-layers, stage-lock --check, nextest, deny).
 
 ## Risks / open questions
-- **Q1 (product decision, ask the user): the project's own licence.** Nothing in the architecture or research fixes it. Until answered: `publish = false`, no `license` key, cargo-deny `[licenses.private] ignore = true`, NOTICE header names the copyright holder only. Does not block F0 code; blocks the first public release.
+- **Resolved (user decision 2026-09-28) — Q1, the project's own licence: MIT**, copyright 2026 TWulfZ. `LICENSE` and `license = "MIT"` land in F0 (T1, T15); `publish = false` and cargo-deny `[licenses.private] ignore = true` stay until the first release; ADR 0008 records it (T23).
 - **Resolved at F0 review — §3/§7 "snapshot-copy" vs D9:** 002 and 003 agree on in-memory snapshots (`fs::read` + size/mtime re-check; osu!.db 31.2 MB, scores.db 652 KB, collection.db 3.5 KB on the pilot). ADR 0014 (003 T1) records it and fixes the §3/§7 wording; ADR 0004 only references it.
 - **Resolved at F0 review — ticks vs FILETIME:** `PlayId` hashes `FileTime` (§5.3 wording kept) and `play.filetime` stores its decimal text; ticks are converted once at ingest through `DotNetTicks::to_filetime`.
 - Clippy support for primitive-type paths (`f64::powf`) in `disallowed-methods` and the `allow-panic-in-tests` key: expected to work on 1.98, verified by `lint-canary`. Fallback: move transcendental bans to the xtask L6 grep for domain crates and use `#![cfg_attr(test, allow(clippy::panic))]`.

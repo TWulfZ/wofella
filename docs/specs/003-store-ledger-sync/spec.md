@@ -29,16 +29,15 @@ It also adds the `SyncPlays` job that fills them, runs again on its own when osu
   - `wolluf-app`:
     - `context::AppPaths` (data-dir resolution with an explicit override for the CLI, logs dir, guard), the context open and install registration;
     - the `jobs` runner (tokio orchestration, rayon CPU, `CancellationToken`, ≤ 10 Hz progress, `catch_unwind` per item, coalescing, `item_failure`);
-    - `features::plays::sync` (the `SyncPlays` job: catalog, ingest, archive);
+    - `features::plays::sync` (the `SyncPlays` job: catalog, ingest, archive, and importing orphan `Data/r` replays as `replay_only` plays);
     - wiring the watcher to job submission;
     - job and event DTOs.
   - Tests: unit, store and app tests on synthetic fixtures, plus one `#[ignore]` corpus test.
 - Out (non-goals):
   - The codecs for osu!.db, scores.db and the `.osr` header (spec 002). This spec consumes them.
-  - Alias stats computation, identity heuristics, and the profile, profile_alias and identity_decision repositories (spec 004). The tables are created here.
+  - Alias stats computation, identity selection, and the profile, profile_alias and identity_decision repositories (spec 004). The tables are created here.
   - Install detection (spec 002), and Tauri commands, the CLI `wolluf sync` subcommand and `setup_*` (spec 005).
   - `.osg` decoding (spec 006). Only its bytes are archived here.
-  - Turning orphan `Data/r` replays (no scores.db row) into plays. Their bytes are archived but no play row is created (see Risks).
   - Pass/fail classification. It needs chart object counts or the replay life graph, so it is a derived stage (F2).
   - The vault "self-only" setting, vault compression and vault GC (O9, revisit with the sizes measured below).
   - The collection.db and cfg snapshots (spec 004 reads the cfg; F4 writes collections).
@@ -65,18 +64,19 @@ It also adds the `SyncPlays` job that fills them, runs again on its own when osu
      - `scores.db` is always read (≈ 650 KB) and hashed. A new sha256 inserts a `source_snapshot` row; an unchanged one skips to step 3.
      - Records with `mode ≠ 3` are counted as `skipped_non_mania` and skipped.
      - For every other record, the alias `(game='osu_stable', raw_name bytes)` is upserted, the ticks are converted with `DotNetTicks::to_filetime`, `play.id = PlayId::derive(Game::OsuStable, md5, raw_name, filetime)` is computed (001), and the play goes in with `INSERT OR IGNORE`, in write batches of ≤ 2,000 rows. `play.filetime` is the `FileTime` decimal text; `online_score_id` is `OnlineId::positive()` as decimal text, NULL when the id is ≤ 0 (002).
-     - If a key already exists with identical ledger fields (`mods, score, max_combo, counts_json, client_version`), nothing happens. If it exists with *different* fields, the stored row wins and an `item_failure(code=CONFLICT, item_ref=<play id hex>)` is recorded.
+     - If a key already exists with identical ledger fields (`mods, score, max_combo, counts_json, client_version`), nothing happens, except that a `replay_only` row is upgraded to `origin='scores_db'` with this snapshot's id (its score row showed up after its replay, e.g. a sync that ran between osu!'s two writes). If it exists with *different* fields, the stored row wins and an `item_failure(code=CONFLICT, item_ref=<play id hex>)` is recorded.
   3. **Archive.**
      - `Data/r` is listed once. Names accepted by 002's `ReplayFileName::parse` form an index keyed by (md5, filetime); other names are ignored.
      - For each play with `replay_sha IS NULL`, or with `osg_sha IS NULL` and an `.osg` present, the file is read, its `.osr` header is checked (header beatmap md5 == `chart_md5` and header ticks == the play's ticks), the file goes into the vault, a `blob` row is inserted, and the play is updated through `SET replay_sha = ? WHERE id = ? AND replay_sha IS NULL`. The same applies to `osg_sha`.
      - A header mismatch records `item_failure(CONFLICT)` and leaves the play unlinked.
-     - `.osr` files with no play (orphans) are archived as blobs only and counted as `orphan_replays`.
+     - `.osr` files whose (md5, filetime) matches no play (orphans) become plays with `origin='replay_only'` (user decision 2026-09-28). The header must agree with the name (beatmap md5 equal, ticks → `FileTime` equal, no `osr.name_*` diagnostic) and have mode 3. The play is built from the header the way step 2 builds one from a score record (002's shared `ScoreHeader`): alias from the header player name, counts, mods, score, max combo, `client_version` = header version, `online_score_id` = `OnlineId::positive()`, `filetime` and `played_at_utc` from the header ticks, and the same natural key `PlayId::derive(Game::OsuStable, md5, raw_name, filetime)`. The file goes into the vault first; the row is inserted with `replay_sha` set, `snapshot_id` NULL, and `osg_sha` set when an `.osg` is present. These are counted as `plays_replay_only`.
+     - An orphan whose header fails those checks (name mismatch → `item_failure(CONFLICT)`, lazer or unsupported version → `item_failure(UNSUPPORTED_FORMAT)`) is archived as a blob only and counted as `orphan_replays`. An orphan with a non-mania header is counted as `skipped_non_mania` and not archived.
      - For each distinct `chart_md5` among plays with `chart_sha IS NULL`:
        - If it is in `catalog_chart`, `Songs/<path>` is read and its md5 is checked. On a match the bytes go into the vault and every such play gets `chart_sha` set.
        - On a mismatch (the map was edited in place) it is counted as `chart_md5_mismatch`, and a `derivation(stage='chart_archive', input_key=<md5>:<osu_db sha>, status='skipped', error_code='CONFLICT')` row is written. That chart is not reread until the osu!.db snapshot changes.
        - If it is not in the catalog, it is counted as `chart_unavailable`.
   4. **Finish.**
-     - `job_run.summary_json` gets these counters: `plays_new, plays_existing, conflicts, skipped_non_mania, replays_linked, osg_linked, charts_archived, chart_unavailable, chart_md5_mismatch, orphan_replays, failed_items`.
+     - `job_run.summary_json` gets these counters: `plays_new, plays_replay_only, plays_existing, conflicts, skipped_non_mania, replays_linked, osg_linked, charts_archived, chart_unavailable, chart_md5_mismatch, orphan_replays, failed_items`.
      - The job emits `JobFinished` and `DataChanged{domains:["plays"]}`, but only if something changed. `players` is emitted by 004's chained `RefreshIdentity` once alias stats are fresh, so the wizard never reloads on stale stats.
 - **Stable read (snapshot).**
   - The file is stat'd, read fully, and stat'd again. If size or mtime changed during the read, the read is retried with backoff (250 ms, 500 ms, 1 s). After 3 changed reads the step fails with `OSU_RUNNING` (retryable).
@@ -119,7 +119,8 @@ It also adds the `SyncPlays` job that fills them, runs again on its own when osu
   - NULL when total = 0.
 - Failed plays *are* saved to scores.db and `Data/r` on client 20260924 (research 03 L115, L160). scores.db has no pass flag and its lifebar is empty, so `play.passed` stays NULL in F0 (ADR 0014; the column becomes nullable).
 - Alias raw bytes are the key, and `''` is valid (§5.3). Name normalisation belongs to 004 and is used for matching only.
-- The play ledger is immutable. Re-ingest is idempotent through the natural key (§5.3, §10 "same scores.db → 0 new rows"). The only permitted updates are NULL → value on `replay_sha`, `osg_sha` and `chart_sha`. DB triggers enforce this.
+- A play comes from a scores.db record (`origin='scores_db'`) or, when a `Data/r` replay has no score row, from its `.osr` header (`origin='replay_only'`): a replay without a score row counts as a play (user decision 2026-09-28). Both origins share the natural key.
+- The play ledger is immutable. Re-ingest is idempotent through the natural key (§5.3, §10 "same scores.db → 0 new rows"). The only permitted updates are NULL → value on `replay_sha`, `osg_sha` and `chart_sha`, and the one-way upgrade `origin` `replay_only` → `scores_db` together with `snapshot_id` NULL → value. DB triggers enforce this.
 - The vault archives every play that has a replay, whoever played it (§5.2 vault policy), and chart bytes for every chart with a play.
 - Corpus sizes (measured 2026-09-28, for O9):
 
@@ -130,7 +131,7 @@ It also adds the `SyncPlays` job that fills them, runs again on its own when osu
   | scores.db rows | 4,989, of which 4,970 mania (4,969 distinct natural keys) and 19 osu!std | |
   | mania rows with a `Data/r` .osr | 4,970 | |
   | mania rows with a `.osg` | 4,627 | |
-  | orphan `.osr` (all mania, header timestamp == name) | 42 | |
+  | orphan `.osr` (all mania, header timestamp == name) | 42 | imported as `replay_only` plays |
 
   The "4.3k" in architecture §12 is the older 7K-only count, 4,338 (research 03 L307).
 - Jobs: tokio orchestrates, rayon runs CPU work, CPU work never runs on the async runtime, there is one writer thread per DB, transactions hold ~500–5k rows, and each item runs under `catch_unwind` with its failure recorded (§7).
@@ -179,7 +180,7 @@ It also adds the `SyncPlays` job that fills them, runs again on its own when osu
     - `get(sha: BlobSha256) -> Vec<u8>` re-hashes and returns `StoreError::VaultCorrupt` on a mismatch.
     - `path(sha)` is exposed for diagnostics.
     - The file is made durable before its `blob` row is inserted. A crash in between leaves an unreferenced file, which is harmless and gets no GC in F0.
-  - `repo/ledger.rs`: `game_install` (insert, get, list), `source_snapshot` (latest by kind, insert), `alias` (upsert → id), `play` (`insert_batch(&[NewPlay]) -> InsertOutcome{new, existing, conflicts: Vec<PlayId>}`, `unlinked_replays()`, `set_replay_sha/osg_sha/chart_sha` with NULL guards, `count()`), `blob` (insert-or-ignore), `feedback_event::append`, `settings` get/set, `meta`, `install`.
+  - `repo/ledger.rs`: `game_install` (insert, get, list), `source_snapshot` (latest by kind, insert), `alias` (upsert → id), `play` (`insert_batch(&[NewPlay]) -> InsertOutcome{new, existing, upgraded, conflicts: Vec<PlayId>}` where `NewPlay` carries its `origin` and a `scores_db` insert that hits an identical `replay_only` row upgrades it, `unlinked_replays()`, `set_replay_sha/osg_sha/chart_sha` with NULL guards, `count()`), `blob` (insert-or-ignore), `feedback_event::append`, `settings` get/set, `meta`, `install`.
   - `repo/cache.rs`: `catalog_chart::replace_all(snapshot_id, rows)`, `catalog_chart::get(md5)`, `derivation::{get, put}`, `job_run::{insert, finish}`, `item_failure::insert`.
   - Profile, identity and alias_stats repositories are added by 004 into `repo/players.rs`; 004 also adds the `alias_stats` table to cache schema v1 (unreleased until F0 closes, so no version bump).
   - Errors: a `StoreError` thiserror enum.
@@ -217,16 +218,17 @@ It also adds the `SyncPlays` job that fills them, runs again on its own when osu
        origin_path TEXT NOT NULL, first_seen TEXT NOT NULL)
   alias(id INTEGER PK, game TEXT NOT NULL, raw_name BLOB NOT NULL, UNIQUE(game, raw_name))
   play(id BLOB PK CHECK(length(id)=32), alias_id INTEGER NOT NULL REFERENCES alias, chart_md5 TEXT NOT NULL,
-       filetime TEXT NOT NULL, played_at_utc TEXT NOT NULL, mods INTEGER NOT NULL,
+       origin TEXT NOT NULL CHECK(origin IN ('scores_db','replay_only')), filetime TEXT NOT NULL, played_at_utc TEXT NOT NULL, mods INTEGER NOT NULL,
        score_system TEXT NOT NULL CHECK(score_system IN ('v1','v2')),
        counts_json TEXT NOT NULL /*{"max","n300","n200","n100","n50","miss"}*/, max_combo INTEGER NOT NULL,
        score INTEGER NOT NULL, native_acc REAL NULL, passed INTEGER NULL CHECK(passed IN (0,1)),
        online_score_id TEXT NULL, client_version INTEGER NOT NULL,
        replay_sha BLOB NULL REFERENCES blob, osg_sha BLOB NULL REFERENCES blob, chart_sha BLOB NULL REFERENCES blob,
-       snapshot_id INTEGER NOT NULL REFERENCES source_snapshot, ingested_at TEXT NOT NULL)
+       snapshot_id INTEGER NULL REFERENCES source_snapshot, ingested_at TEXT NOT NULL,
+       CHECK(origin <> 'scores_db' OR snapshot_id IS NOT NULL), CHECK(origin <> 'replay_only' OR replay_sha IS NOT NULL))
        + INDEX(chart_md5), INDEX(alias_id), INDEX(played_at_utc)
        + TRIGGER play_no_delete (RAISE ABORT); TRIGGER play_update_guard: abort unless only replay_sha/osg_sha/chart_sha
-         change and each changed one was NULL
+         change and each changed one was NULL, or origin goes replay_only → scores_db with snapshot_id NULL → value
   identity_decision(alias_id INTEGER PK REFERENCES alias, decision TEXT NOT NULL CHECK(decision IN ('me','not_me')),
        decided_at TEXT NOT NULL)
   profile(id INTEGER PK, kind TEXT NOT NULL CHECK(kind IN ('self','other')), label TEXT NOT NULL,
@@ -281,6 +283,7 @@ There are no Tauri commands in this spec; spec 005 adds `jobs_start`, `jobs_list
   - Test: `backup_retention_keeps_5`.
 - [ ] AC5: The play ledger is immutable at the DB level.
   - Test: `store::repo::tests::play_ledger_immutable`. `DELETE` aborts, an `UPDATE score` aborts, `replay_sha` NULL → value succeeds, and value → other value aborts.
+  - Test: `play_origin_constraints`. A `replay_only` row without `replay_sha` and a `scores_db` row without `snapshot_id` are rejected; `replay_only` → `scores_db` with `snapshot_id` NULL → value succeeds; `scores_db` → `replay_only` aborts.
   - Test: `feedback_event_append_only`.
 - [ ] AC6: cache.db rebuilds on a version mismatch or corruption and never touches user.db.
   - Test: `store::cache::tests::version_mismatch_deletes_and_recreates`.
@@ -302,19 +305,22 @@ There are no Tauri commands in this spec; spec 005 adds `jobs_start`, `jobs_list
   - Test: `crates/source-osu/tests/songs.rs::md5_mismatch_reported`.
 - [ ] AC10: SyncPlays ingests a synthetic install correctly. Test: `app::features::plays::tests::sync_ingests_fixture_install`. The fixture tree is built in a tempdir from 002's test-support builders and holds:
   - 6 mania scores (including alias `""` and a non-UTF-8 name), 1 osu!std score and 1 exact duplicate;
-  - `.osr` files for 5 plays, `.osg` for 3, and 1 orphan `.osr`;
+  - `.osr` files for 5 plays, `.osg` for 3, 1 orphan `.osr` with a consistent mania header (on one of the 6 charts), and 1 orphan `.osr` whose header md5 differs from its name;
   - 2 Songs charts, one of them edited so its md5 no longer matches.
 
-  Expected summary: `plays_new=6, skipped_non_mania=1, replays_linked=5, osg_linked=3, orphan_replays=1, charts_archived=1, chart_md5_mismatch=1`.
+  Expected summary: `plays_new=6, plays_replay_only=1, skipped_non_mania=1, replays_linked=5, osg_linked=3, orphan_replays=1, charts_archived=1, chart_md5_mismatch=1`.
 - [ ] AC11: **Re-ingest adds 0 rows.**
-  - Test: `sync_twice_adds_zero_rows`. The play, alias and blob counts and the vault file count are identical after the second run, and `plays_new=0`.
+  - Test: `sync_twice_adds_zero_rows`. The play, alias and blob counts and the vault file count are identical after the second run, and `plays_new=0`, `plays_replay_only=0`.
   - Test: `conflicting_duplicate_records_item_failure` (same key, different score → 1 play, 1 `CONFLICT`).
 - [ ] AC12: The osu! folder is never written.
   - Test: `sync_never_writes_install_root`. It compares a recursive (path, size, mtime, sha256) manifest of the fixture root before and after a sync, with the root set read-only on unix.
   - Test: `data_dir_inside_osu_root_rejected`.
-- [ ] AC13: Late `Data/r` files are linked on the next sync, and header mismatches are refused.
+- [ ] AC13: Late `Data/r` files are linked on the next sync, header mismatches are refused, and orphan replays become `replay_only` plays.
   - Test: `replay_added_later_links_on_resync`.
   - Test: `osr_header_md5_mismatch_not_linked`.
+  - Test: `orphan_replay_imported_as_replay_only` (id == `PlayId::derive` over the header; alias, counts, mods, score, `played_at_utc`, `online_score_id` and `client_version` equal the header values; `origin='replay_only'`, `replay_sha` set, `snapshot_id` NULL).
+  - Test: `replay_only_upgraded_when_score_row_appears` (a later scores.db with the matching record → 0 new plays, `origin='scores_db'`, `snapshot_id` set, no `CONFLICT`).
+  - Test: `orphan_with_name_mismatch_archived_only` (blob row, no play, 1 `CONFLICT`, `orphan_replays=1`).
 - [ ] AC14: The job runner coalesces, cancels, throttles and isolates panics.
   - Test: `app::jobs::tests::submit_while_queued_returns_same_id`.
   - Test: `submit_while_running_sets_single_rerun`.
@@ -327,8 +333,9 @@ There are no Tauri commands in this spec; spec 005 adds `jobs_start`, `jobs_list
 - [ ] AC16: **Cache rebuild from empty equals the incremental state.** Test: `app::features::plays::tests::cache_rebuild_from_empty_equals_incremental`. It runs sync twice with an osu!.db change in between, then deletes cache.db and syncs once. `catalog_chart` and the `derivation` rows compare equal (ordered dump), and user.db is unchanged.
 - [ ] AC17: **The pilot corpus ingests.** Command: `WOLLUF_CORPUS="/mnt/e/Games/osu!" cargo nextest run -p wolluf-app --run-ignored only -E 'test(corpus_sync_pilot)'`. The test:
   - uses a tempdir data dir;
-  - asserts `plays == distinct (md5, raw_name, filetime) among mode=3 records` of the same snapshot, and `plays ≥ 4,338`. The 2026-09-28 oracle values are 4,969 plays from 4,970 rows.
-  - asserts `replays_linked` == the number of plays whose `Data/r` .osr exists, computed independently in the test from a directory listing;
+  - asserts `plays == distinct (md5, raw_name, filetime) among mode=3 records` of the same snapshot `+ plays_replay_only`, and `plays ≥ 4,338`;
+  - asserts `plays_replay_only` == the number of `Data/r` .osr files with a mania header whose (md5, filetime) matches no mode=3 record, computed independently in the test. The 2026-09-28 oracle values are 4,969 plays from 4,970 rows plus 42 replay-only;
+  - asserts `replays_linked` == the number of scores.db plays whose `Data/r` .osr exists, computed independently in the test from a directory listing;
   - asserts that a second sync gives `plays_new = 0` and no new vault files;
   - prints wall times for the first and second runs;
   - writes nothing under `WOLLUF_CORPUS`.
@@ -336,8 +343,8 @@ There are no Tauri commands in this spec; spec 005 adds `jobs_start`, `jobs_list
 
 ## Risks / open questions
 - **WSL drvfs does not deliver inotify events** for writes by Windows processes. The mitigation is poll mode on `/mnt/*`. Windows builds use native events, so live verification of those waits for the Windows E2E checklist.
-- **Vault size (O9).** `.osg` files are 5.6× the size of the `.osr` files (511 MB vs 91 MB). If 006 shows `.osg` is redundant or cheap to regenerate, revisit this with an ADR: skip `.osg`, or zstd-at-rest with the sha taken over the original bytes. F0 archives raw bytes because that is the reversible choice.
-- **Orphan replays** (42 in the pilot, all mania, headers valid). They may be plays deleted from scores.db. Their bytes are archived now so nothing is lost. A later spec could create plays from `.osr` headers, since the header uses the scores.db record layout (`osudb.py::score_body`). That needs a product decision on whether a replay without a score row counts as a play.
+- **Vault size (O9).** `.osg` files are 5.6× the size of the `.osr` files (511 MB vs 91 MB). If 006 shows `.osg` is redundant or cheap to regenerate, revisit this with an ADR: skip `.osg`, or zstd-at-rest with the sha taken over the original bytes. F0 archives raw bytes because that is the reversible choice (user decision 2026-09-28: keep raw pending the 006 spike).
+- **Resolved (user decision 2026-09-28) — orphan replays** (42 in the pilot, all mania, headers valid) are imported as plays with `origin='replay_only'`, built from the `.osr` header, which uses the scores.db record layout (`osudb.py::score_body`). They are probably plays deleted from scores.db; `origin` keeps them distinguishable if a later phase wants to weigh them differently. ADR 0014 records the column.
 - **`passed` is NULL** in F0. This deviates from the NOT NULL column in §5.3 and is recorded in ADR 0014 and the architecture update (T1). F2 derives pass/fail in cache.db.
 - **First sync on WSL** reads ≈ 600 MB over drvfs, which can take minutes. Progress events and cancel-then-resume cover it. The corpus test reports the time and has no hard budget.
 - **ADR number:** 0014 is assigned to this spec at the F0 review (002 has 0015, 006 has 0012).

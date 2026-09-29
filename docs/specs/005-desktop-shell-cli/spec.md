@@ -6,7 +6,7 @@ Links: architecture §3 (layout), §4 (D1, D9, D11, D12, D13, D14), §5.2 (data 
 Sibling F0 specs: 001 workspace-foundation (workspace, pins, xtask `bindings` delegation, CI skeleton, core `ErrorCode`; assigns `AppError` and `SystemClock` to this spec), 002 osu-stable-codecs, 003 store-ledger-sync (`AppPaths`, `AppContext`, instance lock, `JobService`, `SyncPlays`, `AppEvent`), 004 players-identity (players service, DTOs, `commands/players.rs`, `features/players`, routes `setup.identity.tsx` / `settings.identity.tsx`), 006 osg-spike (`wolluf osg` subcommand under this spec's clap root).
 
 ## Problem
-After 001–004 the backend can ingest plays and score identities, but nobody can use it: there is no window, no typed contract to the UI, no way to point wolluf at an osu! install, no visible progress for a 4.3k-play sync, and no CLI for harnesses and debugging. This spec builds the two thin shells over `wolluf-app` (the Tauri desktop and the `wolluf` CLI), the typed IPC contract with its drift check, the React skeleton every later feature slice plugs into, and the F0 screens: first-run install detection, the global job tray, the app shell that hosts 004's identity wizard and header controls, and settings. It also fixes the error contract end to end (`AppError` → `IpcError` → localized UI message), so every later feature reacts per error code instead of parsing prose.
+After 001–004 the backend can ingest plays and select identities, but nobody can use it: there is no window, no typed contract to the UI, no way to point wolluf at an osu! install, no visible progress for a 4.3k-play sync, and no CLI for harnesses and debugging. This spec builds the two thin shells over `wolluf-app` (the Tauri desktop and the `wolluf` CLI), the typed IPC contract with its drift check, the React skeleton every later feature slice plugs into, and the F0 screens: first-run install detection, the global job tray, the app shell that hosts 004's identity wizard and header controls, and settings. It also fixes the error contract end to end (`AppError` → `IpcError` → localized UI message), so every later feature reacts per error code instead of parsing prose.
 
 ## Scope
 - In:
@@ -29,7 +29,7 @@ After 001–004 the backend can ingest plays and score identities, but nobody ca
   - CI additions to 001's `ci.yml`: exact Node 24.15 / pnpm 11.17 versions in 001's guarded `ui` job, and a Windows NSIS bundle build job. (001 T14 already ships the `ui` job and the bindings drift step.)
   - Dev docs in `CLAUDE.md` Commands: the WSL dev loop and a Windows build note.
 - Out (non-goals):
-  - Everything in 004's players slice: service, heuristics, DTOs, `commands/players.rs`, `ui/src/features/players/*`, the route files `routes/setup.identity.tsx` and `routes/settings.identity.tsx`, and the ScopePicker/toggle/banner components.
+  - Everything in 004's players slice: service, auto-selection, DTOs, `commands/players.rs`, `ui/src/features/players/*`, the route files `routes/setup.identity.tsx` and `routes/settings.identity.tsx`, and the ScopePicker/toggle/banner components.
   - Everything in 003: data-dir resolution (`AppPaths`), the instance lock, the data-dir-inside-osu guard, store, migrations, the `app::jobs` runtime, `JobService`, `SyncPlays`, the watcher and the `AppEvent` definitions. This spec consumes them (see Design, "Consumed interfaces").
   - The `wolluf osg` subcommand implementation (006).
   - Deferred to later phases:
@@ -87,7 +87,7 @@ After 001–004 the backend can ingest plays and score identities, but nobody ca
     - prints throttled progress to stderr, only when stderr is a TTY;
     - waits for `JobFinished`, then prints the job summary (a JSON document on stdout with `--json`);
     - on Ctrl-C, cancels the job, waits for `JobFinished{cancelled}` and exits 130.
-  - `wolluf players list [--json]`: aliases with stats, tier, decision and reasons (004's DTO).
+  - `wolluf players list [--json]`: aliases with stats, auto match and decision (004's DTO).
   - `wolluf jobs list [--json] [--limit N]`: job history, newest first.
   - **Exit codes** (shared with 006):
 

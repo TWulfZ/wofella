@@ -183,8 +183,8 @@ None. CLI only.
 - **Assignment ambiguity.** About 5% of records merge 2–3 judgements, mostly chords in one frame. They cannot be split by time alone, but a (time, kind) join to re-judge candidates should resolve most of them. C2 measures this.
 - **Earlier notes were inaccurate.** Research 03 said the files start with 20260924 and have "incrementing indices". The findings doc corrects both: the value is the client build, and the "indices" are cumulative counts and combo.
 - **Cross-spec.**
-  - Version handling follows 002's ADR 0015 (settled at the F0 review).
-  - 003's O9 vault-size question depends on AC12.
+  - Version handling follows 002's ADR 0015 (Accepted by the user 2026-09-28).
+  - 003's O9 vault-size question depends on AC12. Until ADR 0012 is accepted the vault keeps raw `.osg` bytes (user decision 2026-09-28).
   - `JudgementCounts` / `Diagnostics` are 002's (settled at the F0 review).
 - **Time box.** If C2 is not measured by the end of day 3, ADR 0012 is drafted with O1b as the default and the missing measurements listed as open questions. The spike does not extend on its own; the user decides.
 

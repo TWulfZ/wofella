@@ -12,7 +12,7 @@ Take wolluf from docs-only to a desktop app and a `wolluf` CLI that detect the p
 | Spec | Title | Status | Crates / dirs written | ADRs |
 |---|---|---|---|---|
 | [001](001-workspace-foundation/spec.md) | Workspace foundation | Draft | root, `crates/core`, `xtask`, CI, `docs/adr` 0001–0009 | 0001–0009 (Accepted) |
-| [002](002-osu-stable-codecs/spec.md) | osu! stable codecs | Draft | `crates/source-osu` (codecs, install, probe), `fixtures/dbs`, `research/scripts/oracle` | 0015 (Proposed) |
+| [002](002-osu-stable-codecs/spec.md) | osu! stable codecs | Draft | `crates/source-osu` (codecs, install, probe), `fixtures/dbs`, `research/scripts/oracle` | 0015 (Accepted) |
 | [003](003-store-ledger-sync/spec.md) | Store, play ledger and SyncPlays | Draft | `crates/store`, `crates/source-osu` (snapshot, replay_dir, songs, watch), `crates/app` (context, jobs, plays) | 0014 (Proposed) |
 | [004](004-players-identity/spec.md) | Players and identity | Draft | `crates/core` (`ScopeHash`), `crates/store` (players repos), `crates/app` (players), desktop `commands/players.rs`, UI `features/players` | 0005 amendment |
 | [005](005-desktop-shell-cli/spec.md) | Desktop shell and CLI | Draft | `crates/app` (errors, clock, logging, setup), `apps/desktop/src-tauri`, `apps/desktop/ui`, `apps/cli`, CI additions | 0009 (verifies) |
@@ -28,8 +28,8 @@ ADR numbers are final: 0010, 0011 and 0013 stay reserved for F1–F3 (§11).
 - `JudgementCounts`, `Diagnostics`, `CodecError`, `FileKind`: 002. 006 appends `osg` entries.
 - `AppError`, `IpcError`, `SystemClock`, logging: 005 T3–T4. 003 and 004 add `From` impls and message keys.
 - `AppPaths` (with CLI override and `logs_dir`), `AppContext`, `register_install`, `JobRunner` (with follow-ups), job DTOs (camelCase): 003.
-- user.db `0001_init`, including both `profile` partial indexes: 003. cache `alias_stats` DDL: 004 T6 (cache v1 is unreleased, so there is no version bump).
-- ADR 0009, including 005's shell deviations: 001 T24. Architecture edits: §3/§5.3/§7 snapshot and ledger wording in 003 T1, §5.6 in 004 T1, the §7 unknown-version sentence in 002 T17, and §3 plugins, §8 and the CLI name in 005 T20.
+- user.db `0001_init`, including both `profile` partial indexes and `play.origin` (`scores_db | replay_only`): 003. cache `alias_stats` DDL: 004 T6 (cache v1 is unreleased, so there is no version bump).
+- ADR 0009, including 005's shell deviations: 001 T24. Architecture edits: §3/§5.3/§7 snapshot and ledger wording in 003 T1, §5.6, the §8 identity-UX line and CLAUDE.md's identity line in 004 T1, the §7 unknown-version sentence in 002 T17, and §3 plugins, §8 and the CLI name in 005 T20.
 
 ## Global execution order
 
@@ -57,7 +57,7 @@ Lanes are the disjoint write sets that agents may work in at the same time. A la
 - **G1 CORE:** 001-T2 → T3 → T4 → T5 → T6 → T7 → T8 → **004-T2** (`ScopeHash`)
 - **G2 XTASK:** 001-T9 → T10 → T11 → T12 → T13
 - **G3 ADR:** 001-T16 … T24 and 002-T1 in parallel; then 005-T1 (after 001-T24)
-- **G4 ARCH (serial):** 001-T15 → 003-T1 (ADR 0014 + §3/§5.3/§7) → 004-T1 (after 001-T20; ADR 0005 amendment + §5.6)
+- **G4 ARCH (serial):** 001-T15 (LICENSE, NOTICE, conventions) → 003-T1 (ADR 0014 + §3/§5.3/§7) → 004-T1 (after 001-T20; ADR 0005 amendment + §5.6/§8 + CLAUDE.md)
 - **G5 PY:** 002-T14, 006-T1, 006-T9 in parallel. They need only the corpus, which is how the `.osg` evidence gets gathered from day one.
 - **G6 UI:** 005-T13 (scaffold; needs only Node/pnpm)
 
@@ -105,22 +105,30 @@ The 3-day `.osg` spike runs on two tracks. Its evidence (006-T1, T9) is gathered
 | §12 criterion | Proven by |
 |---|---|
 | The app detects osu! | 002 AC14 `detect_finds_corpus_install`; 005 AC17 (WSL smoke) and AC18 (Windows smoke, `registry` source) |
-| It ingests 4.3k plays idempotently. **Re-ingest adds 0 rows** | 003 AC11 `sync_twice_adds_zero_rows`; 003 AC17 `corpus_sync_pilot` (≥ 4,338 plays = distinct keys; second sync `plays_new = 0`); 005 AC16 `second_sync_adds_zero` |
+| It ingests 4.3k plays idempotently. **Re-ingest adds 0 rows** | 003 AC11 `sync_twice_adds_zero_rows`; 003 AC17 `corpus_sync_pilot` (≥ 4,338 plays = distinct scores.db keys + replay-only imports; second sync `plays_new = 0`, `plays_replay_only = 0`); 005 AC16 `second_sync_adds_zero` |
 | It archives replays and charts | 003 AC7, AC10, AC13; AC17 `replays_linked` == independent `Data/r` count |
-| It shows "Which of these are you?" with correct defaults (`TWulfZ` auto; `""`/`W`/`Wulf` suggested) | 004 AC3 `pilot_like_tiers`, AC14 (wizard UI), AC15 `players_corpus_tiers`; 005 AC12 (first-run guard) |
+| It shows "Which of these are you?" with correct defaults (`TWulfZ` auto; all others listed unchecked, with no suggestion; the cfg-string alias `TWulfZasdasdasd d jSS\|\|` is also auto because it equals the login) | 004 AC3 `pilot_like_selection`, AC14 (wizard UI), AC15 `players_corpus_selection`; 005 AC12 (first-run guard) |
 | **Identity table tests pass** | 004 AC1–AC12 |
 | **ADR 0012 drafted from the spike** | 006 AC11 (`docs/research/04-osg-format.md`), AC12 (ADR 0012, Status Proposed) |
-| Workspace, xtask, deny, CI skeleton, ADRs 0001–0009 | 001 AC1–AC17 |
-| Players feature complete (alias stats, heuristics, tiers, decisions, profiles, Select all, Merged/Compare) | 004 AC7–AC14 |
+| Workspace, xtask, deny, CI skeleton, ADRs 0001–0009, MIT `LICENSE` | 001 AC1–AC17 |
+| Players feature complete (alias stats, session-user auto-selection, decisions, profiles, Select all, Merged/Compare) | 004 AC7–AC14 |
 | All gates green | the `wolluf-sdd` §4 gate block on the final commit, including the corpus run |
 
 ## Known F0 deviations from the architecture (each recorded in the named ADR at close)
-- Source snapshots are in-memory reads rather than temp copies, and `play.passed` is nullable (ADR 0014).
-- Newer-than-verified DB headers are accepted after full structural validation, with a warning (ADR 0015; needs the user's decision).
-- §5.6 identity signals are amended with pilot evidence (ADR 0005 amendment).
+- Source snapshots are in-memory reads rather than temp copies, `play.passed` is nullable, and orphan `Data/r` replays become plays with `play.origin = 'replay_only'` (ADR 0014).
+- Newer-than-verified DB headers are accepted after full structural validation, with a warning (ADR 0015, Accepted).
+- §5.6 scored identity heuristics and tiers are replaced by the session-user rule: auto-select only the alias(es) matching the newest cfg login, list the rest unticked (ADR 0005 amendment).
 - The opener plugin replaces the shell plugin, and a new `app_open_logs_dir` command is added (ADR 0009).
 - `wolluf-chart` is created as an empty crate; chart types go to the F1 spec (ADR 0004).
 - F0 stages `catalog` and `players.alias_stats` carry `VersionKey`s, but they join `stage_versions.lock` only when the engine registry arrives (F1).
 
-## Open questions (user decisions)
-See the spec risk sections: 001 Q1 (licence), 002 Q1 (ADR 0015), 004 (`distinct_nickname`), 003 (orphan replays), 006/O9 (vault `.osg` policy).
+## User decisions (2026-09-28)
+- Licence: MIT, copyright 2026 TWulfZ; `publish = false` until the first release (001 T1, T15, T23).
+- Newer-than-verified osu! DB versions: accepted after full structural validation, with a warning; ADR 0015 Accepted (002).
+- Orphan replays (`.osr` in `Data/r` with no scores.db row): imported as plays with `origin = 'replay_only'` from the `.osr` header, same natural key (003).
+- Identity: auto-select only the current session user (alias equal to, or a prefix of, the newest cfg `Username` after normalization, length ≥ 4; F3 adds the linked account). No match → nothing preselected and the wizard asks. Every other alias is listed unticked, no suggestions, sorted by play count; decisions persist and always win (004 R3–R7).
+- The reviewer's vetoable calls stand: LZMA payload decoding in F2, the Songs scanner in F1, `PlayId` over `FileTime`, `osu!.exe` + `osu!.db` required for a valid install, registry discovery, an empty `wolluf-chart` in F0.
+- `.osg` vault policy: keep raw bytes until the 006 spike's ADR 0012 is accepted (O9).
+
+## Open questions
+None block F0. O9 (vault `.osg` policy) is settled by ADR 0012 at the end of the 006 spike.
