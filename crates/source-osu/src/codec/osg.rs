@@ -2,6 +2,8 @@
 //! the layout is still a spike hypothesis, so unexplained bytes are kept raw and oddities are
 //! warnings; only a structurally impossible file is an error (§7).
 
+pub mod events;
+
 use crate::codec::score_header::JudgementCounts;
 use crate::codec::{FileKind, Reader};
 use crate::diag::{DiagCode, Diagnostics};
