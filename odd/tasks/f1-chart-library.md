@@ -54,7 +54,7 @@ F1 needs a chart model before anything else (architecture §12 F1 row, §3 chart
 - [x] T4 [P with T3] — store cache: `chart_parsed(md5, vkey, rows_blob, n_notes, n_ln, ln_ratio, length_ms)` and `chart_label(md5, vkey, source, scale, level_ord, level_text, skill_tag, is_variant)` + repos; `CACHE_SCHEMA_VERSION` 1 → 2. Route: delegated. Tier: medium. Commit: —
 - [x] T5 — engine `labels`: pure extraction from (folder, version, creator, set id) per source, porting `labels.py`. Route: delegated. Tier: medium. Commit: `feat(engine): add engine crate with difficulty-name label extraction`
 - [x] T6 — app `library` feature: `IndexLibrary` job (7K per profile, played charts first, memo by (md5, vkey) in `derivation`, rayon, cancel, progress, item failures), chained after `SyncPlays`; query service (list with filters, get chart view); `JobKindDto` / `JobStartDto` / `JobSummaryDto` variants + bindings regen. Route: delegated. Tier: medium. Commit: `feat(app): index the chart library after each sync`
-- [ ] T7 — CLI `wolluf library index`, `wolluf library list [--keys --label --scale --limit]`, `wolluf chart show <md5> [--from s --to s --layout id]`. Route: delegated. Tier: medium. Commit: —
+- [x] T7 — CLI `wolluf library index`, `wolluf library list [--keys --label --scale --limit]`, `wolluf chart show <md5> [--from s --to s --layout id]`. Route: delegated. Tier: medium. Commit: `feat(cli): add library and chart commands`
 - [ ] T8 — corpus acceptance test `corpus_library_index` + timing. Route: inline. Tier: medium. Commit: —
 - [ ] T9 — close: full gates + corpus; CLAUDE.md commands; remove this document. Route: inline. Tier: passive. Commit: —
 
@@ -79,5 +79,12 @@ F1 needs a chart model before anything else (architecture §12 F1 row, §3 chart
   - `songs_dir()` moved to `context.rs`.
   - `get()` re-parses the file for its diagnostics count; the store keeps none.
 
+- 2026-09-29 T7: RED 19 compile errors and 7 integration fails (`unrecognized subcommand`) → GREEN, CLI 57/57, workspace 577 passed. Spot check `--test cli_library`: 7 passed. The pilot smoke was not run because osu! was running.
+- Accepted changes:
+  - The list shows the full md5, since render and get take full md5s.
+  - `chart show` defaults to `--from 0` and a 20 s window.
+  - The sync and index job loop is shared in `follow.rs`.
+  - The cancel test accepts Ok or Cancelled, because an empty catalog can finish first.
+
 ## Next step
-T7: CLI `wolluf library index|list` and `wolluf chart show`.
+T8 (in progress, corpus needs osu! closed), then T9 close.
