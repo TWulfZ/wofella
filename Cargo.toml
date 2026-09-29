@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/core",
     "crates/chart",
+    "crates/engine",
     "crates/source-osu",
     "crates/store",
     "crates/app",
@@ -25,6 +26,7 @@ publish = false
 [workspace.dependencies]
 wolluf-core = { path = "crates/core" }
 wolluf-chart = { path = "crates/chart" }
+wolluf-engine = { path = "crates/engine" }
 wolluf-source-osu = { path = "crates/source-osu" }
 wolluf-store = { path = "crates/store" }
 wolluf-app = { path = "crates/app" }
