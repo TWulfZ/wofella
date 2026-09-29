@@ -43,11 +43,11 @@ const CHART_ARCHIVE_STAGE: StageId = StageId::from_static("chart_archive");
 /// Bump when the rule deciding "this chart cannot be archived" changes.
 const CHART_ARCHIVE_VERSION: u32 = 1;
 
-const OSU_DB: &str = "osu!.db";
-const SCORES_DB: &str = "scores.db";
+pub(crate) const OSU_DB: &str = "osu!.db";
+pub(crate) const SCORES_DB: &str = "scores.db";
 /// Spec 003: write transactions of at most 2,000 plays keep the writer responsive.
 const BATCH_ROWS: usize = 2_000;
-const MANIA_MODE: u8 = 3;
+pub(crate) const MANIA_MODE: u8 = 3;
 /// Spec 003 "Stable read": one extra attempt for a DB osu! may still be writing.
 const TORN_WRITE_RETRY: Duration = Duration::from_secs(2);
 const DOMAIN_PLAYS: &str = "plays";
@@ -119,7 +119,7 @@ pub(crate) fn unix_us(t: SystemTime) -> UnixUs {
 }
 
 /// osu! runs on case-insensitive file systems, so `Scores.db` must be found too.
-fn root_file(root: &Path, name: &str) -> PathBuf {
+pub(crate) fn root_file(root: &Path, name: &str) -> PathBuf {
     std::fs::read_dir(root)
         .ok()
         .and_then(|entries| {
