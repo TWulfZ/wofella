@@ -27,6 +27,7 @@ tracing-subscriber.workspace = true
 tracing-appender.workspace = true
 unicode-normalization.workspace = true
 caseless.workspace = true
+blake3.workspace = true
 
 [dev-dependencies]
 insta.workspace = true

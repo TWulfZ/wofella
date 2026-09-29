@@ -4,6 +4,7 @@
 pub mod names;
 pub mod params;
 pub mod selection;
+pub mod stats;
 
 #[cfg(test)]
 pub(crate) mod testkit;
