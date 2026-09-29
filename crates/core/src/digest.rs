@@ -140,6 +140,12 @@ hex_bytes!(
     PlayId,
     32
 );
+hex_bytes!(
+    /// Identity scope id: `blake3` of the scope's canonical bytes (§5.6, spec 004). It lives in
+    /// core so F3's store and engine can key on it without depending on app.
+    ScopeHash,
+    32
+);
 
 impl PlayId {
     /// `blake3(game, chart_md5, raw_name, filetime)` (§5.3). Raw name bytes, not a normalized
@@ -258,5 +264,36 @@ mod tests {
             PlayId::derive(Game::OsuStable, pilot_md5(), b"TWulfZ", pilot_filetime()),
             PlayId::derive(Game::OsuStable, pilot_md5(), b"TWulfZ", later)
         );
+    }
+
+    mod scope_hash {
+        use super::super::*;
+
+        const HEX: &str = "0123456789abcdef00112233445566778899aabbccddeeff0f1e2d3c4b5a6978";
+
+        #[test]
+        fn scope_hash_hex_roundtrip() {
+            let hash: ScopeHash = HEX.parse().unwrap();
+            assert_eq!(hash.0[0], 0x01);
+            assert_eq!(hash.0[31], 0x78);
+            assert_eq!(hash.to_string(), HEX);
+            let json = serde_json::to_string(&hash).unwrap();
+            assert_eq!(json, format!("\"{HEX}\""));
+            assert_eq!(serde_json::from_str::<ScopeHash>(&json).unwrap(), hash);
+        }
+
+        #[test]
+        fn rejects_bad_hex() {
+            let upper = HEX.to_uppercase();
+            let short = &HEX[..63];
+            let non_hex = format!("{}z", &HEX[..63]);
+            for bad in ["", short, non_hex.as_str(), upper.as_str()] {
+                assert!(
+                    bad.parse::<ScopeHash>().is_err(),
+                    "{bad:?} must be rejected"
+                );
+                assert!(serde_json::from_str::<ScopeHash>(&format!("\"{bad}\"")).is_err());
+            }
+        }
     }
 }
