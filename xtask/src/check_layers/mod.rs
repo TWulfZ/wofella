@@ -3,6 +3,7 @@
 
 mod config;
 mod load;
+mod scan;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -15,6 +16,9 @@ pub(crate) enum Rule {
     UnlistedCrate,
     ForbiddenEdge,
     LayersCycle,
+    BannedDep,
+    RestrictedDirectDep,
+    BannedApi,
     NonWorkspaceDep,
     LintsNotInherited,
 }
@@ -25,6 +29,9 @@ impl Rule {
             Self::UnlistedCrate => "L1 unlisted-crate",
             Self::ForbiddenEdge => "L2 forbidden-edge",
             Self::LayersCycle => "L3 layers-cycle",
+            Self::BannedDep => "L4 banned-dep",
+            Self::RestrictedDirectDep => "L5 restricted-direct-dep",
+            Self::BannedApi => "L6 banned-api",
             Self::NonWorkspaceDep => "L7 non-workspace-dep",
             Self::LintsNotInherited => "L8 lints-not-inherited",
         }
@@ -68,16 +75,34 @@ pub(crate) struct Dep {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct SourceFile {
+    /// Relative to the crate directory, `/`-separated.
+    pub(crate) path: String,
+    pub(crate) text: String,
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct Member {
     pub(crate) name: String,
+    /// Key of this crate in `Workspace::graph`.
+    pub(crate) id: String,
     pub(crate) manifest: String,
     pub(crate) deps: Vec<Dep>,
+    pub(crate) sources: Vec<SourceFile>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct GraphNode {
+    pub(crate) name: String,
+    /// Ids of normal and build dependencies only: dev-dependencies never reach a built artifact.
+    pub(crate) deps: Vec<String>,
 }
 
 /// The workspace as the rules see it; built from `cargo metadata` in `load`, by hand in tests.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Workspace {
     pub(crate) members: Vec<Member>,
+    pub(crate) graph: BTreeMap<String, GraphNode>,
 }
 
 pub(crate) fn run(root: &Path) -> anyhow::Result<()> {
@@ -110,14 +135,31 @@ pub(crate) fn check(config: &LayersConfig, workspace: &Workspace) -> Vec<Violati
         .collect();
     for member in &workspace.members {
         check_manifest(member, &mut violations);
+        check_restricted_deps(config, member, &mut violations);
         let Some(rules) = config.crates.get(&member.name) else {
             violations.push(Violation {
                 krate: member.name.clone(),
                 rule: Rule::UnlistedCrate,
                 detail: "workspace member has no [crates] entry in xtask/layers.toml".into(),
             });
+            check_apis(config, None, member, &mut violations);
             continue;
         };
+        let layer_rules = config.layer_rules(rules.layer);
+        check_banned_tree(&layer_rules.banned_deps, workspace, member, &mut violations);
+        for dep in &member.deps {
+            if layer_rules.banned_direct_deps.contains(&dep.name) {
+                violations.push(Violation {
+                    krate: member.name.clone(),
+                    rule: Rule::RestrictedDirectDep,
+                    detail: format!(
+                        "direct dependency on {} ({}) is banned in the {:?} layer",
+                        dep.name, dep.kind, rules.layer
+                    ),
+                });
+            }
+        }
+        check_apis(config, Some(rules), member, &mut violations);
         for dep in &member.deps {
             if internal.contains(dep.name.as_str()) && !rules.allowed.contains(&dep.name) {
                 violations.push(Violation {
@@ -136,6 +178,115 @@ pub(crate) fn check(config: &LayersConfig, workspace: &Workspace) -> Vec<Violati
     violations.sort();
     violations.dedup();
     violations
+}
+
+fn check_restricted_deps(config: &LayersConfig, member: &Member, violations: &mut Vec<Violation>) {
+    for dep in &member.deps {
+        if let Some(owners) = config.restricted_deps.get(&dep.name)
+            && !owners.contains(&member.name)
+        {
+            violations.push(Violation {
+                krate: member.name.clone(),
+                rule: Rule::RestrictedDirectDep,
+                detail: format!(
+                    "direct dependency on {} ({}); only [{}] may depend on it",
+                    dep.name,
+                    dep.kind,
+                    owners.join(", ")
+                ),
+            });
+        }
+    }
+}
+
+fn check_banned_tree(
+    banned: &[String],
+    workspace: &Workspace,
+    member: &Member,
+    violations: &mut Vec<Violation>,
+) {
+    if banned.is_empty() {
+        return;
+    }
+    // BFS so each banned package is reported with its shortest path from the member.
+    let mut parent: BTreeMap<&str, &str> = BTreeMap::new();
+    let mut queue = std::collections::VecDeque::from([member.id.as_str()]);
+    let mut seen = BTreeSet::from([member.id.as_str()]);
+    let mut reported = BTreeSet::new();
+    while let Some(id) = queue.pop_front() {
+        let Some(node) = workspace.graph.get(id) else {
+            continue;
+        };
+        if id != member.id && banned.contains(&node.name) && reported.insert(node.name.as_str()) {
+            let mut path = vec![node.name.as_str()];
+            let mut cursor = id;
+            while let Some(prev) = parent.get(cursor) {
+                cursor = prev;
+                path.push(
+                    workspace
+                        .graph
+                        .get(cursor)
+                        .map_or(cursor, |n| n.name.as_str()),
+                );
+            }
+            path.reverse();
+            violations.push(Violation {
+                krate: member.name.clone(),
+                rule: Rule::BannedDep,
+                detail: format!(
+                    "banned dependency {} in the normal/build tree: {}",
+                    node.name,
+                    path.join(" -> ")
+                ),
+            });
+        }
+        for next in &node.deps {
+            if seen.insert(next.as_str()) {
+                parent.insert(next.as_str(), id);
+                queue.push_back(next.as_str());
+            }
+        }
+    }
+}
+
+fn check_apis(
+    config: &LayersConfig,
+    rules: Option<&config::CrateRules>,
+    member: &Member,
+    violations: &mut Vec<Violation>,
+) {
+    let mut api_rules: Vec<&config::ApiRule> = Vec::new();
+    if let Some(rules) = rules {
+        api_rules.extend(&config.layer_rules(rules.layer).banned_apis);
+        api_rules.extend(&rules.banned_apis);
+    }
+    api_rules.extend(
+        config
+            .restricted_apis
+            .iter()
+            .filter(|api| !api.allowed_in.contains(&member.name))
+            .map(|api| &api.rule),
+    );
+    if api_rules.is_empty() {
+        return;
+    }
+    for file in &member.sources {
+        let code = scan::code_only(&file.text);
+        for rule in &api_rules {
+            for found in rule.regex.find_iter(&code) {
+                violations.push(Violation {
+                    krate: member.name.clone(),
+                    rule: Rule::BannedApi,
+                    detail: format!(
+                        "{} at {}:{}",
+                        rule.label,
+                        file.path,
+                        scan::line_of(&code, found.start())
+                    ),
+                });
+            }
+        }
+    }
 }
 
 fn check_layers_cycle(config: &LayersConfig, violations: &mut Vec<Violation>) {
@@ -306,6 +457,7 @@ mod tests {
     fn member(name: &str, deps: &[&str]) -> Member {
         Member {
             name: name.into(),
+            id: name.into(),
             manifest: manifest(name, deps),
             deps: deps
                 .iter()
@@ -314,11 +466,79 @@ mod tests {
                     kind: DepKind::Normal,
                 })
                 .collect(),
+            sources: Vec::new(),
         }
     }
 
+    /// Graph ids are package names; external packages are added with `package`.
     fn workspace(members: Vec<Member>) -> Workspace {
-        Workspace { members }
+        let mut ws = Workspace {
+            members,
+            graph: BTreeMap::new(),
+        };
+        for m in ws.members.clone() {
+            let deps: Vec<&str> = m
+                .deps
+                .iter()
+                .filter(|d| d.kind != DepKind::Dev)
+                .map(|d| d.name.as_str())
+                .collect();
+            package(&mut ws, &m.name, &deps);
+        }
+        ws
+    }
+
+    fn package(ws: &mut Workspace, name: &str, deps: &[&str]) {
+        ws.graph.insert(
+            name.into(),
+            GraphNode {
+                name: name.into(),
+                deps: deps.iter().map(|d| (*d).into()).collect(),
+            },
+        );
+    }
+
+    fn real_config() -> LayersConfig {
+        LayersConfig::parse(include_str!("../../layers.toml")).unwrap()
+    }
+
+    fn real_workspace() -> Workspace {
+        workspace(vec![
+            member("wolluf-core", &[]),
+            member("wolluf-chart", &["wolluf-core"]),
+            member("wolluf-store", &["wolluf-core"]),
+            member("wolluf-source-osu", &["wolluf-core"]),
+            member(
+                "wolluf-app",
+                &["wolluf-core", "wolluf-store", "wolluf-source-osu"],
+            ),
+            member("wolluf-desktop", &["wolluf-core", "wolluf-app"]),
+            member("wolluf-cli", &["wolluf-core", "wolluf-app", "anyhow"]),
+            member("xtask", &["anyhow"]),
+        ])
+    }
+
+    fn add_source(ws: &mut Workspace, krate: &str, path: &str, text: &str) {
+        let m = ws.members.iter_mut().find(|m| m.name == krate).unwrap();
+        m.sources.push(SourceFile {
+            path: path.into(),
+            text: text.into(),
+        });
+    }
+
+    fn add_dep(ws: &mut Workspace, krate: &str, dep: &str, kind: DepKind) {
+        let m = ws.members.iter_mut().find(|m| m.name == krate).unwrap();
+        m.deps.push(Dep {
+            name: dep.into(),
+            kind,
+        });
+        if kind != DepKind::Dev {
+            ws.graph.get_mut(krate).unwrap().deps.push(dep.into());
+            ws.graph.entry(dep.into()).or_insert_with(|| GraphNode {
+                name: dep.into(),
+                deps: Vec::new(),
+            });
+        }
     }
 
     fn clean_workspace() -> Workspace {
@@ -452,6 +672,213 @@ mod tests {
             [
                 "wolluf-chart: L8 lints-not-inherited: manifest lacks `[lints] workspace = true`",
                 "wolluf-store: L8 lints-not-inherited: manifest lacks `[lints] workspace = true`",
+            ]
+        );
+    }
+
+    #[test]
+    fn real_workspace_fixture_passes_real_rules() {
+        let mut ws = real_workspace();
+        add_source(
+            &mut ws,
+            "wolluf-source-osu",
+            "src/read.rs",
+            "use std::fs;\npub fn f(p: &std::path::Path) { let _ = fs::read(p); let _ = std::fs::symlink_metadata(p); }\n",
+        );
+        add_source(
+            &mut ws,
+            "wolluf-app",
+            "src/clock.rs",
+            "#[allow(clippy::disallowed_methods)]\nfn now() { std::time::SystemTime::now(); }\n",
+        );
+        add_source(
+            &mut ws,
+            "wolluf-store",
+            "src/db.rs",
+            "use rusqlite::Connection;\n",
+        );
+        add_dep(&mut ws, "wolluf-store", "rusqlite", DepKind::Normal);
+        add_dep(&mut ws, "wolluf-app", "tokio", DepKind::Normal);
+        add_dep(&mut ws, "wolluf-core", "proptest", DepKind::Dev);
+        assert_eq!(lines(&check(&real_config(), &ws)), Vec::<String>::new());
+    }
+
+    #[test]
+    fn rejects_tokio_in_domain_tree() {
+        let mut ws = real_workspace();
+        add_dep(&mut ws, "wolluf-chart", "some-lib", DepKind::Normal);
+        package(&mut ws, "some-lib", &["helper"]);
+        package(&mut ws, "helper", &["tokio"]);
+        package(&mut ws, "tokio", &[]);
+        let got = lines(&check(&real_config(), &ws));
+        assert_eq!(
+            got,
+            [
+                "wolluf-chart: L4 banned-dep: banned dependency tokio in the normal/build tree: wolluf-chart -> some-lib -> helper -> tokio"
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_rusqlite_outside_store() {
+        let mut ws = real_workspace();
+        add_dep(&mut ws, "wolluf-app", "rusqlite", DepKind::Dev);
+        add_source(
+            &mut ws,
+            "wolluf-app",
+            "src/plays.rs",
+            "fn f() {\n    let _c = rusqlite::Connection::open_in_memory();\n}\n",
+        );
+        let got = lines(&check(&real_config(), &ws));
+        assert_eq!(
+            got,
+            [
+                "wolluf-app: L5 restricted-direct-dep: direct dependency on rusqlite (dev); only [wolluf-store] may depend on it",
+                "wolluf-app: L6 banned-api: rusqlite:: at src/plays.rs:2",
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_tokio_direct_in_store() {
+        let mut ws = real_workspace();
+        add_dep(&mut ws, "wolluf-store", "tokio", DepKind::Normal);
+        let got = lines(&check(&real_config(), &ws));
+        assert_eq!(
+            got,
+            [
+                "wolluf-store: L5 restricted-direct-dep: direct dependency on tokio (normal); only [wolluf-app, wolluf-desktop, wolluf-cli] may depend on it"
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_std_fs_in_domain() {
+        let mut ws = real_workspace();
+        add_source(
+            &mut ws,
+            "wolluf-core",
+            "src/lib.rs",
+            "pub fn f() {\n    let _ = std::fs::read(\"x\");\n    let _ = ::std :: env::var(\"HOME\");\n    let _ = std::time::SystemTime::now();\n}\n",
+        );
+        add_source(
+            &mut ws,
+            "wolluf-chart",
+            "src/lib.rs",
+            "use std::process::Command;\nfn g() { let _ = std::time::Instant::now(); let _ = rand::thread_rng(); }\n",
+        );
+        let got = lines(&check(&real_config(), &ws));
+        assert_eq!(
+            got,
+            [
+                "wolluf-chart: L6 banned-api: Instant::now at src/lib.rs:2",
+                "wolluf-chart: L6 banned-api: std::fs|net|env|process at src/lib.rs:1",
+                "wolluf-chart: L6 banned-api: thread_rng at src/lib.rs:2",
+                "wolluf-core: L6 banned-api: SystemTime::now at src/lib.rs:4",
+                "wolluf-core: L6 banned-api: std::fs|net|env|process at src/lib.rs:2",
+                "wolluf-core: L6 banned-api: std::fs|net|env|process at src/lib.rs:3",
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_braced_use_std_fs_in_domain() {
+        let mut ws = real_workspace();
+        add_source(
+            &mut ws,
+            "wolluf-core",
+            "src/a.rs",
+            "use std::{\n    io::Read,\n    fs,\n};\n",
+        );
+        add_source(
+            &mut ws,
+            "wolluf-core",
+            "src/b.rs",
+            "use std::{collections::BTreeMap, env::var};\n",
+        );
+        add_source(
+            &mut ws,
+            "wolluf-core",
+            "src/ok.rs",
+            "use std::{collections::BTreeMap, fmt};\nuse std::io::{self, Read};\n",
+        );
+        let got = lines(&check(&real_config(), &ws));
+        assert_eq!(
+            got,
+            [
+                "wolluf-core: L6 banned-api: use std::{fs|net|env|process} at src/a.rs:1",
+                "wolluf-core: L6 banned-api: use std::{fs|net|env|process} at src/b.rs:1",
+            ]
+        );
+    }
+
+    #[test]
+    fn ignores_commented_tokens() {
+        let mut ws = real_workspace();
+        add_source(
+            &mut ws,
+            "wolluf-core",
+            "src/lib.rs",
+            "//! Never call std::fs here.\n/// Unlike SystemTime::now, a Clock is injected.\n// std::env::var(\"X\")\n/* outer /* nested std::net */ still SystemTime::now */\nconst URL: &str = \"https://example.org/*\"; const C: char = '\"'; fn f<'a>(x: &'a str) -> &'a str { x }\nconst R: &str = r#\"quote \" // not a comment\"#;\nconst M: &str = \"use std::fs or SystemTime::now instead\";\n",
+        );
+        assert_eq!(lines(&check(&real_config(), &ws)), Vec::<String>::new());
+
+        // Code after a string that contains `//` is still scanned.
+        add_source(
+            &mut ws,
+            "wolluf-chart",
+            "src/lib.rs",
+            "const U: &str = \"a//b\"; fn f() { let _ = std::fs::read(U); }\n",
+        );
+        let got = lines(&check(&real_config(), &ws));
+        assert_eq!(
+            got,
+            ["wolluf-chart: L6 banned-api: std::fs|net|env|process at src/lib.rs:1"]
+        );
+    }
+
+    #[test]
+    fn rejects_file_create_in_source_osu() {
+        let mut ws = real_workspace();
+        add_source(
+            &mut ws,
+            "wolluf-source-osu",
+            "src/export.rs",
+            "use std::fs::{self, write};\nfn f(p: &std::path::Path) {\n    let _ = std::fs::File::create(p);\n    let _ = std::fs::OpenOptions::new();\n    let _ = fs::remove_dir_all(p);\n}\n",
+        );
+        let got = lines(&check(&real_config(), &ws));
+        assert_eq!(
+            got,
+            [
+                "wolluf-source-osu: L6 banned-api: File::create at src/export.rs:3",
+                "wolluf-source-osu: L6 banned-api: OpenOptions at src/export.rs:4",
+                "wolluf-source-osu: L6 banned-api: remove_dir at src/export.rs:5",
+                "wolluf-source-osu: L6 banned-api: use std::fs::{write|rename|copy} at src/export.rs:1",
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_allow_disallowed_in_domain() {
+        let mut ws = real_workspace();
+        add_source(
+            &mut ws,
+            "wolluf-chart",
+            "src/lib.rs",
+            "#[allow(clippy::disallowed_types)]\nfn f() {}\n#[expect( clippy :: disallowed_methods, reason = \"x\")]\nfn g() {}\n",
+        );
+        add_source(
+            &mut ws,
+            "wolluf-cli",
+            "src/main.rs",
+            "#[allow(clippy::disallowed_types)]\nfn f() {}\n",
+        );
+        let got = lines(&check(&real_config(), &ws));
+        assert_eq!(
+            got,
+            [
+                "wolluf-chart: L6 banned-api: allow(clippy::disallowed_*) at src/lib.rs:1",
+                "wolluf-chart: L6 banned-api: allow(clippy::disallowed_*) at src/lib.rs:3",
             ]
         );
     }

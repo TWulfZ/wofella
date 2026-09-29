@@ -1,8 +1,3 @@
-#![expect(
-    dead_code,
-    reason = "L4-L6 rule data is parsed now and enforced by 001-T10"
-)]
-
 use std::collections::BTreeMap;
 
 use anyhow::{Context, bail};
