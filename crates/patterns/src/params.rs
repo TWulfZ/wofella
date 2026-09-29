@@ -153,15 +153,20 @@ impl Default for StreamParams {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SpeedParams {
+    pub burst_min_rows: u32,
+    /// Longer fast runs are sustained speed (a stream), not a burst.
     pub burst_max_rows: u32,
-    /// Surrounding window the burst's density is compared against.
+    /// Window centred on each row, clamped to the chart, whose mean press-row gap is the
+    /// surrounding pace.
     pub burst_context_us: i64,
+    /// How much faster than the surrounding pace a burst row must be.
     pub burst_min_density_ratio_permille: u32,
 }
 
 impl Default for SpeedParams {
     fn default() -> Self {
         Self {
+            burst_min_rows: 3,
             burst_max_rows: 12,
             burst_context_us: 4_000_000,
             burst_min_density_ratio_permille: 1_500,
@@ -173,8 +178,13 @@ impl Default for SpeedParams {
 pub struct TechParams {
     /// Sliding window, in press rows, for the share-based tech rules.
     pub window_rows: u32,
-    pub irregular_min_offsnap_permille: u32,
+    /// A press gap longer than this is a break; windows never span one.
+    pub window_max_gap_us: i64,
+    /// Share of judged rows that are off-snap or on the window's minority snap family.
+    pub irregular_min_share_permille: u32,
+    /// The heavier hand's share of left + right presses (research 02 l.44: HandBalance).
     pub hand_imbalance_min_share_permille: u32,
+    /// Share of press rows that press a thumb column.
     pub thumb_min_share_permille: u32,
 }
 
@@ -182,37 +192,78 @@ impl Default for TechParams {
     fn default() -> Self {
         Self {
             window_rows: 16,
-            irregular_min_offsnap_permille: 250,
+            window_max_gap_us: 1_000_000,
+            irregular_min_share_permille: 250,
             hand_imbalance_min_share_permille: 700,
             thumb_min_share_permille: 300,
         }
     }
 }
 
+/// LN events (chords, taps under holds, shields, staggered tails) closer than
+/// `group_max_gap_*` belong to one section.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct LnParams {
-    /// Shorter LNs play like taps and do not count as LNs.
+    /// Shorter LNs play like taps and do not count as LNs; `min_len_ticks` applies under a red
+    /// line.
     pub min_len_ticks: u32,
-    pub density_max_gap_ticks: u32,
+    pub min_len_us: i64,
+    /// Sliding window, in press rows, for LN density.
+    pub window_rows: u32,
+    /// A press gap longer than this breaks LN windows; long holds make it wider than tech's.
+    pub window_max_gap_us: i64,
+    pub group_max_gap_ticks: u32,
+    pub group_max_gap_us: i64,
+    /// Share of presses that are LN heads.
+    pub density_min_ln_share_permille: u32,
+    /// Held column-time over window time × columns.
+    pub density_min_coverage_permille: u32,
     pub chord_min_notes: u32,
+    pub chord_min_occurrences: u32,
+    /// Tap rows under a held LN.
     pub hybrid_min_taps: u32,
     /// Tap then LN head on the same column.
     pub shield_max_gap_ticks: u32,
-    /// Tail to the next head on the same column.
+    pub shield_max_gap_us: i64,
+    pub shield_min_occurrences: u32,
+    /// Tail to the next head on the same column. Consistency needs no extra bound: every gap
+    /// already lies within this cap.
     pub inverse_max_gap_ticks: u32,
-    pub release_min_stagger_ticks: u32,
+    pub inverse_max_gap_us: i64,
+    pub inverse_min_gaps: u32,
+    pub inverse_min_coverage_permille: u32,
+    /// Tails closer than this release as one (lazer `release_threshold`, research 02 l.44).
+    pub release_min_stagger_us: i64,
+    pub release_max_stagger_ticks: u32,
+    pub release_max_stagger_us: i64,
+    pub release_min_occurrences: u32,
 }
 
 impl Default for LnParams {
     fn default() -> Self {
         Self {
             min_len_ticks: TICKS_PER_BEAT / 8,
-            density_max_gap_ticks: TICKS_PER_BEAT / 2,
+            min_len_us: 30_000,
+            window_rows: 8,
+            window_max_gap_us: 2_000_000,
+            group_max_gap_ticks: TICKS_PER_BEAT,
+            group_max_gap_us: 1_000_000,
+            density_min_ln_share_permille: 500,
+            density_min_coverage_permille: 300,
             chord_min_notes: 2,
-            hybrid_min_taps: 2,
+            chord_min_occurrences: 3,
+            hybrid_min_taps: 3,
             shield_max_gap_ticks: TICKS_PER_BEAT / 4,
+            shield_max_gap_us: 250_000,
+            shield_min_occurrences: 2,
             inverse_max_gap_ticks: TICKS_PER_BEAT / 4,
-            release_min_stagger_ticks: TICKS_PER_BEAT / 16,
+            inverse_max_gap_us: 250_000,
+            inverse_min_gaps: 4,
+            inverse_min_coverage_permille: 600,
+            release_min_stagger_us: 30_000,
+            release_max_stagger_ticks: TICKS_PER_BEAT / 4,
+            release_max_stagger_us: 250_000,
+            release_min_occurrences: 3,
         }
     }
 }
@@ -253,7 +304,7 @@ mod tests {
 
     // Frozen on first computation: any change to a default or to the params layout moves every
     // pattern vkey, so it must be deliberate.
-    const DEFAULT_HASH: &str = "68599a3f40a24d2b189333c813fcc7155d9022cd37292691d4755d1715cfac96";
+    const DEFAULT_HASH: &str = "c339605a7c82fdb142e8a80c37feb450da2f1c50678cfe60c02d6521a0f4460b";
 
     #[test]
     fn default_params_hash_is_frozen() {

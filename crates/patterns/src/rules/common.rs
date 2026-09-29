@@ -232,3 +232,58 @@ pub(super) fn span_candidate(
         strength,
     })
 }
+
+/// `gap_us` is within `max_us` and, under a red line, within `max_ticks`.
+pub(super) fn gap_within(gap_us: i64, beat_us: Option<i64>, max_ticks: u32, max_us: i64) -> bool {
+    gap_us <= max_us && beat_us.is_none_or(|beat| ticks(gap_us, beat) <= max_ticks)
+}
+
+/// Spans of press rows (row indices) covered by windows of `n` consecutive press rows that pass
+/// `passes`; overlapping or touching passing windows merge, and no window spans a press gap
+/// over `max_gap_us`.
+pub(super) fn window_spans(
+    rows: &[RowFeat],
+    n: u32,
+    max_gap_us: i64,
+    passes: impl Fn(&[usize]) -> bool,
+) -> Vec<Vec<usize>> {
+    let mut sections: Vec<Vec<usize>> = vec![Vec::new()];
+    for i in press_rows(rows) {
+        let broken = rows
+            .get(i)
+            .and_then(|r| r.press_gap_us)
+            .is_some_and(|gap| gap > max_gap_us);
+        if broken {
+            sections.push(Vec::new());
+        }
+        if let Some(section) = sections.last_mut() {
+            section.push(i);
+        }
+    }
+    let n = usize::try_from(n).unwrap_or(usize::MAX).max(1);
+    let mut spans = Vec::new();
+    for section in sections.iter().filter(|s| s.len() >= n) {
+        let mut open: Option<(usize, usize)> = None;
+        for start in 0..=section.len() - n {
+            if !section.get(start..start + n).is_some_and(&passes) {
+                continue;
+            }
+            open = match open {
+                Some((a, end)) if start <= end => Some((a, start + n)),
+                other => {
+                    spans.extend(
+                        other
+                            .and_then(|(a, e)| section.get(a..e))
+                            .map(<[usize]>::to_vec),
+                    );
+                    Some((start, start + n))
+                }
+            };
+        }
+        spans.extend(
+            open.and_then(|(a, e)| section.get(a..e))
+                .map(<[usize]>::to_vec),
+        );
+    }
+    spans
+}

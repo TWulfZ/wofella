@@ -2,35 +2,56 @@
 
 mod anchor;
 mod bracket;
+mod burst;
 mod chordbracket;
 mod chordjack;
 mod chordstream_dense;
 mod chordstream_light;
 mod common;
+mod hand_imbalance;
 mod handstream;
+mod irregular;
 mod jumpstream;
 mod jumptrill;
+mod ln_chord;
+mod ln_common;
+mod ln_density;
+mod ln_hybrid;
+mod ln_inverse;
+mod ln_release;
+mod ln_shield;
 mod longjack;
 mod minijack;
 mod roll;
 mod single;
 mod split_trill;
+mod thumb;
 mod trill;
 
 pub use anchor::Anchor;
 pub use bracket::Bracket;
+pub use burst::Burst;
 pub use chordbracket::Chordbracket;
 pub use chordjack::Chordjack;
 pub use chordstream_dense::ChordstreamDense;
 pub use chordstream_light::ChordstreamLight;
+pub use hand_imbalance::HandImbalance;
 pub use handstream::Handstream;
+pub use irregular::Irregular;
 pub use jumpstream::Jumpstream;
 pub use jumptrill::Jumptrill;
+pub use ln_chord::LnChord;
+pub use ln_density::LnDensity;
+pub use ln_hybrid::LnHybrid;
+pub use ln_inverse::LnInverse;
+pub use ln_release::LnRelease;
+pub use ln_shield::LnShield;
 pub use longjack::Longjack;
 pub use minijack::Minijack;
 pub use roll::Roll;
 pub use single::Single;
 pub use split_trill::SplitTrill;
+pub use thumb::Thumb;
 pub use trill::Trill;
 
 use crate::rule::PatternRule;
@@ -54,6 +75,16 @@ pub fn all() -> &'static [&'static dyn PatternRule] {
         &SplitTrill,
         &Bracket,
         &Chordbracket,
+        &Irregular,
+        &HandImbalance,
+        &Thumb,
+        &Burst,
+        &LnDensity,
+        &LnChord,
+        &LnHybrid,
+        &LnShield,
+        &LnInverse,
+        &LnRelease,
     ]
 }
 
@@ -112,6 +143,21 @@ pub(crate) mod testkit {
         let left = detect_with(rule, chart, &Layout::by_id("k7.313_left_thumb").unwrap());
         assert_eq!(right, left);
         right
+    }
+
+    pub(crate) fn layout(id: &str) -> Layout {
+        Layout::by_id(id).unwrap()
+    }
+
+    /// Single notes cycling through `cols`, the first at 0 and one more after each gap.
+    pub(crate) fn seq(gaps_ms: &[i32], cols: &[u8], beat_len_ms: Option<f64>) -> Chart {
+        let mut t = 0;
+        let mut notes = vec![(0, cols[0])];
+        for (i, gap) in gaps_ms.iter().enumerate() {
+            t += gap;
+            notes.push((t, cols[(i + 1) % cols.len()]));
+        }
+        taps(&notes, beat_len_ms)
     }
 
     /// Taps at `(ms, col)` in 7K, optionally under one red line at 0.
@@ -203,6 +249,16 @@ mod tests {
                 "regular.stream.split_trill",
                 "regular.stream.bracket",
                 "regular.stream.chordbracket",
+                "regular.tech.irregular",
+                "regular.tech.hand_imbalance",
+                "regular.tech.thumb",
+                "regular.speed.burst",
+                "ln.general.density",
+                "ln.general.chord",
+                "ln.tech.hybrid",
+                "ln.tech.shield",
+                "ln.inverse.gap",
+                "ln.release.timing",
             ]
         );
         assert!(all().iter().all(|r| r.version() >= 1));
@@ -247,7 +303,12 @@ mod props {
         let scattered = prop::collection::vec(note, 0..200);
         // Alternations of disjoint masks and repeated shapes, which scattered notes almost
         // never form (jumptrills, dense chordstreams, brackets).
-        let segment = (1u16..128, any::<u16>(), 2usize..9, any::<bool>());
+        let segment = (
+            prop_oneof![(0u8..7).prop_map(|c| 1u16 << c), 1u16..128],
+            any::<u16>(),
+            2usize..9,
+            any::<bool>(),
+        );
         let shaped = prop::collection::vec(segment, 1..12).prop_map(|segments| {
             let mut notes = Vec::new();
             let mut row = 0i64;
@@ -266,8 +327,71 @@ mod props {
             }
             notes
         });
+        // Long-note sections: chords of LNs with short gaps, taps under them, shields and
+        // staggered tails, so every LN rule gets material.
+        let ln_segment = (
+            1u16..128,
+            1i64..6,
+            1i64..4,
+            1usize..6,
+            any::<u16>(),
+            0i64..60,
+            any::<bool>(),
+        );
+        let ln_shaped = prop::collection::vec(ln_segment, 1..8).prop_map(|segments| {
+            let mut notes = Vec::new();
+            let mut row = 1i64;
+            for (a, len, gap, repeats, taps, stagger_ms, shield) in segments {
+                for _ in 0..repeats {
+                    for col in (0u8..7).filter(|c| a & (1 << c) != 0) {
+                        let head = row * 80_000;
+                        if shield {
+                            notes.push(Note {
+                                t: TimeUs(head - 80_000),
+                                col,
+                                kind: NoteKind::Tap,
+                            });
+                        }
+                        let end = (row + len) * 80_000 + i64::from(col) * stagger_ms * 1_000;
+                        notes.push(Note {
+                            t: TimeUs(head),
+                            col,
+                            kind: NoteKind::Hold { end: TimeUs(end) },
+                        });
+                    }
+                    for col in (0u8..7).filter(|c| taps & !a & (1 << c) != 0) {
+                        notes.push(Note {
+                            t: TimeUs((row + 1) * 80_000),
+                            col,
+                            kind: NoteKind::Tap,
+                        });
+                    }
+                    row += len + gap;
+                }
+            }
+            notes
+        });
+        // Inverse-style blocks: long LNs on most columns with one-row gaps.
+        let inverse_segment = (prop_oneof![Just(0x7fu16), 0x3fu16..128], 3i64..9, 2usize..6);
+        let inverse_shaped = prop::collection::vec(inverse_segment, 1..4).prop_map(|segments| {
+            let mut notes = Vec::new();
+            let mut row = 0i64;
+            for (a, len, repeats) in segments {
+                for _ in 0..repeats {
+                    notes.extend((0u8..7).filter(|c| a & (1 << c) != 0).map(|col| Note {
+                        t: TimeUs(row * 80_000),
+                        col,
+                        kind: NoteKind::Hold {
+                            end: TimeUs((row + len) * 80_000),
+                        },
+                    }));
+                    row += len + 1;
+                }
+            }
+            notes
+        });
         (
-            prop_oneof![scattered, shaped],
+            prop_oneof![2 => scattered, 3 => shaped, 2 => ln_shaped, 1 => inverse_shaped],
             prop::collection::vec(red, 0..3),
             0usize..5,
         )
@@ -311,10 +435,14 @@ mod props {
                     prop_assert!(c.strength <= STRENGTH_MAX);
                     prop_assert!(!c.cols.is_empty());
                     let span: Vec<_> = view.rows().iter().filter(|r| c.t0 <= r.t && r.t <= c.t1).collect();
-                    prop_assert!(span.first().is_some_and(|r| r.t == c.t0 && !r.press.is_empty()));
-                    prop_assert!(span.last().is_some_and(|r| r.t == c.t1 && !r.press.is_empty()));
-                    let pressed = span.iter().fold(0u16, |acc, r| acc | r.press.bits());
-                    prop_assert!(c.cols.is_subset_of(ColMask::from_bits(K, pressed).unwrap()));
+                    // LN rules may start or end on a release and name held columns.
+                    let ln = c.pattern.as_str().starts_with("ln.");
+                    prop_assert!(span.first().is_some_and(|r| r.t == c.t0 && (ln || !r.press.is_empty())));
+                    prop_assert!(span.last().is_some_and(|r| r.t == c.t1 && (ln || !r.press.is_empty())));
+                    let touched = span.iter().fold(0u16, |acc, r| {
+                        acc | r.press.bits() | if ln { r.release.bits() | r.held.bits() } else { 0 }
+                    });
+                    prop_assert!(c.cols.is_subset_of(ColMask::from_bits(K, touched).unwrap()), "{}", rule.id());
                 }
             }
         }
@@ -328,9 +456,11 @@ mod props {
             let params = PatternParams::default();
             let a = ChartView::new(&chart, &layout, &params).unwrap();
             let b = ChartView::new(&mirror_chart, &layout, &params).unwrap();
-            let agnostic: [&dyn PatternRule; 13] = [
+            let agnostic: [&dyn PatternRule; 21] = [
                 &Minijack, &Chordjack, &Longjack, &Anchor, &Single, &Jumpstream, &Handstream,
                 &ChordstreamLight, &ChordstreamDense, &Roll, &Trill, &Jumptrill, &Chordbracket,
+                &Irregular, &Burst, &LnDensity, &LnChord, &LnHybrid, &LnShield, &LnInverse,
+                &LnRelease,
             ];
             for rule in agnostic {
                 let mut expected: Vec<Candidate> = rule.detect(&a, &params).iter().map(mirrored).collect();
