@@ -23,7 +23,8 @@ pub struct Candidate {
 /// `Send + Sync` because the app runs stages on a worker pool that shares the registry.
 pub trait PatternRule: Send + Sync {
     fn id(&self) -> PatternId;
-    /// Bumped when the rule's output changes for the same input and params.
+    /// Bump when the rule's output changes for the same input and params: every rule's
+    /// `(id, version)` enters the `patterns` stage key, so stored segments are recomputed.
     fn version(&self) -> u32;
     fn supports(&self, keymode: Keymode) -> bool;
     /// Candidates in any order; callers sort them.

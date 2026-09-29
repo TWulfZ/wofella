@@ -43,7 +43,7 @@ Deliverable 2 of F1 (architecture §3 patterns crate, §9.2, §12 F1 row). Rules
 - [x] T3: stream rules (single, jumpstream, handstream, chordstream light/dense, roll, trill, jumptrill, split_trill, bracket, chordbracket). Route: delegated. Tier: medium. Commit: `feat(patterns): add stream rules`
 - [x] T4: tech + speed rules (irregular, hand_imbalance, thumb, burst) and LN rules (density, chord, hybrid, shield, inverse gap, release timing). Route: delegated. Tier: medium. Commit: `feat(patterns): add tech, speed and LN rules`
 - [x] T5: segmenter: merge, min/max length, overlap resolution by priority, purity, secondary tags. Route: delegated. Tier: medium. Commit: `feat(patterns): add segmenter with priority resolution`
-- [ ] T6: engine `patterns` stage + golden + vkey; store `segment` table; app pass in IndexLibrary + query; CLI `--segments`; corpus test. Route: delegated. Tier: high (persisted encoding + vkey). Commit: —
+- [x] T6: engine `patterns` stage + golden + vkey; store `segment` table; app pass in IndexLibrary + query; CLI `--segments`; corpus test. Route: delegated. Tier: high (persisted encoding + vkey). Commit: `feat(engine): add patterns stage, segment cache and --segments view`
 - [ ] T7: close: full gates, corpus, docs, remove this document. Route: inline. Tier: passive. Commit: —
 
 ## Progress
@@ -90,5 +90,15 @@ Deliverable 2 of F1 (architecture §3 patterns crate, §9.2, §12 F1 row). Rules
   - `ln.inverse.gap` fix: a gap counts only if local coverage ≥ 60%;
   - all params are uncalibrated placeholders until the eval step.
 
+- 2026-09-29 T6: RED per layer → GREEN; workspace 833 passed.
+- The independent verifier asked for changes; the scoped correction was applied:
+  - the patterns vkey folds in the chart_parse vkey and the sorted (rule id, version) pairs;
+  - the golden covers all 25 ids (enforced by a test);
+  - store canonicalizes secondary tags and adds a json_valid CHECK;
+  - a missing parse row is an item failure, and a keymode mismatch is PARSE_FAILED;
+  - the `--segments` legend names the segmenter layout.
+- Frozen values: vkey `bc9713f9…`, golden `3d14fbc8…`.
+- Accepted change: the engine re-exports `Chart` and `Segment` so app can name them, which adds no crate edge (the verifier agreed).
+
 ## Next step
-T6: engine stage + store segment table + app pass + CLI --segments + corpus (high tier → independent verifier after).
+T7: close. architecture §5.4 segment schema, CLAUDE.md commands, full gates, corpus when osu! is closed.
