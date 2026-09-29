@@ -39,7 +39,7 @@ Deliverable 2 of F1 (architecture §3 patterns crate, §9.2, §12 F1 row). Rules
 
 ## Tasks
 - [x] T1: `wolluf-patterns` skeleton: `ChartView` + `RowFeat` primitives (press/release/held masks, jacks, per-hand masks from Layout, gaps, direction/roll, snap from red lines, density), `PatternRule` trait, `Candidate`, `PatternParams` (Default + canonical hash). Fetch the Interlude `Patterns.fs` / primitives constants from YAVSRG source (MIT) for reference. Route: delegated. Tier: medium. Commit: `feat(patterns): add ChartView primitives, rule trait and params`
-- [ ] T2: jack rules (minijack, longjack, chordjack, anchor). Route: delegated. Tier: medium. Commit: —
+- [x] T2: jack rules (minijack, longjack, chordjack, anchor). Route: delegated. Tier: medium. Commit: `feat(patterns): add jack rules`
 - [ ] T3: stream rules (single, jumpstream, handstream, chordstream light/dense, roll, trill, jumptrill, split_trill, bracket, chordbracket). Route: delegated. Tier: medium. Commit: —
 - [ ] T4: tech + speed rules (irregular, hand_imbalance, thumb, burst) and LN rules (density, chord, hybrid, shield, inverse gap, release timing). Route: delegated. Tier: medium. Commit: —
 - [ ] T5: segmenter: merge, min/max length, overlap resolution by priority, purity, secondary tags. Route: delegated. Tier: medium. Commit: —
@@ -49,5 +49,11 @@ Deliverable 2 of F1 (architecture §3 patterns crate, §9.2, §12 F1 row). Rules
 ## Progress
 - 2026-09-29 T1: RED unresolved imports → GREEN 22/22; workspace 674 passed, 10 members. Interlude prelude (MIT, d41fc216) was read for primitives; direction, roll and jacks are ported with a NOTICE line. The ADR 0017 counts (minijack 2, longjack 3+, jump 2, hand 3, dense 4+, jumptrill > 4) are named constants that cite the ADR, not params. `detect` takes `&ChartView` only, since the view carries the Layout.
 
+- 2026-09-29 T2: RED unresolved rule types → GREEN 57/57; workspace 709 passed. "Jack-fast" means ≤ 500 ms and ≤ 1 beat, which makes it rate-invariant.
+- Accepted changes:
+  - chordjack is a run of ≥ 3 chord rows with ≥ 1 repeated column and at least one chord of 3+ notes, dropping Interlude's `(b<a||j<b)` because a chord repeated unchanged is a chordjack in 7K;
+  - anchor = the same column every 2nd press row for ≥ 4 hits, excluding trills.
+  - Overlap to settle in T5: a chord repeated unchanged yields both chordjack and per-column longjacks.
+
 ## Next step
-T2: jack rules (same writer continues).
+T3: stream rules (same writer continues).

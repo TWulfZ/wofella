@@ -71,6 +71,8 @@ pub struct JackParams {
     pub chordjack_min_first_notes: u32,
     pub chordjack_min_next_notes: u32,
     pub chordjack_min_jacks: u32,
+    /// Interlude matches a single chord pair; one jacked pair is too weak to own a segment.
+    pub chordjack_min_rows: u32,
     /// "Every other row" in the taxonomy is a period of 2.
     pub anchor_max_period_rows: u32,
     pub anchor_min_hits: u32,
@@ -84,6 +86,7 @@ impl Default for JackParams {
             chordjack_min_first_notes: 3,
             chordjack_min_next_notes: 2,
             chordjack_min_jacks: 1,
+            chordjack_min_rows: 3,
             anchor_max_period_rows: 2,
             anchor_min_hits: 4,
         }
@@ -230,7 +233,7 @@ mod tests {
 
     // Frozen on first computation: any change to a default or to the params layout moves every
     // pattern vkey, so it must be deliberate.
-    const DEFAULT_HASH: &str = "0d79a30d1f6ada4d6ed5c0446241f29661d9d74b7a732ce2bcb45413e6872ea2";
+    const DEFAULT_HASH: &str = "27c46fec456c861f83a8e5afe2cf1999c0151fe4139b305ef06aa924047521b2";
 
     #[test]
     fn default_params_hash_is_frozen() {

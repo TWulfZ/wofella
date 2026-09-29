@@ -267,7 +267,7 @@ fn beat_at(reds: &[(TimeUs, i64)], t: TimeUs) -> Option<i64> {
         .map(|&(_, beat)| beat)
 }
 
-fn ticks(gap_us: i64, beat_us: i64) -> u32 {
+pub(crate) fn ticks(gap_us: i64, beat_us: i64) -> u32 {
     let (gap, beat) = (i128::from(gap_us), i128::from(beat_us));
     let ticks = (gap * i128::from(TICKS_PER_BEAT) + beat / 2) / beat;
     u32::try_from(ticks).unwrap_or(u32::MAX)
