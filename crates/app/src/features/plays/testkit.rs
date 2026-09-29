@@ -137,8 +137,6 @@ impl Fixture {
 /// The spec 003 AC10 install: 6 mania scores (incl. `""` and a non-UTF-8 name), 1 osu!std
 /// score, 1 exact duplicate; `.osr` for 5 plays and `.osg` for 3; one consistent orphan and one
 /// orphan whose header md5 differs from its name; two Songs charts, one edited in place.
-// The orphans are read by the archive-step tests (003 T17).
-#[allow(dead_code)]
 pub(crate) struct Ac10 {
     pub(crate) install: FakeInstall,
     pub(crate) scores: Vec<ScoreBuilder>,
