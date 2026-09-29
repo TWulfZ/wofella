@@ -8,6 +8,11 @@ use crate::diag::{DiagCode, Diagnostics};
 use crate::error::CodecError;
 
 const KIND: FileKind = FileKind::Osg;
+/// Builds seen on the pilot (spec 006 Risks). A data table, not a threshold: an unknown build is
+/// only a warning because the stride check (I1) is the real format gate (R7).
+pub const KNOWN_CLIENT_VERSIONS: [i32; 7] = [
+    20_260_312, 20_260_412, 20_260_612, 20_260_622, 20_260_624, 20_260_711, 20_260_924,
+];
 const HEADER_LEN: usize = 4 + 4;
 /// ScoreV1 record: t_ms, b4, 6 counts, score, max combo, combo, b25, hp_raw, b28.
 pub const STRIDE_V1: usize = 4 + 1 + 6 * 2 + 4 + 2 + 2 + 1 + 2 + 1;
@@ -77,8 +82,15 @@ pub fn decode_osg(bytes: &[u8]) -> Result<(OsgFile, Diagnostics), CodecError> {
         )?);
     }
     r.expect_eof()?;
-    if records.is_empty() {
-        diags.general(DiagCode::OsgEmptyGraph, "0 records");
+    if !KNOWN_CLIENT_VERSIONS.contains(&client_version) {
+        diags.general(
+            DiagCode::OsgUnknownClientVersion,
+            format!("client version {client_version}"),
+        );
+    }
+    match stride {
+        Some(stride) => check_records(&records, stride, &mut diags),
+        None => diags.general(DiagCode::OsgEmptyGraph, "0 records"),
     }
     let osg = OsgFile {
         client_version,
@@ -98,6 +110,67 @@ fn stride_for(body: usize, count: usize) -> Option<Option<usize>> {
         .into_iter()
         .find(|&s| count.checked_mul(s) == Some(body))
         .map(Some)
+}
+
+/// Tallies one warning kind across a file so a corpus of millions of records yields one
+/// diagnostic per kind per file, pointing at the first offender.
+#[derive(Default)]
+struct Tally {
+    first: Option<usize>,
+    count: usize,
+}
+
+impl Tally {
+    fn hit(&mut self, idx: usize) {
+        self.first.get_or_insert(idx);
+        self.count += 1;
+    }
+
+    fn report(&self, diags: &mut Diagnostics, code: DiagCode, stride: usize) {
+        if let Some(first) = self.first {
+            diags.at_offset(
+                code,
+                (HEADER_LEN + first * stride) as u64,
+                format!("first record {first}, {} records", self.count),
+            );
+        }
+    }
+}
+
+fn counts_array(c: &JudgementCounts) -> [u16; 6] {
+    [c.n300, c.n100, c.n50, c.geki, c.katu, c.miss]
+}
+
+/// H1/I3/I4 checks as warnings: the spike reports them, it does not reject files for them.
+fn check_records(records: &[OsgRecord], stride: usize, diags: &mut Diagnostics) {
+    let v2_flag = u8::from(stride == STRIDE_V2);
+    let (mut flag, mut reserved, mut time, mut counts) = (
+        Tally::default(),
+        Tally::default(),
+        Tally::default(),
+        Tally::default(),
+    );
+    for (idx, r) in records.iter().enumerate() {
+        if r.b28 != v2_flag {
+            flag.hit(idx);
+        }
+        if r.b4 != 0 || r.b25 != 0 {
+            reserved.hit(idx);
+        }
+        if let Some(prev) = idx.checked_sub(1).and_then(|p| records.get(p)) {
+            if r.t_ms < prev.t_ms {
+                time.hit(idx);
+            }
+            let (now, before) = (counts_array(&r.counts), counts_array(&prev.counts));
+            if now.iter().zip(before).any(|(n, b)| *n < b) {
+                counts.hit(idx);
+            }
+        }
+    }
+    flag.report(diags, DiagCode::OsgFlagStrideDisagree, stride);
+    reserved.report(diags, DiagCode::OsgNonzeroReserved, stride);
+    time.report(diags, DiagCode::OsgTimeDecreases, stride);
+    counts.report(diags, DiagCode::OsgCountDecreases, stride);
 }
 
 fn read_record(r: &mut Reader<'_>, v2: bool) -> Result<OsgRecord, CodecError> {
@@ -244,6 +317,61 @@ mod tests {
     }
 
     #[test]
+    fn unknown_client_version_is_warning() {
+        let mut osg = file(vec![record(1, 1, None)]);
+        osg.client_version = 20_270_101;
+        let (decoded, diags) = decode_osg(&encode_osg(&osg)).unwrap();
+        assert_eq!(decoded, osg);
+        assert_eq!(diags.codes(), vec![DiagCode::OsgUnknownClientVersion]);
+        for known in KNOWN_CLIENT_VERSIONS {
+            osg.client_version = known;
+            assert!(
+                decode_osg(&encode_osg(&osg)).unwrap().1.is_empty(),
+                "{known}"
+            );
+        }
+    }
+
+    #[test]
+    fn flag_stride_disagree_is_warning() {
+        let mut a = record(1, 1, None);
+        a.b28 = 1;
+        let mut b = record(2, 2, None);
+        b.b28 = 1;
+        let (_, diags) = decode_osg(&encode_osg(&file(vec![a, b]))).unwrap();
+        // One diagnostic per kind per file, pointing at the first offending record.
+        assert_eq!(diags.codes(), vec![DiagCode::OsgFlagStrideDisagree]);
+        assert_eq!(diags.as_slice()[0].offset, Some(8));
+        assert!(diags.as_slice()[0].detail.contains("2 records"));
+        let mut v2 = record(1, 1, Some([0.0, 0.0]));
+        v2.b28 = 0;
+        let (_, diags) = decode_osg(&encode_osg(&file(vec![v2]))).unwrap();
+        assert_eq!(diags.codes(), vec![DiagCode::OsgFlagStrideDisagree]);
+        let mut reserved = record(1, 1, None);
+        reserved.b4 = 3;
+        let (_, diags) = decode_osg(&encode_osg(&file(vec![reserved]))).unwrap();
+        assert_eq!(diags.codes(), vec![DiagCode::OsgNonzeroReserved]);
+    }
+
+    #[test]
+    fn time_decrease_is_warning() {
+        let (osg, diags) = decode_osg(&encode_osg(&file(vec![
+            record(10, 1, None),
+            record(9, 2, None),
+        ])))
+        .unwrap();
+        assert_eq!(osg.records.len(), 2);
+        assert_eq!(diags.codes(), vec![DiagCode::OsgTimeDecreases]);
+        assert_eq!(diags.as_slice()[0].offset, Some((8 + STRIDE_V1) as u64));
+        let (_, diags) = decode_osg(&encode_osg(&file(vec![
+            record(1, 2, None),
+            record(2, 1, None),
+        ])))
+        .unwrap();
+        assert_eq!(diags.codes(), vec![DiagCode::OsgCountDecreases]);
+    }
+
+    #[test]
     fn rejects_truncated_header() {
         assert_eq!(
             decode_osg(&[1, 2, 3, 4, 5]),
@@ -294,5 +422,78 @@ mod tests {
             decode_osg(&odd),
             Err(CodecError::StrideMismatch { count: 1, .. })
         ));
+    }
+}
+
+#[cfg(test)]
+mod props {
+    use proptest::prelude::*;
+
+    use super::*;
+    use crate::testkit::encode_osg;
+
+    fn record(v2: bool) -> impl Strategy<Value = OsgRecord> {
+        let counts = any::<[u16; 6]>().prop_map(|c| JudgementCounts {
+            n300: c[0],
+            n100: c[1],
+            n50: c[2],
+            geki: c[3],
+            katu: c[4],
+            miss: c[5],
+        });
+        let floats = any::<[f64; 2]>().prop_filter("finite", |f| f.iter().all(|x| x.is_finite()));
+        (
+            any::<i32>(),
+            counts,
+            any::<i32>(),
+            any::<[u16; 3]>(),
+            any::<[u8; 3]>(),
+            floats,
+        )
+            .prop_map(
+                move |(t_ms, counts, score, [max_combo, combo, hp_raw], [b4, b25, b28], f)| {
+                    OsgRecord {
+                        t_ms,
+                        counts,
+                        score,
+                        max_combo,
+                        combo,
+                        hp_raw,
+                        b4,
+                        b25,
+                        b28,
+                        v2: v2.then_some(f),
+                    }
+                },
+            )
+    }
+
+    fn osg_file() -> impl Strategy<Value = OsgFile> {
+        (any::<bool>(), any::<i32>()).prop_flat_map(|(v2, client_version)| {
+            proptest::collection::vec(record(v2), 0..8).prop_map(move |records| OsgFile {
+                client_version,
+                score_system: (!records.is_empty()).then_some(if v2 {
+                    OsgScoreSystem::V2
+                } else {
+                    OsgScoreSystem::V1
+                }),
+                records,
+            })
+        })
+    }
+
+    proptest! {
+        #[test]
+        fn roundtrip_encode_decode(osg in osg_file()) {
+            let bytes = encode_osg(&osg);
+            let (decoded, _) = decode_osg(&bytes).unwrap();
+            prop_assert_eq!(&decoded, &osg);
+            prop_assert_eq!(encode_osg(&decoded), bytes);
+        }
+
+        #[test]
+        fn decode_never_panics_on_arbitrary_bytes(bytes in proptest::collection::vec(any::<u8>(), 0..256)) {
+            let _ = decode_osg(&bytes);
+        }
     }
 }
