@@ -3,9 +3,7 @@
 use std::process::ExitCode;
 
 use wolluf_app::context::AppContext;
-use wolluf_app::features::setup::dto::{
-    InstallCandidateDto, InstallDto, InstallSourceDto, SetupStatusDto,
-};
+use wolluf_app::features::setup::dto::{InstallCandidateDto, InstallDto, SetupStatusDto};
 
 use crate::cli::SetupCmd;
 use crate::exit;
@@ -41,24 +39,12 @@ pub(crate) async fn run(ctx: &AppContext, cmd: SetupCmd, json: bool) -> anyhow::
     Ok(exit::exit_code(exit::SUCCESS))
 }
 
-/// The same snake_case strings as the wire format.
-pub(crate) fn source_str(source: InstallSourceDto) -> &'static str {
-    match source {
-        InstallSourceDto::Env => "env",
-        InstallSourceDto::Registry => "registry",
-        InstallSourceDto::LocalAppData => "local_app_data",
-        InstallSourceDto::WslUserProfile => "wsl_user_profile",
-        InstallSourceDto::DriveScan => "drive_scan",
-        InstallSourceDto::ProgramFiles => "program_files",
-    }
-}
-
 fn candidates_table(candidates: &[InstallCandidateDto]) -> String {
     let rows: Vec<Vec<String>> = candidates
         .iter()
         .map(|c| {
             vec![
-                source_str(c.source).to_owned(),
+                render::wire(&c.source),
                 if c.valid { "yes" } else { "no" }.to_owned(),
                 render::opt(c.osu_db_version),
                 if c.missing.is_empty() {

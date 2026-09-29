@@ -47,3 +47,13 @@ fn invalid_install_path_exits_2_with_path_arg() {
             text(&missing)
         )));
 }
+
+#[test]
+fn sync_without_install_exits_2_osu_dir_not_found() {
+    let env = Env::new();
+    env.wolluf()
+        .arg("sync")
+        .assert()
+        .code(2)
+        .stderr(starts_with("error[OSU_DIR_NOT_FOUND]: "));
+}

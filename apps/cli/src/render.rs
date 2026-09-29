@@ -60,6 +60,15 @@ pub(crate) fn key_values(pairs: &[(&str, String)]) -> String {
         .collect()
 }
 
+/// The wire string of a snake_case DTO enum, so text and JSON output never disagree.
+pub(crate) fn wire<T: Serialize>(value: &T) -> String {
+    match serde_json::to_value(value) {
+        Ok(serde_json::Value::String(s)) => s,
+        Ok(other) => other.to_string(),
+        Err(e) => format!("<{e}>"),
+    }
+}
+
 pub(crate) fn opt<T: ToString>(value: Option<T>) -> String {
     value.map_or_else(|| "-".to_owned(), |v| v.to_string())
 }

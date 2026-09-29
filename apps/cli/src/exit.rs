@@ -2,6 +2,7 @@
 
 use std::process::ExitCode;
 
+use wolluf_app::jobs::JobStatusDto;
 use wolluf_core::ErrorCode;
 
 pub(crate) const SUCCESS: u8 = 0;
@@ -25,6 +26,16 @@ pub(crate) const fn for_error(code: ErrorCode) -> u8 {
         | ErrorCode::ParseFailed
         | ErrorCode::UnsupportedFormat => USAGE,
         ErrorCode::Cancelled => CANCELLED,
+    }
+}
+
+/// A sync with failed items still ends `ok` and exits 0 (spec 005). A job that is not
+/// finished when the CLI stops waiting is a runtime failure.
+pub(crate) const fn for_job(status: JobStatusDto) -> u8 {
+    match status {
+        JobStatusDto::Ok => SUCCESS,
+        JobStatusDto::Cancelled => CANCELLED,
+        JobStatusDto::Failed | JobStatusDto::Queued | JobStatusDto::Running => FAILURE,
     }
 }
 
@@ -58,5 +69,9 @@ mod tests {
                 ("INTERNAL", 1),
             ]
         );
+        assert_eq!(for_job(JobStatusDto::Ok), 0);
+        assert_eq!(for_job(JobStatusDto::Failed), 1);
+        assert_eq!(for_job(JobStatusDto::Cancelled), 130);
+        assert_eq!(for_job(JobStatusDto::Running), 1);
     }
 }

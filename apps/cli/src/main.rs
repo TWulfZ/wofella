@@ -4,6 +4,7 @@
 mod cli;
 mod cmd;
 mod exit;
+mod progress;
 mod render;
 
 use std::process::ExitCode;
@@ -52,7 +53,8 @@ async fn run(cli: Cli) -> anyhow::Result<ExitCode> {
         .await??;
     match cli.command {
         Command::Setup(cmd) => cmd::setup::run(&ctx, cmd, cli.json).await,
-        Command::Sync(_) | Command::Players(_) | Command::Jobs(_) => {
+        Command::Sync(_) => cmd::sync::run(&ctx, cli.json).await,
+        Command::Players(_) | Command::Jobs(_) => {
             render::text(NOT_YET)?;
             Ok(exit::exit_code(exit::SUCCESS))
         }
