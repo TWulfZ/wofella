@@ -1,5 +1,5 @@
--- cache.db v1 (architecture §5.4, spec 003 Data). Disposable: a schema change bumps
--- CACHE_SCHEMA_VERSION and the file is rebuilt; there are no migrations, ever.
+-- cache.db at CACHE_SCHEMA_VERSION (architecture §5.4, spec 003 Data). Disposable: a schema change
+-- bumps the constant and the file is rebuilt; there are no migrations, ever.
 -- Times are RFC 3339 UTC strings with milliseconds, like user.db.
 
 -- Memo of every derived item: staleness, per-item failures, "recompute only what changed".
@@ -63,3 +63,33 @@ CREATE TABLE alias_stats (
     top_charts_json   TEXT NOT NULL,
     PRIMARY KEY (alias_id, vkey)
 ) STRICT;
+
+-- Normalized chart per chart_parse key. rows_blob is opaque here: the engine owns its encoding
+-- and format-version header.
+CREATE TABLE chart_parsed (
+    md5       TEXT NOT NULL,
+    vkey      BLOB NOT NULL CHECK (length(vkey) = 32),
+    rows_blob BLOB NOT NULL,
+    n_notes   INTEGER NOT NULL,
+    n_ln      INTEGER NOT NULL,
+    ln_ratio  REAL NOT NULL,
+    length_ms INTEGER NOT NULL,
+    PRIMARY KEY (md5, vkey)
+) STRICT;
+
+-- Source labels read from local difficulty names (research 03). A chart can sit on several
+-- scales, and on one scale more than once only under different level texts.
+CREATE TABLE chart_label (
+    md5        TEXT NOT NULL,
+    vkey       BLOB NOT NULL CHECK (length(vkey) = 32),
+    source     TEXT NOT NULL,
+    scale      TEXT NOT NULL,
+    level_ord  REAL NULL,
+    level_text TEXT NOT NULL,
+    skill_tag  TEXT NULL,
+    is_variant INTEGER NOT NULL CHECK (is_variant IN (0, 1)),
+    PRIMARY KEY (md5, vkey, scale, level_text)
+) STRICT;
+
+-- The primary key already serves per-md5 lookups; every read filters by vkey first (D15).
+CREATE INDEX chart_label_scale_level ON chart_label (vkey, scale, level_ord);
