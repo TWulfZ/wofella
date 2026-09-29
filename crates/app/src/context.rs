@@ -2,7 +2,7 @@
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use tokio::runtime::{Handle, Runtime};
 use tokio::sync::broadcast;
@@ -166,8 +166,9 @@ pub(crate) fn blocking_join_error(e: tokio::task::JoinError) -> AppError {
 }
 
 /// Everything a service needs, opened once per process. Holding it holds the instance lock.
+/// [`AppContext::close`] is the shutdown contract; a plain drop only stops what it can without
+/// waiting for the job worker.
 pub struct AppContext {
-    // First field: dropped first, so the running job is cancelled before anything else goes.
     jobs: JobRunner,
     paths: AppPaths,
     clock: Arc<dyn Clock>,
@@ -176,8 +177,17 @@ pub struct AppContext {
     events: broadcast::Sender<AppEvent>,
     install: InstallRow,
     runtime: RuntimeHolder,
-    // Last field: dropped after the DB handles, so a reopen never races a closing writer.
-    _lock: InstanceLock,
+    // Taken after the stores close, so a reopen never races a closing writer.
+    lock: Mutex<Option<InstanceLock>>,
+}
+
+impl Drop for AppContext {
+    fn drop(&mut self) {
+        self.jobs.stop();
+        // A cancelled job keeps store clones until its task is polled again; closing here
+        // makes its late writes fail instead of outliving the context.
+        self.close_stores();
+    }
 }
 
 impl std::fmt::Debug for AppContext {
@@ -250,7 +260,7 @@ impl AppContext {
             events,
             install,
             runtime,
-            _lock: lock,
+            lock: Mutex::new(Some(lock)),
         })
     }
 
@@ -327,6 +337,38 @@ impl AppContext {
         .await
         .map_err(blocking_join_error)??;
         Ok(id)
+    }
+
+    /// Returns once every handle under the data dir is released: the running job is cancelled
+    /// and recorded, both stores are closed and the instance lock is dropped.
+    pub async fn close(self) {
+        self.shutdown().await;
+    }
+
+    /// [`AppContext::close`] for a shell that cannot take ownership (Tauri managed state).
+    /// Every later store call fails with `INTERNAL`. Idempotent.
+    pub async fn shutdown(&self) {
+        self.jobs.shutdown().await;
+        let (user, cache) = (self.user.clone(), self.cache.clone());
+        if let Err(e) = tokio::task::spawn_blocking(move || {
+            user.close();
+            cache.close();
+        })
+        .await
+        {
+            tracing::error!(error = %e, "closing the stores off the runtime failed");
+        }
+        // No-op after the blocking task; closes here if the runtime refused it.
+        self.close_stores();
+        self.lock
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+    }
+
+    fn close_stores(&self) {
+        self.user.close();
+        self.cache.close();
     }
 
     pub async fn installs(&self) -> Result<Vec<GameInstall>, AppError> {
@@ -461,7 +503,7 @@ mod tests {
         let data = dir.path().join("data");
         let ctx = AppContext::open(AppPaths::from_data_dir(data.clone()), clock()).unwrap();
         ctx.register_install(osu.clone(), None).await.unwrap();
-        drop(ctx);
+        ctx.close().await;
         // Moving the data dir into a registered install is caught at the next start.
         let moved = osu.join("wolluf");
         std::fs::rename(&data, &moved).unwrap();
@@ -469,5 +511,53 @@ mod tests {
             .err()
             .unwrap();
         assert_eq!(err.code, ErrorCode::InvalidInput);
+    }
+
+    /// This process's descriptors that resolve under `dir`; nextest runs each test in its own
+    /// process, and the tempdir is unique either way.
+    #[cfg(target_os = "linux")]
+    fn open_fds_under(dir: &Path) -> Vec<PathBuf> {
+        let dir = canonical(dir);
+        std::fs::read_dir("/proc/self/fd")
+            .unwrap()
+            .filter_map(|e| std::fs::read_link(e.ok()?.path()).ok())
+            .filter(|target| target.starts_with(&dir))
+            .collect()
+    }
+
+    // current_thread: the job worker is never polled unless something awaits it, the worst case
+    // for a release that depends on the worker noticing shutdown.
+    #[tokio::test(flavor = "current_thread")]
+    async fn close_releases_every_handle_under_data_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().join("data");
+        let ctx = AppContext::open(AppPaths::from_data_dir(data.clone()), clock()).unwrap();
+        ctx.register_install(dir.path().join("osu!"), None)
+            .await
+            .unwrap();
+        #[cfg(target_os = "linux")]
+        assert!(
+            !open_fds_under(&data).is_empty(),
+            "the probe sees an open context"
+        );
+        ctx.close().await;
+        #[cfg(target_os = "linux")]
+        assert_eq!(open_fds_under(&data), Vec::<PathBuf>::new());
+        // Windows refuses both while any handle under the dir is open.
+        for f in ["user.db", "cache.db", "wolluf.lock"] {
+            std::fs::remove_file(data.join(f)).unwrap();
+        }
+        std::fs::rename(&data, dir.path().join("moved")).unwrap();
+    }
+
+    #[test]
+    fn close_on_owned_runtime_releases_every_handle() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().join("data");
+        let ctx = AppContext::open(AppPaths::from_data_dir(data.clone()), clock()).unwrap();
+        ctx.runtime().block_on(ctx.close());
+        #[cfg(target_os = "linux")]
+        assert_eq!(open_fds_under(&data), Vec::<PathBuf>::new());
+        std::fs::rename(&data, dir.path().join("moved")).unwrap();
     }
 }

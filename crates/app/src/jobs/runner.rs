@@ -11,6 +11,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 use tokio::sync::{Notify, broadcast};
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 use wolluf_core::{Clock, ErrorCode, UnixUs};
@@ -73,9 +74,11 @@ enum Stored {
     Error { error: JobErrorDto },
 }
 
-/// Dropping the runner (with its `AppContext`) cancels the running job and stops the worker.
+/// Dropping the runner (with its `AppContext`) cancels the running job and stops the worker;
+/// only [`JobRunner::shutdown`] waits for them.
 pub struct JobRunner {
     inner: Arc<Inner>,
+    worker: Mutex<Option<JoinHandle<()>>>,
 }
 
 /// Submits from background threads (the watcher) without keeping the runner alive: once the
@@ -98,10 +101,7 @@ impl JobSubmitter {
 
 impl Drop for JobRunner {
     fn drop(&mut self) {
-        self.inner.shutdown.cancel();
-        if let Some(running) = &self.inner.lock().running {
-            running.cancel.cancel();
-        }
+        self.stop();
     }
 }
 
@@ -170,8 +170,34 @@ impl JobRunner {
                 events,
             },
         });
-        handle.spawn(worker(inner.clone()));
-        Self { inner }
+        let worker = handle.spawn(worker(inner.clone()));
+        Self {
+            inner,
+            worker: Mutex::new(Some(worker)),
+        }
+    }
+
+    /// Trips the shutdown and running-job tokens without waiting for the worker.
+    pub(crate) fn stop(&self) {
+        self.inner.shutdown.cancel();
+        if let Some(running) = &self.inner.lock().running {
+            running.cancel.cancel();
+        }
+    }
+
+    /// Cancels the running job and waits until the worker has recorded it and exited, so no
+    /// job holds a store handle afterwards. Queued jobs are dropped unrecorded. Idempotent.
+    pub(crate) async fn shutdown(&self) {
+        self.stop();
+        let worker = self
+            .worker
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        let Some(worker) = worker else { return };
+        if let Err(e) = worker.await {
+            tracing::error!(error = %e, "job worker ended abnormally");
+        }
     }
 
     /// Never blocks: the job is queued in memory and its `job_run` row is written when it

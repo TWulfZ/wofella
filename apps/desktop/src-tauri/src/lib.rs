@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use tauri::{App, AppHandle, Builder, Manager, Runtime, WebviewWindowBuilder};
+use tauri::{App, AppHandle, Builder, Manager, RunEvent, Runtime, WebviewWindowBuilder};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tokio::runtime::Handle;
 use wolluf_app::clock::SystemClock;
@@ -81,6 +81,7 @@ pub fn run(runtime: Handle) -> ExitCode {
         });
 
     let specta = specta_builder();
+    let exit_runtime = runtime.clone();
     let built = with_plugins(tauri::Builder::default())
         .invoke_handler(specta.invoke_handler())
         .setup(move |app| {
@@ -117,7 +118,11 @@ pub fn run(runtime: Handle) -> ExitCode {
         })
         .build(context());
     let code = match built {
-        Ok(app) => app.run_return(|_, _| {}),
+        Ok(app) => app.run_return(move |app, event| {
+            if let RunEvent::Exit = event {
+                close_context(app, &exit_runtime);
+            }
+        }),
         Err(e) => {
             tracing::error!(error = %e, "tauri build failed");
             EXIT_STARTUP_FAILURE
@@ -126,6 +131,15 @@ pub fn run(runtime: Handle) -> ExitCode {
     // Explicit: the file writer flushes only on drop, and the event loop is over.
     drop(log_guard);
     u8::try_from(code).map_or(ExitCode::FAILURE, ExitCode::from)
+}
+
+/// Tauri state cannot be taken back out, so the shared context shuts down in place: the
+/// running job is recorded as cancelled and no handle under the data dir outlives the loop.
+/// Absent when startup failed. Runs on the main thread, outside the runtime.
+fn close_context<R: Runtime>(app: &AppHandle<R>, runtime: &Handle) {
+    if let Some(ctx) = app.try_state::<Arc<AppContext>>() {
+        runtime.block_on(ctx.shutdown());
+    }
 }
 
 /// Keeps `bindings.ts` current during `cargo tauri dev` (§8). A failure only warns: the UI may
