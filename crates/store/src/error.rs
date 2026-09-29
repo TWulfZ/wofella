@@ -31,6 +31,8 @@ pub enum StoreError {
     InvalidData(String),
     #[error("{0} not found")]
     NotFound(String),
+    #[error("conflict: {0}")]
+    Conflict(String),
 }
 
 impl StoreError {
@@ -47,6 +49,7 @@ impl StoreError {
             Self::SchemaTooNew { .. } => ErrorCode::UnsupportedFormat,
             Self::InstanceLocked(_) => ErrorCode::Conflict,
             Self::NotFound(_) => ErrorCode::NotFound,
+            Self::Conflict(_) => ErrorCode::Conflict,
             Self::Sqlite(_)
             | Self::Migration(_)
             | Self::Io { .. }

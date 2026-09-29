@@ -49,3 +49,17 @@ CREATE TABLE item_failure (
     message  TEXT NOT NULL,
     PRIMARY KEY (job_id, item_ref)
 ) STRICT;
+
+-- Per-alias listing stats for the identity wizard (spec 004 Data, architecture §5.6).
+CREATE TABLE alias_stats (
+    alias_id          INTEGER NOT NULL,
+    vkey              BLOB NOT NULL CHECK (length(vkey) = 32),
+    n_plays           INTEGER NOT NULL,
+    n_by_keymode_json TEXT NOT NULL,
+    first_ts          TEXT NULL,
+    last_ts           TEXT NULL,
+    n_with_replay     INTEGER NOT NULL,
+    n_online_ids      INTEGER NOT NULL,
+    top_charts_json   TEXT NOT NULL,
+    PRIMARY KEY (alias_id, vkey)
+) STRICT;

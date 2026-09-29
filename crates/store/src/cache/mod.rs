@@ -83,7 +83,13 @@ mod tests {
     use super::*;
     use crate::user::open_user_db;
 
-    const TABLES: [&str; 4] = ["catalog_chart", "derivation", "item_failure", "job_run"];
+    const TABLES: [&str; 5] = [
+        "alias_stats",
+        "catalog_chart",
+        "derivation",
+        "item_failure",
+        "job_run",
+    ];
 
     fn tables(db: &DbHandle) -> Vec<String> {
         db.read(|c| {

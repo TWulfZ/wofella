@@ -3,6 +3,7 @@
 
 pub mod cache;
 pub mod ledger;
+pub mod players;
 mod sql;
 
 #[cfg(test)]
