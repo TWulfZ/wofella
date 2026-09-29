@@ -25,6 +25,8 @@ pub enum StoreError {
     BlobMissing(BlobSha256),
     #[error("the database writer thread is gone")]
     WriterGone,
+    #[error("the database is closed")]
+    Closed,
     #[error("a write job panicked: {0}")]
     WriterPanicked(String),
     #[error("stored value is invalid: {0}")]
@@ -56,6 +58,7 @@ impl StoreError {
             | Self::VaultCorrupt(_)
             | Self::BlobMissing(_)
             | Self::WriterGone
+            | Self::Closed
             | Self::WriterPanicked(_)
             | Self::InvalidData(_) => ErrorCode::Internal,
         }

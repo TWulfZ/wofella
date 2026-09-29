@@ -55,20 +55,25 @@ async fn run(cli: Cli) -> anyhow::Result<ExitCode> {
             cmd::osg::run(cmd, json).await
         }
         Command::Setup(cmd) => {
-            let s = Session::open(data_dir, log).await?;
-            cmd::setup::run(&s.ctx, cmd, json).await
+            with_session(data_dir, log, async |ctx| {
+                cmd::setup::run(ctx, cmd, json).await
+            })
+            .await
         }
         Command::Sync(_) => {
-            let s = Session::open(data_dir, log).await?;
-            cmd::sync::run(&s.ctx, json).await
+            with_session(data_dir, log, async |ctx| cmd::sync::run(ctx, json).await).await
         }
         Command::Players(cmd) => {
-            let s = Session::open(data_dir, log).await?;
-            cmd::players::run(&s.ctx, cmd, json).await
+            with_session(data_dir, log, async |ctx| {
+                cmd::players::run(ctx, cmd, json).await
+            })
+            .await
         }
         Command::Jobs(cmd) => {
-            let s = Session::open(data_dir, log).await?;
-            cmd::jobs::run(&s.ctx, cmd, json).await
+            with_session(data_dir, log, async |ctx| {
+                cmd::jobs::run(ctx, cmd, json).await
+            })
+            .await
         }
         Command::Library(cmd) => {
             let s = Session::open(data_dir, log).await?;
@@ -81,14 +86,30 @@ async fn run(cli: Cli) -> anyhow::Result<ExitCode> {
     }
 }
 
-/// Field order is drop order: the context closes before the log guard flushes, so its
-/// shutdown records still reach the file.
+/// The context closes on the error path too, so a failed command still records its cancelled
+/// job before exit.
+async fn with_session(
+    data_dir: Option<PathBuf>,
+    log: String,
+    command: impl AsyncFnOnce(&AppContext) -> anyhow::Result<ExitCode>,
+) -> anyhow::Result<ExitCode> {
+    let session = Session::open(data_dir, log).await?;
+    let result = command(&session.ctx).await;
+    session.close().await;
+    result
+}
+
 struct Session {
     ctx: AppContext,
     _log: LogGuard,
 }
 
 impl Session {
+    /// Before the log guard flushes, so the shutdown records still reach the file.
+    async fn close(self) {
+        self.ctx.close().await;
+    }
+
     async fn open(data_dir: Option<PathBuf>, log: String) -> anyhow::Result<Self> {
         let paths = AppPaths::resolve(data_dir)?;
         // tracing-appender prunes old files at startup and prints to stderr when the dir is missing.

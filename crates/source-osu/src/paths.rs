@@ -34,13 +34,11 @@ pub fn windows_to_wsl_under(path: &str, mount_root: &Path) -> Option<PathBuf> {
     if !is_windows_absolute(path) {
         return None;
     }
-    let drive = char::from(path.as_bytes()[0].to_ascii_lowercase());
-    let mut out = mount_root.join(drive.to_string());
-    path[2..]
-        .split(['\\', '/'])
-        .filter(|seg| !seg.is_empty())
-        .for_each(|seg| out.push(seg));
-    Some(out)
+    let drive = char::from(path.as_bytes()[0].to_ascii_lowercase()).to_string();
+    let segments: Vec<&str> = std::iter::once(drive.as_str())
+        .chain(path[2..].split(['\\', '/']).filter(|seg| !seg.is_empty()))
+        .collect();
+    Some(posix_join(mount_root, &segments))
 }
 
 /// `/mnt/<a-z>` or below: WSL drvfs, where inotify misses writes by Windows processes
@@ -89,12 +87,23 @@ pub fn resolve_songs_dir(
     join_under(root, &segments, platform)
 }
 
+/// Joins with `/` whatever the host: WSL and Linux paths model a Linux file system, while
+/// `Path::join` inserts `\` when the code runs on a Windows host (Windows CI).
+pub(crate) fn posix_join(base: &Path, rel: &[&str]) -> PathBuf {
+    let mut out = base.as_os_str().to_owned();
+    for seg in rel {
+        if !out.is_empty() && out.as_encoded_bytes().last() != Some(&b'/') {
+            out.push("/");
+        }
+        out.push(seg);
+    }
+    PathBuf::from(out)
+}
+
 pub(crate) fn join_under(root: &Path, rel: &[&str], platform: Platform) -> PathBuf {
     match platform {
         Platform::Windows => windows_join(&root.to_string_lossy(), rel),
-        _ => rel
-            .iter()
-            .fold(root.to_path_buf(), |acc, seg| acc.join(seg)),
+        Platform::Wsl | Platform::Linux | Platform::Other => posix_join(root, rel),
     }
 }
 
@@ -140,6 +149,39 @@ mod tests {
         assert!(!is_drvfs_path(Path::new("/home/u/osu!")));
         assert!(!is_drvfs_path(Path::new("mnt/e/x")));
         assert!(!is_drvfs_path(Path::new("/mnt")));
+    }
+
+    /// Compared as strings: `PathBuf` equality on a Windows host treats `\` and `/` alike and
+    /// would hide a mixed-separator WSL path.
+    #[test]
+    fn wsl_paths_use_forward_slashes_on_any_host() {
+        let text = |p: PathBuf| p.to_string_lossy().into_owned();
+        assert_eq!(
+            text(windows_to_wsl(r"E:\Games\osu!").unwrap()),
+            "/mnt/e/Games/osu!"
+        );
+        assert_eq!(
+            text(windows_to_wsl_under(r"E:\osu!", Path::new("/tmp/fake/")).unwrap()),
+            "/tmp/fake/e/osu!"
+        );
+        assert_eq!(
+            text(join_under(
+                Path::new("/mnt/c/Users/u"),
+                &["AppData", "Local", "osu!"],
+                Platform::Wsl
+            )),
+            "/mnt/c/Users/u/AppData/Local/osu!"
+        );
+        assert_eq!(
+            text(resolve_songs_dir(
+                Path::new("/mnt/e/Games/osu!"),
+                Some(r"Songs\7k"),
+                Platform::Wsl
+            )),
+            "/mnt/e/Games/osu!/Songs/7k"
+        );
+        assert_eq!(text(posix_join(Path::new("/"), &["osu!"])), "/osu!");
+        assert_eq!(text(posix_join(Path::new(""), &["osu!"])), "osu!");
     }
 
     #[test]
