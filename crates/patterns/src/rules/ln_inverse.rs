@@ -1,8 +1,9 @@
 //! `ln.inverse.gap`: long notes filling the gaps between notes. An event is a tail followed on
 //! the same column by the next real LN's head within the inverse gap (beat-relative under a red
-//! line, capped in µs). Sections of at least `inverse_min_gaps` events (grouped by the LN group
-//! gap) span from the first event's earlier head to the last event's later tail, and qualify
-//! when held coverage over that span reaches `inverse_min_coverage_permille`.
+//! line, capped in µs), and only counts when held coverage from the earlier head to the later
+//! tail reaches `inverse_min_coverage_permille`: a thin LN run nearby must not dilute a
+//! full-width section, nor join it. Sections of at least `inverse_min_gaps` counted events
+//! (grouped by the LN group gap) span from the first earlier head to the last later tail.
 
 use wolluf_core::{ColMask, Keymode, PatternId};
 
@@ -35,6 +36,7 @@ impl PatternRule for LnInverse {
         let rows = view.rows();
         let k = view.keymode();
         let lns = real_lns(view, p);
+        let coverage = Coverage::new(rows, k);
         let mut events: Vec<(usize, (RealLn, RealLn))> = lns
             .windows(2)
             .filter_map(|w| {
@@ -46,12 +48,13 @@ impl PatternRule for LnInverse {
                         head.beat_us,
                         p.inverse_max_gap_ticks,
                         p.inverse_max_gap_us,
-                    );
+                    )
+                    && coverage.permille(rows, prev.head, next.tail)
+                        >= p.inverse_min_coverage_permille;
                 short.then_some((next.head, (*prev, *next)))
             })
             .collect();
         events.sort_by_key(|&(row, (prev, _))| (row, prev.col));
-        let coverage = Coverage::new(rows, k);
         let mut found: Vec<Candidate> = group(rows, events, p)
             .into_iter()
             .filter(|g| u32::try_from(g.len()).is_ok_and(|n| n >= p.inverse_min_gaps))
@@ -59,7 +62,6 @@ impl PatternRule for LnInverse {
                 let first = g.iter().map(|&(_, (prev, _))| prev.head).min()?;
                 let last = g.iter().map(|&(_, (_, next))| next.tail).max()?;
                 let cover = coverage.permille(rows, first, last);
-                (cover >= p.inverse_min_coverage_permille).then_some(())?;
                 Some(Candidate {
                     pattern: ID,
                     t0: rows.get(first)?.t,
@@ -108,6 +110,27 @@ mod tests {
             detect(&LnInverse, &inverse(50, 7)),
             [cand(ID, 0, 950, &[0, 1, 2, 3, 4, 5, 6], 789)]
         );
+    }
+
+    #[test]
+    fn a_thin_ln_run_after_the_section_does_not_dilute_it() {
+        let block: [&str; 8] = [
+            "[[[[[[[", "|||||||", "|||||||", "|||||||", "|||||||", "]]]]]]]", ".......", ".......",
+        ];
+        let thin: [&str; 4] = ["......[", "......|", "......]", "......."];
+        let mut rows: Vec<&str> = Vec::new();
+        for _ in 0..3 {
+            rows.extend(&block[..7]);
+        }
+        rows.pop();
+        for _ in 0..6 {
+            rows.extend(thin);
+        }
+        let chart = wolluf_chart::testkit::chart_from_rows(0, 100, &rows).unwrap();
+        let found = detect(&LnInverse, &chart);
+        assert_eq!(found.len(), 1, "{found:?}");
+        // The first thin LN still fills a gap next to the full-width section, so it joins it.
+        assert_eq!((found[0].t0.0, found[0].t1.0), (0, 2_200_000));
     }
 
     #[test]

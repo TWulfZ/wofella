@@ -42,7 +42,7 @@ Deliverable 2 of F1 (architecture §3 patterns crate, §9.2, §12 F1 row). Rules
 - [x] T2: jack rules (minijack, longjack, chordjack, anchor). Route: delegated. Tier: medium. Commit: `feat(patterns): add jack rules`
 - [x] T3: stream rules (single, jumpstream, handstream, chordstream light/dense, roll, trill, jumptrill, split_trill, bracket, chordbracket). Route: delegated. Tier: medium. Commit: `feat(patterns): add stream rules`
 - [x] T4: tech + speed rules (irregular, hand_imbalance, thumb, burst) and LN rules (density, chord, hybrid, shield, inverse gap, release timing). Route: delegated. Tier: medium. Commit: `feat(patterns): add tech, speed and LN rules`
-- [ ] T5: segmenter: merge, min/max length, overlap resolution by priority, purity, secondary tags. Route: delegated. Tier: medium. Commit: —
+- [x] T5: segmenter: merge, min/max length, overlap resolution by priority, purity, secondary tags. Route: delegated. Tier: medium. Commit: `feat(patterns): add segmenter with priority resolution`
 - [ ] T6: engine `patterns` stage + golden + vkey; store `segment` table; app pass in IndexLibrary + query; CLI `--segments`; corpus test. Route: delegated. Tier: high (persisted encoding + vkey). Commit: —
 - [ ] T7: close: full gates, corpus, docs, remove this document. Route: inline. Tier: passive. Commit: —
 
@@ -75,5 +75,20 @@ Deliverable 2 of F1 (architecture §3 patterns crate, §9.2, §12 F1 row). Rules
   - ln.chord/density/inverse on full LN blocks;
   - burst vs stream.
 
+- 2026-09-29 T5: RED missing segment API → GREEN 153/153; workspace 805 passed. Each row gets exactly one winner:
+  - a priority table (shield, inverse, release, hybrid, LN chord, chordjack, burst, split_trill, jumptrill, bracket, trill, chordbracket, roll, anchor, the chordstreams, hand-/jump-/single streams, longjack, minijack), with LN rules demoted when the LN share is < 25%;
+  - withdrawn short runs re-resolve.
+
+  Other behaviour:
+  - Segments are 2–8 s (a short class is exempt), split at row boundaries, and merged across ≤ ½-beat gaps.
+  - Tag-only rules and losing candidates overlapping ≥ 20% become secondary tags.
+  - Snapshot `mixed_7k` accepted.
+- Accepted changes:
+  - jumptrill ranks above bracket, because a whole-row chord alternation reads as a jumptrill;
+  - minijack/longjack rank last, so lone jacks do not cut streams;
+  - burst is below chordjack;
+  - `ln.inverse.gap` fix: a gap counts only if local coverage ≥ 60%;
+  - all params are uncalibrated placeholders until the eval step.
+
 ## Next step
-T5: segmenter (same writer continues).
+T6: engine stage + store segment table + app pass + CLI --segments + corpus (high tier → independent verifier after).

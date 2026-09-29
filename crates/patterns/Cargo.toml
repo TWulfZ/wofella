@@ -20,3 +20,4 @@ blake3.workspace = true
 [dev-dependencies]
 wolluf-chart = { workspace = true, features = ["test-support"] }
 proptest.workspace = true
+insta.workspace = true

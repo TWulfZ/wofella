@@ -266,22 +266,19 @@ mod tests {
 }
 
 #[cfg(test)]
-mod props {
+pub(crate) mod generate {
+    //! Chart generators shared by the rule and segmenter property tests.
+
     use proptest::prelude::*;
     use wolluf_chart::layout::preset_ids;
     use wolluf_chart::{
         Chart, ChartMeta, Diagnostics, Layout, Note, NoteKind, TimingKind, TimingPoint,
     };
-    use wolluf_core::{ColMask, Keymode, TimeUs};
-
-    use super::*;
-    use crate::params::PatternParams;
-    use crate::rule::{Candidate, STRENGTH_MAX};
-    use crate::view::ChartView;
+    use wolluf_core::{Keymode, TimeUs};
 
     const K: Keymode = Keymode::K7;
 
-    fn arb_input() -> impl Strategy<Value = (Vec<Note>, Vec<TimingPoint>, usize)> {
+    pub(crate) fn arb_input() -> impl Strategy<Value = (Vec<Note>, Vec<TimingPoint>, usize)> {
         // Coarse times so jacks, chords and anchors actually occur.
         let note = (0i64..120, 0u8..7, prop::option::of(1i64..8)).prop_map(|(t, col, len)| {
             let t = TimeUs(t * 80_000);
@@ -397,7 +394,7 @@ mod props {
         )
     }
 
-    fn build(notes: Vec<Note>, timing: Vec<TimingPoint>) -> Chart {
+    pub(crate) fn build(notes: Vec<Note>, timing: Vec<TimingPoint>) -> Chart {
         Chart::from_notes(
             K,
             ChartMeta::default(),
@@ -407,9 +404,24 @@ mod props {
         )
     }
 
-    fn layout(preset: usize) -> Layout {
+    pub(crate) fn preset_layout(preset: usize) -> Layout {
         Layout::by_id(preset_ids().nth(preset).unwrap()).unwrap()
     }
+}
+
+#[cfg(test)]
+mod props {
+    use proptest::prelude::*;
+    use wolluf_chart::Note;
+    use wolluf_core::{ColMask, Keymode};
+
+    use super::generate::{arb_input, build, preset_layout as layout};
+    use super::*;
+    use crate::params::PatternParams;
+    use crate::rule::{Candidate, STRENGTH_MAX};
+    use crate::view::ChartView;
+
+    const K: Keymode = Keymode::K7;
 
     fn mirrored(c: &Candidate) -> Candidate {
         Candidate {

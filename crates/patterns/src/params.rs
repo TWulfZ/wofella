@@ -5,6 +5,7 @@
 //! never on the gold set.
 
 use serde::Serialize;
+use wolluf_core::PatternId;
 
 /// Beat subdivision unit for gaps. 192 is the LCM of 64 and 48, so every power-of-two snap up
 /// to 1/64 and every triplet snap up to 1/48 is a whole number of ticks.
@@ -268,27 +269,88 @@ impl Default for LnParams {
     }
 }
 
+/// How candidates become segments. Pattern lists hold ADR 0017 ids.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SegmentParams {
-    pub min_rows: u32,
+    /// Most specific first; overlapping primary candidates resolve by this order, then
+    /// strength, then id. Patterns missing from the list rank after it.
+    pub priority: Vec<PatternId>,
+    /// Section-level measures: they tag segments and never own one.
+    pub tag_only: Vec<PatternId>,
+    /// Patterns that are short by nature and use `short_min_len_us`.
+    pub short_class: Vec<PatternId>,
+    /// An `ln.*` candidate keeps its priority only when LN heads and tails are at least this
+    /// share of its span's events; otherwise it ranks after every rice pattern.
+    pub ln_priority_min_share_permille: u32,
+    /// Architecture §3: segments of 2–8 s. A shorter segment still counts when it spans
+    /// `min_len_ticks`, so fast songs keep phrase-length segments.
     pub min_len_us: i64,
+    pub min_len_ticks: u32,
+    pub short_min_len_us: i64,
+    /// Longer runs split at row boundaries into equal parts.
     pub max_len_us: i64,
-    /// Same-pattern candidates closer than this merge into one segment.
+    /// Same-primary runs closer than this merge across rows no candidate covers.
     pub merge_gap_ticks: u32,
-    /// Share of a segment's rows the primary pattern must cover.
-    pub min_purity_permille: u32,
-    /// Share a pattern needs to be listed as a secondary tag.
+    pub merge_gap_us: i64,
+    /// Share of a segment's rows another candidate must overlap to be listed as a tag.
     pub secondary_min_share_permille: u32,
+}
+
+const fn id(s: &'static str) -> PatternId {
+    PatternId::from_static(s)
 }
 
 impl Default for SegmentParams {
     fn default() -> Self {
         Self {
-            min_rows: 4,
-            min_len_us: 500_000,
-            max_len_us: 16_000_000,
+            priority: vec![
+                id("ln.tech.shield"),
+                id("ln.inverse.gap"),
+                id("ln.release.timing"),
+                id("ln.tech.hybrid"),
+                id("ln.general.chord"),
+                id("regular.jack.chordjack"),
+                // Speed over the stream shape it interrupts, below the jack section it may be.
+                id("regular.speed.burst"),
+                id("regular.stream.split_trill"),
+                // A whole-row chord alternation reads as a jumptrill even when one hand's part
+                // of it is a bracket shape.
+                id("regular.stream.jumptrill"),
+                id("regular.stream.bracket"),
+                id("regular.stream.trill"),
+                id("regular.stream.chordbracket"),
+                id("regular.stream.roll"),
+                id("regular.jack.anchor"),
+                id("regular.stream.chordstream_dense"),
+                id("regular.stream.chordstream_light"),
+                id("regular.stream.handstream"),
+                id("regular.stream.jumpstream"),
+                id("regular.stream.single"),
+                // Last: a lone jack at a stream's edge stays a tag of the stream instead of
+                // cutting it in two.
+                id("regular.jack.longjack"),
+                id("regular.jack.minijack"),
+            ],
+            tag_only: vec![
+                id("regular.tech.irregular"),
+                id("regular.tech.hand_imbalance"),
+                id("regular.tech.thumb"),
+                id("ln.general.density"),
+            ],
+            short_class: vec![
+                id("regular.jack.minijack"),
+                id("regular.jack.longjack"),
+                id("regular.jack.chordjack"),
+                id("regular.speed.burst"),
+                id("ln.tech.shield"),
+            ],
+            ln_priority_min_share_permille: 250,
+            min_len_us: 2_000_000,
+            min_len_ticks: 4 * TICKS_PER_BEAT,
+            short_min_len_us: 0,
+            max_len_us: 8_000_000,
             merge_gap_ticks: TICKS_PER_BEAT / 2,
-            min_purity_permille: 600,
+            merge_gap_us: 500_000,
             secondary_min_share_permille: 200,
         }
     }
@@ -304,7 +366,7 @@ mod tests {
 
     // Frozen on first computation: any change to a default or to the params layout moves every
     // pattern vkey, so it must be deliberate.
-    const DEFAULT_HASH: &str = "c339605a7c82fdb142e8a80c37feb450da2f1c50678cfe60c02d6521a0f4460b";
+    const DEFAULT_HASH: &str = "a2eed329bd0d4a8b200904d764deab9aa7e1b1fa3bdf1452ff57ddf6531e94ae";
 
     #[test]
     fn default_params_hash_is_frozen() {
@@ -327,7 +389,7 @@ mod tests {
             |p| p.speed.burst_max_rows += 1,
             |p| p.tech.window_rows += 1,
             |p| p.ln.min_len_ticks += 1,
-            |p| p.segment.min_rows += 1,
+            |p| p.segment.min_len_us += 1,
         ];
         let mut seen = vec![base];
         for edit in edits {
