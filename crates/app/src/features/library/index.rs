@@ -100,8 +100,10 @@ pub(super) fn catalog_install(
 }
 
 /// osu!.db builds the catalog path as `<folder>/<file>`.
+/// The set folder that holds the chart, even under nested Songs folders (`Normal/<set>/x.osu`).
 pub(super) fn folder_of(path: &str) -> &str {
-    path.rsplit_once('/').map_or("", |(folder, _)| folder)
+    let parent = path.rsplit_once('/').map_or("", |(folder, _)| folder);
+    parent.rsplit_once('/').map_or(parent, |(_, last)| last)
 }
 
 /// Architecture §7: played charts first. Stable, so the catalog order holds within each group.
@@ -638,6 +640,8 @@ mod tests {
     fn folder_is_the_parent_of_the_catalog_path() {
         assert_eq!(folder_of("123 a - b/a - b [x].osu"), "123 a - b");
         assert_eq!(folder_of("loose.osu"), "");
+        // labels.py keys folder rules ([_BMS_] prefix, KomeijiDove set id) on the set folder alone.
+        assert_eq!(folder_of("Normal/[_BMS_] song/x.osu"), "[_BMS_] song");
     }
 
     #[tokio::test(flavor = "multi_thread")]
