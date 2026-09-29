@@ -8,9 +8,11 @@ pub mod lock;
 pub mod repo;
 pub mod time;
 pub mod user;
+pub mod vault;
 
 pub use cache::open_cache_db;
 pub use db::{Conn, DbHandle, DbKind, Tx};
 pub use error::StoreError;
 pub use lock::InstanceLock;
 pub use user::open_user_db;
+pub use vault::Vault;
