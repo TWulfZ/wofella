@@ -1,5 +1,5 @@
-# Architecture §10 (CI), spec 001 T14. Spec 005 T19 adds the desktop-windows bundle job
-# and the exact Node/pnpm pins.
+# Architecture §10 (CI), spec 001 T14; spec 005 T19 adds the desktop-windows bundle job
+# and the exact Node pin (pnpm is pinned by packageManager in apps/desktop/ui/package.json).
 name: ci
 
 on:
@@ -21,11 +21,14 @@ env:
   # webkit2gtk 4.1 stack that Tauri 2 links on Linux (architecture §10 build matrix).
   TAURI_LINUX_DEPS: >-
     libwebkit2gtk-4.1-dev
+    libgtk-3-dev
     libayatana-appindicator3-dev
     librsvg2-dev
     libxdo-dev
     libssl-dev
   BINDINGS_TS: apps/desktop/ui/src/ipc/bindings.ts
+  NODE_VERSION: "24.15"
+  TAURI_CLI_VERSION: "2.12.0"
 
 defaults:
   run:
@@ -126,7 +129,7 @@ jobs:
       - uses: actions/setup-node@v7
         if: hashFiles('apps/desktop/ui/package.json') != ''
         with:
-          node-version: 24
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
           cache-dependency-path: apps/desktop/ui/pnpm-lock.yaml
       - name: pnpm install
@@ -141,3 +144,40 @@ jobs:
       - name: vitest
         if: hashFiles('apps/desktop/ui/package.json') != ''
         run: pnpm -C apps/desktop/ui test
+
+  # Windows is the real target (architecture §10): prove the NSIS installer builds on every PR.
+  desktop-windows:
+    name: desktop-windows
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install pinned toolchain
+        run: |
+          rustup toolchain install
+          rustc --version
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: apps/desktop/ui/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: apps/desktop/ui/pnpm-lock.yaml
+      # tauri.conf.json beforeBuildCommand runs `pnpm build` in ../ui, which needs node_modules.
+      - name: pnpm install
+        run: pnpm -C apps/desktop/ui install --frozen-lockfile
+      # rust-cache keeps ~/.cargo/bin, so a warm run skips the compile ("already installed").
+      - name: Install tauri-cli
+        run: cargo install tauri-cli --version "$TAURI_CLI_VERSION" --locked
+      - name: cargo tauri build
+        working-directory: apps/desktop/src-tauri
+        run: cargo tauri build --bundles nsis
+      # The workspace target dir is at the repo root, not under src-tauri.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wolluf-windows-nsis
+          path: target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 14
