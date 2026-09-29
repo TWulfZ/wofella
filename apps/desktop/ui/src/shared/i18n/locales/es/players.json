@@ -51,6 +51,20 @@
       "empty_aliases": "Elige al menos un nombre para este perfil.",
       "self_overlap": "Algunos de estos nombres son tuyos y también pertenecen a otro perfil ({{profileIds}}). Un nombre solo puede estar en uno de ellos.",
       "invalid_keymode": "{{keymode}}K no es un modo de teclas compatible."
+    },
+    "scope": {
+      "label": "Viendo",
+      "allPlayers": "Todos los jugadores (mezcla, no es una persona)",
+      "noNames": "No hay nombres seleccionados"
+    },
+    "merge": {
+      "label": "Vista de nombres",
+      "merged": "Combinado",
+      "separate": "Comparar"
+    },
+    "banner": {
+      "allPlayers": "Todos los jugadores: mezcla, no es una persona",
+      "other": "Viendo {{label}}: no es tu perfil. Nada de aquí afecta a tu habilidad."
     }
   }
 }

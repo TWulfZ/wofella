@@ -22,7 +22,7 @@ export function renderWithRouter(ui: ReactNode, { path = "/" }: { path?: string 
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   const rootRoute = createRootRoute({ component: Outlet });
   const routeTree = rootRoute.addChildren([
-    createRoute({ getParentRoute: () => rootRoute, path, component: () => ui }),
+    createRoute({ getParentRoute: () => rootRoute, path: path.split("?")[0] ?? "/", component: () => ui }),
     createRoute({ getParentRoute: () => rootRoute, path: "$", component: LocationProbe }),
   ]);
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [path] }) });

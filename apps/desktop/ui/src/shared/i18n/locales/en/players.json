@@ -51,6 +51,20 @@
       "empty_aliases": "Pick at least one name for this profile.",
       "self_overlap": "Some of these names are yours and also belong to another profile ({{profileIds}}). A name can be in only one of them.",
       "invalid_keymode": "{{keymode}}K is not a supported keymode."
+    },
+    "scope": {
+      "label": "Viewing",
+      "allPlayers": "All players (mixed, not a person)",
+      "noNames": "No names selected"
+    },
+    "merge": {
+      "label": "Alias view",
+      "merged": "Merged",
+      "separate": "Compare"
+    },
+    "banner": {
+      "allPlayers": "All players: mixed, not a person",
+      "other": "Viewing {{label}}: not your profile. Nothing here affects your skill."
     }
   }
 }
