@@ -14,3 +14,7 @@ mania-hub `algorithms/`, LeoBlack tables.
 Dependencies pulled from crates.io and npm keep their own licences; the
 allowlist lives in deny.toml. Sunny is reimplemented clean-room from its
 paper and contains no third-party code.
+
+Tauri (tauri-build 2.7.0), crates/tauri-build/src/windows-app-manifest.xml,
+Apache-2.0 OR MIT, Copyright (c) Tauri Programme within The Commons
+Conservancy. Copied unchanged to apps/desktop/src-tauri/windows-app-manifest.xml.
