@@ -1,0 +1,21 @@
+{
+  "error": {
+    "title": "Something went wrong",
+    "details": "Technical details",
+    "code": {
+      "OSU_DIR_NOT_FOUND": "No valid osu! stable install at “{{path}}”.",
+      "UNSUPPORTED_FORMAT": "This file format or version is not supported.",
+      "PARSE_FAILED": "A file could not be read; it may be damaged.",
+      "OSU_RUNNING": "osu! is writing its files right now. Close osu! and retry.",
+      "CONSENT_REQUIRED": "This action needs your consent first.",
+      "SIGNATURE_INVALID": "The signature check failed.",
+      "NOT_FOUND": "The requested item was not found.",
+      "INVALID_INPUT": "The input is not valid.",
+      "CONFLICT": "This conflicts with the current state.",
+      "CANCELLED": "The operation was cancelled.",
+      "INTERNAL": "Unexpected internal error. The logs folder has the details."
+    },
+    "instance_running": "wolluf is already running with this data folder ({{path}}).",
+    "data_dir_inside_osu": "The wolluf data folder ({{dataDir}}) cannot be inside the osu! folder ({{osuDir}})."
+  }
+}

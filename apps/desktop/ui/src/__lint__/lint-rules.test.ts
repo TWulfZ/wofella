@@ -46,6 +46,14 @@ describe("eslint rules fire on the D14 violation fixtures", () => {
     },
     LINT_TIMEOUT_MS,
   );
+
+  it(
+    "a leaf route importing src/app hits a boundaries rule",
+    async () => {
+      expect((await ruleIds("routes/leafImportsApp.ts")).some(isBoundaries)).toBe(true);
+    },
+    LINT_TIMEOUT_MS,
+  );
 });
 
 // Controls prove the violations above come from the matrix, not from rules that reject everything.
@@ -54,6 +62,15 @@ describe("eslint rules stay quiet on the allowed fixtures", () => {
     "a feature may import another feature's index",
     async () => {
       const ids = await ruleIds("features/alpha/importsBetaIndex.ts");
+      expect(ids.filter(isBoundaries)).toEqual([]);
+    },
+    LINT_TIMEOUT_MS,
+  );
+
+  it(
+    "the root route (the app shell) may import src/app",
+    async () => {
+      const ids = await ruleIds("routes/__root.tsx");
       expect(ids.filter(isBoundaries)).toEqual([]);
     },
     LINT_TIMEOUT_MS,

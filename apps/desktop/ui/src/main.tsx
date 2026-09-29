@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "@/app/App";
 import "@/app/styles.css";
+import { installErrorForwarding } from "@/ipc/log";
 import { initI18n } from "@/shared/i18n";
 
 const container = document.getElementById("root");
@@ -9,6 +10,7 @@ if (container === null) {
   throw new Error("index.html is missing #root");
 }
 
+installErrorForwarding();
 await initI18n();
 createRoot(container).render(
   <StrictMode>

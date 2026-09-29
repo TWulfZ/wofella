@@ -39,6 +39,12 @@ const dependencyPolicies = [
       ],
     },
   },
+  // The root route is the app shell (nav registry, header) and route tests boot the whole app; leaf routes stay
+  // limited to the matrix above.
+  {
+    from: { element: { type: "route", fileInternalPath: ["__root.tsx", "*.test.tsx"] } },
+    allow: { to: { element: { type: "app" } } },
+  },
 ];
 
 export default defineConfig(

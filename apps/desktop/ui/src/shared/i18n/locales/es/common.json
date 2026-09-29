@@ -5,9 +5,28 @@
     "retry": "Reintentar",
     "cancel": "Cancelar",
     "close": "Cerrar",
+    "dismiss": "Descartar",
+    "nav": {
+      "label": "Principal",
+      "home": "Inicio",
+      "settings": "Ajustes"
+    },
     "home": {
       "title": "Inicio",
-      "placeholder": "Todavía no hay nada aquí."
+      "install": "Instalación de osu!",
+      "noInstall": "No hay ninguna instalación de osu! configurada.",
+      "lastSync": "Última sincronización",
+      "neverSynced": "Todavía no se ha sincronizado.",
+      "syncSummary": "{{playsNew}} jugadas nuevas, {{playsExisting}} ya conocidas, {{replaysLinked}} replays enlazadas",
+      "jobStatus": {
+        "queued": "En cola",
+        "running": "En curso",
+        "ok": "Terminada",
+        "failed": "Falló",
+        "cancelled": "Cancelada"
+      },
+      "changeInstall": "Cambiar instalación",
+      "openSettings": "Ajustes"
     }
   }
 }

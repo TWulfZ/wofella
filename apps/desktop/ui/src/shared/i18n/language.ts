@@ -24,3 +24,11 @@ export function readStoredLanguage(): string | null {
     return null;
   }
 }
+
+export function writeStoredLanguage(language: Language): void {
+  try {
+    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+  } catch {
+    // Spec 005 "Language": a lost preference is acceptable; failing the switch is not.
+  }
+}

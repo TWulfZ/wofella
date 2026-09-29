@@ -1,0 +1,16 @@
+{
+  "settings": {
+    "title": "Ajustes",
+    "language": "Idioma",
+    "languages": {
+      "en": "English",
+      "es": "Español"
+    },
+    "dataDir": "Carpeta de datos",
+    "logsDir": "Carpeta de logs",
+    "openLogs": "Abrir carpeta de logs",
+    "version": "Versión",
+    "identity": "Identidad",
+    "identityLink": "Elige qué nombres son tuyos"
+  }
+}

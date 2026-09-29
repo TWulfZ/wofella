@@ -5,9 +5,28 @@
     "retry": "Retry",
     "cancel": "Cancel",
     "close": "Close",
+    "dismiss": "Dismiss",
+    "nav": {
+      "label": "Main",
+      "home": "Home",
+      "settings": "Settings"
+    },
     "home": {
       "title": "Home",
-      "placeholder": "Nothing here yet."
+      "install": "osu! install",
+      "noInstall": "No osu! install configured.",
+      "lastSync": "Last sync",
+      "neverSynced": "No sync has run yet.",
+      "syncSummary": "{{playsNew}} new plays, {{playsExisting}} already known, {{replaysLinked}} replays linked",
+      "jobStatus": {
+        "queued": "Queued",
+        "running": "Running",
+        "ok": "Finished",
+        "failed": "Failed",
+        "cancelled": "Cancelled"
+      },
+      "changeInstall": "Change install",
+      "openSettings": "Settings"
     }
   }
 }

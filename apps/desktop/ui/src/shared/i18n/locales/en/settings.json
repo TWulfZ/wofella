@@ -1,0 +1,16 @@
+{
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "languages": {
+      "en": "English",
+      "es": "Español"
+    },
+    "dataDir": "Data folder",
+    "logsDir": "Logs folder",
+    "openLogs": "Open logs folder",
+    "version": "Version",
+    "identity": "Identity",
+    "identityLink": "Choose which names are yours"
+  }
+}

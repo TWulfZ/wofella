@@ -1,6 +1,13 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
-import { FALLBACK_LANGUAGE, readStoredLanguage, resolveInitialLanguage, SUPPORTED_LANGUAGES } from "./language";
+import {
+  FALLBACK_LANGUAGE,
+  type Language,
+  readStoredLanguage,
+  resolveInitialLanguage,
+  SUPPORTED_LANGUAGES,
+  writeStoredLanguage,
+} from "./language";
 import { resources } from "./resources";
 
 export { i18n };
@@ -25,4 +32,9 @@ export async function initI18n(): Promise<typeof i18n> {
     returnNull: false,
   });
   return i18n;
+}
+
+export async function setLanguage(language: Language): Promise<void> {
+  writeStoredLanguage(language);
+  await i18n.changeLanguage(language);
 }
