@@ -1,5 +1,7 @@
 mod bindings;
 mod check_layers;
+#[cfg(test)]
+mod deny_config;
 mod lint_canary;
 mod stage_lock;
 
