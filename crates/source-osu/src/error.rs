@@ -52,6 +52,8 @@ pub enum CodecError {
         declared: i32,
         consumed: u64,
     },
+    #[error("osg: {len} bytes cannot hold {count} records of 29 or 45 bytes after the header")]
+    StrideMismatch { len: u64, count: i32 },
     #[error("{kind}: {remaining} trailing bytes after byte {offset}")]
     TrailingBytes {
         kind: FileKind,

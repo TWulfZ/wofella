@@ -14,6 +14,7 @@ stable_str_enum! {
         CollectionDb => "collection_db",
         Osr => "osr",
         Cfg => "cfg",
+        Osg => "osg",
     }
 }
 
@@ -45,14 +46,15 @@ pub struct VersionPolicy {
 }
 
 impl FileKind {
-    /// `None` for formats without a version header (cfg).
+    /// `None` for cfg (no header) and `.osg`, whose unknown builds are warnings because the
+    /// stride check is its real format gate (spec 006 R7, ADR 0012).
     pub const fn policy(self) -> Option<VersionPolicy> {
         let (min, newest_verified) = match self {
             Self::OsuDb => (OSU_DB_MIN, OSU_DB_NEWEST_VERIFIED),
             Self::ScoresDb => (SCORES_DB_MIN, SCORES_DB_NEWEST_VERIFIED),
             Self::CollectionDb => (COLLECTION_DB_MIN, COLLECTION_DB_NEWEST_VERIFIED),
             Self::Osr => (OSR_MIN, OSR_NEWEST_VERIFIED),
-            Self::Cfg => return None,
+            Self::Cfg | Self::Osg => return None,
         };
         Some(VersionPolicy {
             min,

@@ -2,6 +2,7 @@
 
 pub mod cfg;
 pub mod collection_db;
+pub mod osg;
 pub mod osr;
 pub mod osu_db;
 pub mod reader;

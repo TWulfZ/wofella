@@ -16,6 +16,12 @@ stable_str_enum! {
         OsrNameTimeMismatch => "osr.name_time_mismatch",
         CfgMalformedLine => "cfg.malformed_line",
         CfgDuplicateKey => "cfg.duplicate_key",
+        OsgUnknownClientVersion => "osg.unknown_client_version",
+        OsgFlagStrideDisagree => "osg.flag_stride_disagree",
+        OsgNonzeroReserved => "osg.nonzero_reserved",
+        OsgTimeDecreases => "osg.time_decreases",
+        OsgCountDecreases => "osg.count_decreases",
+        OsgEmptyGraph => "osg.empty_graph",
     }
 }
 
@@ -125,6 +131,12 @@ mod tests {
             "osr.name_time_mismatch",
             "cfg.malformed_line",
             "cfg.duplicate_key",
+            "osg.unknown_client_version",
+            "osg.flag_stride_disagree",
+            "osg.nonzero_reserved",
+            "osg.time_decreases",
+            "osg.count_decreases",
+            "osg.empty_graph",
         ];
         let actual: Vec<&str> = DiagCode::ALL.iter().map(|c| c.as_str()).collect();
         // Prefix, not equality: later specs append codes, but never reorder or rename these.
