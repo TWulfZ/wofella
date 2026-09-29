@@ -7,3 +7,4 @@ pub mod events;
 pub mod features;
 pub mod jobs;
 pub mod logging;
+pub mod watch;

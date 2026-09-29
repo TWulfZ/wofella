@@ -4,6 +4,7 @@
 pub mod dto;
 pub mod progress;
 mod runner;
+mod service;
 
 use std::future::Future;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -21,7 +22,8 @@ use crate::errors::AppError;
 
 pub use dto::{JobId, JobKindDto, JobStageDto, JobStatusDto};
 pub use progress::ProgressSink;
-pub use runner::JobRunner;
+pub use runner::{JobRunner, JobSubmitter};
+pub use service::JobService;
 
 pub type JobFuture = Pin<Box<dyn Future<Output = Result<JobSummary, AppError>> + Send>>;
 

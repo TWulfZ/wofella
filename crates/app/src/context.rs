@@ -12,7 +12,8 @@ use wolluf_store::{DbHandle, InstanceLock, Vault, open_cache_db, open_user_db};
 
 use crate::errors::{AppError, keys};
 use crate::events::AppEvent;
-use crate::jobs::JobRunner;
+use crate::features::plays::PlaysService;
+use crate::jobs::{JobRunner, JobService};
 
 pub use wolluf_store::repo::ledger::InstallId;
 
@@ -169,7 +170,6 @@ pub struct AppContext {
     paths: AppPaths,
     clock: Arc<dyn Clock>,
     user: DbHandle,
-    #[cfg_attr(not(test), allow(dead_code))]
     cache: DbHandle,
     events: broadcast::Sender<AppEvent>,
     install: InstallRow,
@@ -276,12 +276,19 @@ impl AppContext {
         &self.jobs
     }
 
-    #[cfg(test)]
+    pub fn job_service(&self) -> JobService<'_> {
+        JobService::new(self)
+    }
+
+    pub fn plays(&self) -> PlaysService<'_> {
+        PlaysService::new(self)
+    }
+
     pub(crate) fn user_db(&self) -> &DbHandle {
         &self.user
     }
 
-    #[cfg(test)]
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn cache_db(&self) -> &DbHandle {
         &self.cache
     }

@@ -5,7 +5,7 @@
 //! further submit lands on it, so an event arriving mid-sync is never lost and never stacks.
 
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -74,6 +74,24 @@ enum Stored {
 /// Dropping the runner (with its `AppContext`) cancels the running job and stops the worker.
 pub struct JobRunner {
     inner: Arc<Inner>,
+}
+
+/// Submits from background threads (the watcher) without keeping the runner alive: once the
+/// context is gone, submits are dropped.
+#[derive(Clone)]
+pub struct JobSubmitter {
+    inner: Weak<Inner>,
+}
+
+impl JobSubmitter {
+    /// `None` when the runner has shut down.
+    pub fn submit(&self, job: Box<dyn Job>) -> Option<JobId> {
+        let inner = self.inner.upgrade()?;
+        if inner.shutdown.is_cancelled() {
+            return None;
+        }
+        Some(submit(&inner, job))
+    }
 }
 
 impl Drop for JobRunner {
@@ -157,6 +175,12 @@ impl JobRunner {
     /// starts.
     pub fn submit(&self, job: Box<dyn Job>) -> JobId {
         submit(&self.inner, job)
+    }
+
+    pub fn submitter(&self) -> JobSubmitter {
+        JobSubmitter {
+            inner: Arc::downgrade(&self.inner),
+        }
     }
 
     /// A queued job is dropped and recorded as cancelled; a running one has its token tripped
