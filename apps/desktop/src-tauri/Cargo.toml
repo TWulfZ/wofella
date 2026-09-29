@@ -13,6 +13,11 @@ workspace = true
 [lib]
 name = "wolluf_desktop"
 
+# `cargo xtask bindings` runs this bin by name (ADR 0009).
+[[bin]]
+name = "export-bindings"
+path = "src/bin/export_bindings.rs"
+
 [dependencies]
 wolluf-app.workspace = true
 wolluf-core.workspace = true

@@ -1,5 +1,6 @@
 //! Tauri desktop shell (spec 005): composition root only, no logic (D11).
 
+pub mod bindings;
 pub mod commands;
 pub mod error;
 pub mod events;
@@ -94,6 +95,10 @@ pub fn run(runtime: Handle) -> ExitCode {
                 specta.mount_events(app);
                 // Detached: it ends by itself when the context, and with it the bus, is dropped.
                 drop(events::spawn_bridge(app.handle().clone(), bus));
+                // Before the window opens, so a dev server reload from the rewrite happens before
+                // the first page load rather than during it.
+                #[cfg(debug_assertions)]
+                export_dev_bindings(&specta);
                 open_main_window(app).map_err(|e| StartupFailure {
                     error: AppError::internal(e.to_string()),
                     logs_dir: Some(logs_dir),
@@ -115,6 +120,16 @@ pub fn run(runtime: Handle) -> ExitCode {
     // Explicit: the file writer flushes only on drop, and the event loop is over.
     drop(log_guard);
     u8::try_from(code).map_or(ExitCode::FAILURE, ExitCode::from)
+}
+
+/// Keeps `bindings.ts` current during `cargo tauri dev` (§8). A failure only warns: the UI may
+/// run from a checkout where the file is read-only, and CI's drift check still catches it.
+#[cfg(debug_assertions)]
+fn export_dev_bindings<R: Runtime>(specta: &tauri_specta::Builder<R>) {
+    let path = bindings::committed_path();
+    if let Err(e) = bindings::export_with(specta, &path) {
+        tracing::warn!(error = %e, path = %path.display(), "bindings export failed");
+    }
 }
 
 // The macro expands to std HashMaps inside Tauri's asset tables; wolluf never iterates them.
