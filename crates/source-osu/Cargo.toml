@@ -9,5 +9,21 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[features]
+# Encoders, builders, FakeInstall and FakeProbe for this crate's tests, 003/004/006 tests and xtask fixtures (spec 002).
+test-support = []
+
 [dependencies]
 wolluf-core.workspace = true
+thiserror.workspace = true
+md-5.workspace = true
+sysinfo.workspace = true
+tracing.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+winreg.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+insta.workspace = true
+tempfile.workspace = true
