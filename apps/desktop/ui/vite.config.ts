@@ -23,5 +23,7 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.test.{ts,tsx}"],
+    // Type-level contract tests (mocks.test-d.ts) must run in the plain `pnpm test` gate too, not only with --typecheck.
+    typecheck: { enabled: true, include: ["src/**/*.test-d.ts"] },
   },
 });
