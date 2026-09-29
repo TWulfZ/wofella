@@ -17,3 +17,10 @@ regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
+wolluf-source-osu = { workspace = true, features = ["test-support"] }
+md-5.workspace = true
+sha2.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+tempfile.workspace = true

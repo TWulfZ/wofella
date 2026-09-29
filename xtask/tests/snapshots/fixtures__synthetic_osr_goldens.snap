@@ -1,0 +1,159 @@
+---
+source: xtask/tests/fixtures.rs
+expression: decoded
+---
+[
+    (
+        "2c81e669ad59845c7a1a20e76a762015-134215488020000000.osr",
+        OsrFile {
+            header: ScoreHeader {
+                mode: 3,
+                version: 20260924,
+                beatmap_md5: Present("2c81e669ad59845c7a1a20e76a762015"),
+                player: Present("player-02"),
+                replay_md5: Present("8991199524b8dbc1a233124d182cc3a3"),
+                counts: JudgementCounts {
+                    n300: 50,
+                    n100: 0,
+                    n50: 0,
+                    geki: 100,
+                    katu: 0,
+                    miss: 0,
+                },
+                score: 900000,
+                max_combo: 150,
+                perfect: 1,
+                mods: 0,
+                life_bar: Present(""),
+                timestamp_ticks: 639126720020000000,
+            },
+            payload: None,
+            online_id: I64(
+                1002,
+            ),
+            target_practice: None,
+        },
+        Diagnostics(
+            [
+                Diagnostic {
+                    code: OsrEmptyPayload,
+                    offset: Some(
+                        117,
+                    ),
+                    line: None,
+                    detail: "declared payload length 0",
+                },
+            ],
+        ),
+    ),
+    (
+        "9a2e99e4e09864a2710b0dae46a7e2c5-134215488010000000.osr",
+        OsrFile {
+            header: ScoreHeader {
+                mode: 3,
+                version: 20260924,
+                beatmap_md5: Present("9a2e99e4e09864a2710b0dae46a7e2c5"),
+                player: Present("player-01"),
+                replay_md5: Present("c777acf9821e9252b326ded99caf7b16"),
+                counts: JudgementCounts {
+                    n300: 50,
+                    n100: 0,
+                    n50: 0,
+                    geki: 100,
+                    katu: 0,
+                    miss: 0,
+                },
+                score: 900000,
+                max_combo: 150,
+                perfect: 1,
+                mods: 0,
+                life_bar: Present("0|1,15000|0.95,30000|1,"),
+                timestamp_ticks: 639126720010000000,
+            },
+            payload: Some(
+                144..160,
+            ),
+            online_id: I64(
+                0,
+            ),
+            target_practice: None,
+        },
+        Diagnostics(
+            [],
+        ),
+    ),
+    (
+        "9e60c4fa015351e899558fdcc6ad5f56-134215488040000000.osr",
+        OsrFile {
+            header: ScoreHeader {
+                mode: 3,
+                version: 20260924,
+                beatmap_md5: Present("9e60c4fa015351e899558fdcc6ad5f56"),
+                player: Present(""),
+                replay_md5: Present("f3af48e08a36268c5482f8918317ea78"),
+                counts: JudgementCounts {
+                    n300: 50,
+                    n100: 0,
+                    n50: 0,
+                    geki: 100,
+                    katu: 0,
+                    miss: 0,
+                },
+                score: 900000,
+                max_combo: 150,
+                perfect: 1,
+                mods: 536870912,
+                life_bar: Present(""),
+                timestamp_ticks: 639126720040000000,
+            },
+            payload: Some(
+                112..128,
+            ),
+            online_id: I64(
+                1004,
+            ),
+            target_practice: None,
+        },
+        Diagnostics(
+            [],
+        ),
+    ),
+    (
+        "cf266ab6b3f58fde3b84fda858b96901-134215488030000000.osr",
+        OsrFile {
+            header: ScoreHeader {
+                mode: 0,
+                version: 20260924,
+                beatmap_md5: Present("cf266ab6b3f58fde3b84fda858b96901"),
+                player: Present("player-01"),
+                replay_md5: Present("88fda44a14de593ebe94d66deb41c8c2"),
+                counts: JudgementCounts {
+                    n300: 50,
+                    n100: 0,
+                    n50: 0,
+                    geki: 100,
+                    katu: 0,
+                    miss: 0,
+                },
+                score: 900000,
+                max_combo: 150,
+                perfect: 1,
+                mods: 8388608,
+                life_bar: Present(""),
+                timestamp_ticks: 639126720030000000,
+            },
+            payload: Some(
+                121..137,
+            ),
+            online_id: I64(
+                0,
+            ),
+            target_practice: Some(
+                0.875,
+            ),
+        },
+        Diagnostics(
+            [],
+        ),
+    ),
+]

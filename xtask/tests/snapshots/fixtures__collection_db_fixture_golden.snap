@@ -1,0 +1,28 @@
+---
+source: xtask/tests/fixtures.rs
+expression: "(db, diags)"
+---
+(
+    CollectionDb {
+        version: 20260624,
+        collections: [
+            Collection {
+                name: Present("collection-1"),
+                beatmap_md5s: [
+                    Present("aaa9348d1796eb4eab5c3fa4284c7c71"),
+                    Present("68bbebbbc1770f0360df5615e36ae61d"),
+                ],
+            },
+            Collection {
+                name: Present("collection-2"),
+                beatmap_md5s: [
+                    Present("5aea858c630951210192ba0a801bdd62"),
+                    Present("997021b378dbaa836f1427b21923f1af"),
+                ],
+            },
+        ],
+    },
+    Diagnostics(
+        [],
+    ),
+)

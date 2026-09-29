@@ -2,6 +2,7 @@ mod bindings;
 mod check_layers;
 #[cfg(test)]
 mod deny_config;
+mod fixtures;
 mod lint_canary;
 mod stage_lock;
 
@@ -16,7 +17,7 @@ struct Cli {
     command: Command,
 }
 
-#[derive(Subcommand, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
 enum Command {
     /// Check crate edges, banned deps and banned APIs against xtask/layers.toml.
     CheckLayers,
@@ -29,6 +30,11 @@ enum Command {
     },
     /// Regenerate the TypeScript IPC bindings through wolluf-desktop.
     Bindings,
+    /// Regenerate the committed osu! fixtures (spec 002 T16).
+    Fixtures {
+        #[command(subcommand)]
+        command: fixtures::FixturesCommand,
+    },
 }
 
 fn workspace_root() -> PathBuf {
@@ -45,6 +51,7 @@ fn run(command: Command) -> anyhow::Result<()> {
         Command::LintCanary => lint_canary::run(&root),
         Command::StageLock { check } => stage_lock::run(&root, check),
         Command::Bindings => bindings::run(&root),
+        Command::Fixtures { command } => fixtures::run(&root, command),
     }
 }
 
@@ -76,6 +83,21 @@ mod tests {
                 Command::StageLock { check: true },
             ),
             (vec!["xtask", "bindings"], Command::Bindings),
+            (
+                vec!["xtask", "fixtures", "dbs", "--corpus", "/c"],
+                Command::Fixtures {
+                    command: fixtures::FixturesCommand::Dbs {
+                        corpus: PathBuf::from("/c"),
+                        out: None,
+                    },
+                },
+            ),
+            (
+                vec!["xtask", "fixtures", "synthetic"],
+                Command::Fixtures {
+                    command: fixtures::FixturesCommand::Synthetic { out: None },
+                },
+            ),
         ];
         for (argv, expected) in cases {
             assert_eq!(Cli::try_parse_from(argv).unwrap().command, expected);

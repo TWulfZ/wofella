@@ -1,0 +1,169 @@
+---
+source: xtask/tests/fixtures.rs
+expression: "(db, diags)"
+---
+(
+    ScoresDb {
+        version: 20260924,
+        beatmaps: [
+            ScoresDbBeatmap {
+                md5: Present("fd6540d2cd92f322750344f2c91a6208"),
+                scores: [
+                    ScoreRecord {
+                        header: ScoreHeader {
+                            mode: 3,
+                            version: 20260711,
+                            beatmap_md5: Present("fd6540d2cd92f322750344f2c91a6208"),
+                            player: Present("player-01"),
+                            replay_md5: Present("20ac7f1cebd6b8e1a9cce83c35aa44b9"),
+                            counts: JudgementCounts {
+                                n300: 1530,
+                                n100: 52,
+                                n50: 21,
+                                geki: 2642,
+                                katu: 277,
+                                miss: 46,
+                            },
+                            score: 812102,
+                            max_combo: 561,
+                            perfect: 0,
+                            mods: 0,
+                            life_bar: Absent,
+                            timestamp_ticks: 639252803523541929,
+                        },
+                        online_id: I64(
+                            0,
+                        ),
+                        target_practice: None,
+                    },
+                    ScoreRecord {
+                        header: ScoreHeader {
+                            mode: 3,
+                            version: 20260412,
+                            beatmap_md5: Present("fd6540d2cd92f322750344f2c91a6208"),
+                            player: Present("player-01"),
+                            replay_md5: Present("abec1a8e7834f61e325a8e17b71b697c"),
+                            counts: JudgementCounts {
+                                n300: 2128,
+                                n100: 183,
+                                n50: 36,
+                                geki: 2453,
+                                katu: 907,
+                                miss: 181,
+                            },
+                            score: 605929,
+                            max_combo: 236,
+                            perfect: 0,
+                            mods: 536870928,
+                            life_bar: Absent,
+                            timestamp_ticks: 639144671415860870,
+                        },
+                        online_id: I64(
+                            0,
+                        ),
+                        target_practice: None,
+                    },
+                ],
+            },
+            ScoresDbBeatmap {
+                md5: Present("abe13c023e5ebdfc2ed02cd589d46d71"),
+                scores: [
+                    ScoreRecord {
+                        header: ScoreHeader {
+                            mode: 3,
+                            version: 20260412,
+                            beatmap_md5: Present("abe13c023e5ebdfc2ed02cd589d46d71"),
+                            player: Present(""),
+                            replay_md5: Present("92433261ad3f2e1a07cbb897c81a4b9a"),
+                            counts: JudgementCounts {
+                                n300: 1281,
+                                n100: 67,
+                                n50: 7,
+                                geki: 2771,
+                                katu: 284,
+                                miss: 72,
+                            },
+                            score: 792299,
+                            max_combo: 870,
+                            perfect: 0,
+                            mods: 0,
+                            life_bar: Absent,
+                            timestamp_ticks: 639162171186103140,
+                        },
+                        online_id: I64(
+                            0,
+                        ),
+                        target_practice: None,
+                    },
+                ],
+            },
+            ScoresDbBeatmap {
+                md5: Present("ab75034dbbd206fadd14a615c9977ab2"),
+                scores: [
+                    ScoreRecord {
+                        header: ScoreHeader {
+                            mode: 3,
+                            version: 20260412,
+                            beatmap_md5: Present("ab75034dbbd206fadd14a615c9977ab2"),
+                            player: Present("player-01"),
+                            replay_md5: Present("04c611a5ea1d7431e759f132a89b2b58"),
+                            counts: JudgementCounts {
+                                n300: 311,
+                                n100: 3,
+                                n50: 0,
+                                geki: 1650,
+                                katu: 8,
+                                miss: 2,
+                            },
+                            score: 969966,
+                            max_combo: 1020,
+                            perfect: 0,
+                            mods: 536870912,
+                            life_bar: Absent,
+                            timestamp_ticks: 639142021134166917,
+                        },
+                        online_id: I64(
+                            0,
+                        ),
+                        target_practice: None,
+                    },
+                ],
+            },
+            ScoresDbBeatmap {
+                md5: Present("5faacfdeca27ddd02eea36ff3d78c3b2"),
+                scores: [
+                    ScoreRecord {
+                        header: ScoreHeader {
+                            mode: 3,
+                            version: 20260924,
+                            beatmap_md5: Present("5faacfdeca27ddd02eea36ff3d78c3b2"),
+                            player: Present("player-01"),
+                            replay_md5: Present("13f632c6997efa61d851f3128b801c06"),
+                            counts: JudgementCounts {
+                                n300: 765,
+                                n100: 42,
+                                n50: 15,
+                                geki: 1471,
+                                katu: 207,
+                                miss: 54,
+                            },
+                            score: 728997,
+                            max_combo: 377,
+                            perfect: 0,
+                            mods: 0,
+                            life_bar: Absent,
+                            timestamp_ticks: 639261312815855795,
+                        },
+                        online_id: I64(
+                            1001,
+                        ),
+                        target_practice: None,
+                    },
+                ],
+            },
+        ],
+    },
+    Diagnostics(
+        [],
+    ),
+)
