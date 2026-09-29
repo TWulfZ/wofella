@@ -5,6 +5,13 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 use wolluf_core::ErrorCode;
+use wolluf_store::StoreError;
+
+/// Dotted i18n keys owned by the app slices; `error.json` in the UI carries each of them.
+pub mod keys {
+    pub const INSTANCE_RUNNING: &str = "error.instance_running";
+    pub const DATA_DIR_INSIDE_OSU: &str = "error.data_dir_inside_osu";
+}
 
 /// Rust never builds user-facing prose: the UI localises `message_key` with `args` (§7).
 /// `args` holds strings only, so no number can exceed 2^53 on the wire, and a `BTreeMap` keeps
@@ -94,6 +101,17 @@ impl AppError {
 
     pub fn internal(details: impl Into<String>) -> Self {
         Self::new(ErrorCode::Internal).with_details(details)
+    }
+}
+
+/// `details` keeps the store's own text for logs and debug builds; release IPC strips it.
+impl From<StoreError> for AppError {
+    fn from(error: StoreError) -> Self {
+        let base = Self::new(error.code()).with_details(error.to_string());
+        match error {
+            StoreError::InstanceLocked(_) => base.with_key(keys::INSTANCE_RUNNING),
+            _ => base,
+        }
     }
 }
 
@@ -227,6 +245,20 @@ mod tests {
             json.contains(r#""messageKey":"error.code.INVALID_INPUT""#),
             "{json}"
         );
+    }
+
+    #[test]
+    fn store_errors_map_to_codes_and_keys() {
+        let locked = AppError::from(StoreError::InstanceLocked("/d/wolluf.lock".into()));
+        assert_eq!(locked.code, ErrorCode::Conflict);
+        assert_eq!(locked.message_key, keys::INSTANCE_RUNNING);
+        let newer = AppError::from(StoreError::SchemaTooNew {
+            found: 9,
+            latest: 1,
+        });
+        assert_eq!(newer.code, ErrorCode::UnsupportedFormat);
+        assert_eq!(newer.message_key, "error.code.UNSUPPORTED_FORMAT");
+        assert!(newer.details.is_some());
     }
 
     #[test]
