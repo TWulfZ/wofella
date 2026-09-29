@@ -9,7 +9,8 @@
     "nav": {
       "label": "Principal",
       "home": "Inicio",
-      "settings": "Ajustes"
+      "settings": "Ajustes",
+      "identity": "Identidad"
     },
     "home": {
       "title": "Inicio",

@@ -9,4 +9,5 @@ export interface NavEntry {
 export const NAV: readonly NavEntry[] = [
   { to: "/", labelKey: "common.nav.home" },
   { to: "/settings", labelKey: "common.nav.settings" },
+  { to: "/settings/identity", labelKey: "common.nav.identity" },
 ];

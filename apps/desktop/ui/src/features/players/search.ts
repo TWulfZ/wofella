@@ -3,10 +3,12 @@ import type { MergeModeDto } from "@/ipc/bindings";
 /** `self` | `p:<profileId>` | `all` (spec 004 Routes). */
 export type ScopeParam = "self" | "all" | `p:${number}`;
 
+// `| undefined` is deliberate: the router merges validated params over the raw ones, so an invalid value is only
+// dropped when the validator overwrites its key with undefined.
 export interface GlobalSearch {
-  scope?: ScopeParam;
-  keymode?: number;
-  merge?: MergeModeDto;
+  scope?: ScopeParam | undefined;
+  keymode?: number | undefined;
+  merge?: MergeModeDto | undefined;
 }
 
 // The MVP keymode (CLAUDE.md): views without ?keymode= show 7K.
@@ -42,13 +44,10 @@ function parseMerge(value: unknown): MergeModeDto | undefined {
  * so a stale or hand-edited URL still opens the view with its defaults.
  */
 export function validateGlobalSearch(search: Record<string, unknown>): GlobalSearch {
-  const scope = parseScope(search["scope"]);
-  const keymode = parseKeymode(search["keymode"]);
-  const merge = parseMerge(search["merge"]);
   return {
-    ...(scope === undefined ? {} : { scope }),
-    ...(keymode === undefined ? {} : { keymode }),
-    ...(merge === undefined ? {} : { merge }),
+    scope: parseScope(search["scope"]),
+    keymode: parseKeymode(search["keymode"]),
+    merge: parseMerge(search["merge"]),
   };
 }
 

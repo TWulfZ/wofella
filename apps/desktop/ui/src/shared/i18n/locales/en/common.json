@@ -9,7 +9,8 @@
     "nav": {
       "label": "Main",
       "home": "Home",
-      "settings": "Settings"
+      "settings": "Settings",
+      "identity": "Identity"
     },
     "home": {
       "title": "Home",
