@@ -1,8 +1,8 @@
 //! `cargo xtask stage-lock [--check]` over `stage_versions.lock` (architecture §5.5).
 //!
 //! Each versioned stage pins `(VERSION, blake3 of its quantised golden outputs)`. CI fails when a
-//! golden hash changes without a VERSION bump. F0 has no stages: the registry arrives with
-//! `wolluf-engine` in F1, and `registered_stages` becomes a call into it.
+//! golden hash changes without a VERSION bump. The stages and their goldens come from
+//! `wolluf-engine`.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -41,7 +41,14 @@ struct RawEntry {
 }
 
 fn registered_stages() -> Vec<Stage> {
-    Vec::new()
+    wolluf_engine::stage::goldens()
+        .into_iter()
+        .map(|g| Stage {
+            id: g.id.as_str().to_owned(),
+            version: g.version,
+            golden: g.golden,
+        })
+        .collect()
 }
 
 pub(crate) fn run(root: &Path, check: bool) -> anyhow::Result<()> {
@@ -63,11 +70,7 @@ pub(crate) fn run(root: &Path, check: bool) -> anyhow::Result<()> {
 }
 
 fn summary(count: usize) -> String {
-    if count == 0 {
-        "stage-lock: 0 stages (engine arrives in F1)".to_owned()
-    } else {
-        format!("stage-lock: {count} stages")
-    }
+    format!("stage-lock: {count} stages")
 }
 
 pub(crate) fn parse(text: &str) -> anyhow::Result<Vec<Stage>> {
@@ -160,15 +163,15 @@ mod tests {
     }
 
     #[test]
-    fn empty_lock_passes() {
+    fn committed_lock_matches_the_engine() {
         let committed = include_str!("../../stage_versions.lock");
-        assert_eq!(committed, render(&[]));
-        let locked = parse(committed).unwrap();
-        assert!(locked.is_empty());
-        verify(&locked, &registered_stages()).unwrap();
+        let registered = registered_stages();
+        assert_eq!(committed, render(&registered));
+        verify(&parse(committed).unwrap(), &registered).unwrap();
+        assert!(registered.iter().any(|s| s.id == "chart_parse"));
         assert_eq!(
-            summary(registered_stages().len()),
-            "stage-lock: 0 stages (engine arrives in F1)"
+            summary(registered.len()),
+            format!("stage-lock: {} stages", registered.len())
         );
     }
 

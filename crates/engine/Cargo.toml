@@ -9,5 +9,20 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[features]
+# Stage goldens over the synthetic `chart!` fixtures, for `cargo xtask stage-lock`.
+test-support = ["wolluf-chart/test-support"]
+
 [dependencies]
 wolluf-core.workspace = true
+wolluf-chart.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+postcard.workspace = true
+zstd.workspace = true
+blake3.workspace = true
+
+[dev-dependencies]
+wolluf-chart = { workspace = true, features = ["test-support"] }
+proptest.workspace = true
+insta.workspace = true
