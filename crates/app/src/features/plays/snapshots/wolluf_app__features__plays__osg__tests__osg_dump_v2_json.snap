@@ -1,0 +1,92 @@
+---
+source: crates/app/src/features/plays/osg.rs
+expression: out
+---
+{
+  "header": {
+    "client_version": 20260924,
+    "record_count": 3,
+    "stride": 45,
+    "score_system": "v2",
+    "file_size": 143,
+    "diagnostics": 0
+  },
+  "diagnostics": [],
+  "records": [
+    {
+      "idx": 0,
+      "t_ms": 500,
+      "d300": 0,
+      "d100": 0,
+      "d50": 0,
+      "dmax": 1,
+      "d200": 0,
+      "dmiss": 0,
+      "c300": 0,
+      "c100": 0,
+      "c50": 0,
+      "cmax": 1,
+      "c200": 0,
+      "cmiss": 0,
+      "score": 150,
+      "max_combo": 1,
+      "combo": 1,
+      "hp_raw": 200,
+      "b4": 0,
+      "b25": 0,
+      "b28": 1,
+      "f0": 150.0,
+      "f1": 0.0
+    },
+    {
+      "idx": 1,
+      "t_ms": 750,
+      "d300": 0,
+      "d100": 0,
+      "d50": 0,
+      "dmax": 1,
+      "d200": 0,
+      "dmiss": 0,
+      "c300": 0,
+      "c100": 0,
+      "c50": 0,
+      "cmax": 2,
+      "c200": 0,
+      "cmiss": 0,
+      "score": 300,
+      "max_combo": 2,
+      "combo": 2,
+      "hp_raw": 200,
+      "b4": 0,
+      "b25": 0,
+      "b28": 1,
+      "f0": 300.0,
+      "f1": 0.0
+    },
+    {
+      "idx": 2,
+      "t_ms": 900,
+      "d300": 1,
+      "d100": 0,
+      "d50": 0,
+      "dmax": 0,
+      "d200": 0,
+      "dmiss": 0,
+      "c300": 1,
+      "c100": 0,
+      "c50": 0,
+      "cmax": 2,
+      "c200": 0,
+      "cmiss": 0,
+      "score": 537,
+      "max_combo": 3,
+      "combo": 3,
+      "hp_raw": 200,
+      "b4": 0,
+      "b25": 0,
+      "b28": 1,
+      "f0": 537.7443751081734,
+      "f1": 0.0
+    }
+  ]
+}

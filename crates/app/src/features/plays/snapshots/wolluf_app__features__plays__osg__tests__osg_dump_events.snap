@@ -1,0 +1,11 @@
+---
+source: crates/app/src/features/plays/osg.rs
+expression: out
+---
+client_version=20260924 record_count=5 stride=29 score_system=v1 file_size=153 diagnostics=1
+idx t_ms      kinds n combo_delta score_delta
+  0 1000        MAX 1           1         320
+  1 1250    MAX,300 2           2         620
+  2 1400        200 1           1         200
+  3 1500       miss 1          -4          60
+  4 1900 score_only 0           0           5
