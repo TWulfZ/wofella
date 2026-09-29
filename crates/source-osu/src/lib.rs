@@ -5,6 +5,9 @@ pub mod cfg_files;
 pub mod codec;
 pub mod diag;
 pub mod error;
+pub mod install;
+pub mod paths;
+mod process;
 mod stable;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testkit;

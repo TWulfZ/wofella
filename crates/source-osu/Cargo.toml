@@ -30,3 +30,8 @@ winreg.workspace = true
 proptest.workspace = true
 insta.workspace = true
 tempfile.workspace = true
+
+# Integration tests that build fake trees from `testkit`.
+[[test]]
+name = "install"
+required-features = ["test-support"]
