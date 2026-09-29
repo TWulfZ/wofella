@@ -1,0 +1,15 @@
+[package]
+name = "wolluf-app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+wolluf-core.workspace = true
+wolluf-store.workspace = true
+wolluf-source-osu.workspace = true

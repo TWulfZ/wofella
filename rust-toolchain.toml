@@ -1,0 +1,5 @@
+# Pinned so derived numbers are identical across machines (architecture §3, D3).
+[toolchain]
+channel = "1.98.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

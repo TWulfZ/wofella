@@ -1,0 +1,8 @@
+# Goldens must hash identically on WSL and Windows (D3).
+* text=auto eol=lf
+*.osr binary
+*.osg binary
+*.osu binary
+*.db binary
+*.zst binary
+*.png binary
