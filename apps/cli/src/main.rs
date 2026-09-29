@@ -18,9 +18,6 @@ use wolluf_app::logging::{self, LogOptions};
 
 use cli::{Cli, Command};
 
-/// Printed by subcommands that later tasks implement.
-const NOT_YET: &str = "not yet implemented";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<ExitCode> {
     // Clap prints usage errors and exits 2 itself, which is the spec's input-error code.
@@ -54,9 +51,7 @@ async fn run(cli: Cli) -> anyhow::Result<ExitCode> {
     match cli.command {
         Command::Setup(cmd) => cmd::setup::run(&ctx, cmd, cli.json).await,
         Command::Sync(_) => cmd::sync::run(&ctx, cli.json).await,
-        Command::Players(_) | Command::Jobs(_) => {
-            render::text(NOT_YET)?;
-            Ok(exit::exit_code(exit::SUCCESS))
-        }
+        Command::Players(cmd) => cmd::players::run(&ctx, cmd, cli.json).await,
+        Command::Jobs(cmd) => cmd::jobs::run(&ctx, cmd, cli.json).await,
     }
 }

@@ -77,9 +77,9 @@ fn status_text(status: &SetupStatusDto) -> String {
         || "-".to_owned(),
         |j| {
             format!(
-                "{} {:?} {}",
+                "{} {} {}",
                 j.id,
-                j.status,
+                render::wire(&j.status),
                 render::opt(j.ended.as_deref())
             )
         },

@@ -1,0 +1,86 @@
+---
+source: apps/cli/tests/cli_players.rs
+expression: "serde_json::to_string_pretty(&list).unwrap()"
+---
+{
+  "aliases": [
+    {
+      "aliasId": 1,
+      "autoMatch": {
+        "kind": "equal",
+        "source": "cfg_username"
+      },
+      "byKeymode": [
+        {
+          "bucket": "k7",
+          "n": 4
+        }
+      ],
+      "decision": null,
+      "firstPlayedAt": "2026-05-12T17:01:53.416Z",
+      "inSelfProfile": true,
+      "isEmptyName": false,
+      "lastPlayedAt": "2026-09-27T18:41:21.585Z",
+      "nOffline": 3,
+      "nOnline": 1,
+      "nPlays": 4,
+      "nWithReplay": 0,
+      "normalizedLength": 8,
+      "rawName": "player-01",
+      "selected": true,
+      "topCharts": [
+        {
+          "chartMd5": "fd6540d2cd92f322750344f2c91a6208",
+          "n": 2,
+          "title": "title-5",
+          "version": "difficulty-5"
+        },
+        {
+          "chartMd5": "5faacfdeca27ddd02eea36ff3d78c3b2",
+          "n": 1,
+          "title": "title-10",
+          "version": "difficulty-10"
+        },
+        {
+          "chartMd5": "ab75034dbbd206fadd14a615c9977ab2",
+          "n": 1,
+          "title": "title-8",
+          "version": "difficulty-8"
+        }
+      ]
+    },
+    {
+      "aliasId": 2,
+      "autoMatch": null,
+      "byKeymode": [
+        {
+          "bucket": "k7",
+          "n": 1
+        }
+      ],
+      "decision": null,
+      "firstPlayedAt": "2026-06-05T00:45:18.610Z",
+      "inSelfProfile": false,
+      "isEmptyName": true,
+      "lastPlayedAt": "2026-06-05T00:45:18.610Z",
+      "nOffline": 1,
+      "nOnline": 0,
+      "nPlays": 1,
+      "nWithReplay": 0,
+      "normalizedLength": 0,
+      "rawName": "",
+      "selected": false,
+      "topCharts": [
+        {
+          "chartMd5": "abe13c023e5ebdfc2ed02cd589d46d71",
+          "n": 1,
+          "title": "title-6",
+          "version": "difficulty-6"
+        }
+      ]
+    }
+  ],
+  "cfgUsernameAvailable": true,
+  "selectionVersion": 1,
+  "wizardNeeded": true
+}
