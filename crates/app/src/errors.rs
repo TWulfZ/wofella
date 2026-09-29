@@ -3,7 +3,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use wolluf_core::ErrorCode;
 use wolluf_store::StoreError;
 
@@ -122,7 +122,7 @@ fn default_retryable(code: ErrorCode) -> bool {
 }
 
 /// Wire mirror of core's `ErrorCode`: domain types never derive specta (D13).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ErrorCodeDto {
     OsuDirNotFound,

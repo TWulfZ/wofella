@@ -12,6 +12,7 @@ use wolluf_store::{DbHandle, InstanceLock, Vault, open_cache_db, open_user_db};
 
 use crate::errors::{AppError, keys};
 use crate::events::AppEvent;
+use crate::jobs::JobRunner;
 
 pub use wolluf_store::repo::ledger::InstallId;
 
@@ -162,15 +163,14 @@ pub(crate) fn blocking_join_error(e: tokio::task::JoinError) -> AppError {
 }
 
 /// Everything a service needs, opened once per process. Holding it holds the instance lock.
-// Removed with the job runner (003 T14), the first reader of these handles.
-#[allow(dead_code)]
 pub struct AppContext {
+    // First field: dropped first, so the running job is cancelled before anything else goes.
+    jobs: JobRunner,
     paths: AppPaths,
     clock: Arc<dyn Clock>,
     user: DbHandle,
+    #[cfg_attr(not(test), allow(dead_code))]
     cache: DbHandle,
-    vault: Vault,
-    cpu: Arc<rayon::ThreadPool>,
     events: broadcast::Sender<AppEvent>,
     install: InstallRow,
     runtime: RuntimeHolder,
@@ -230,13 +230,21 @@ impl AppContext {
             .build()
             .map_err(|e| AppError::internal(format!("rayon pool: {e}")))?;
         let (events, _) = broadcast::channel(EVENT_BUS_CAPACITY);
+        let jobs = JobRunner::start(
+            &runtime.handle(),
+            user.clone(),
+            cache.clone(),
+            vault,
+            Arc::new(cpu),
+            clock.clone(),
+            events.clone(),
+        );
         Ok(Self {
+            jobs,
             paths,
             clock,
             user,
             cache,
-            vault,
-            cpu: Arc::new(cpu),
             events,
             install,
             runtime,
@@ -263,28 +271,14 @@ impl AppContext {
     pub fn runtime(&self) -> Handle {
         self.runtime.handle()
     }
-}
 
-#[allow(dead_code)]
-impl AppContext {
-    pub(crate) fn user_db(&self) -> &DbHandle {
-        &self.user
+    pub fn jobs(&self) -> &JobRunner {
+        &self.jobs
     }
 
+    #[cfg(test)]
     pub(crate) fn cache_db(&self) -> &DbHandle {
         &self.cache
-    }
-
-    pub(crate) fn vault(&self) -> &Vault {
-        &self.vault
-    }
-
-    pub(crate) fn cpu(&self) -> &Arc<rayon::ThreadPool> {
-        &self.cpu
-    }
-
-    pub(crate) fn events(&self) -> &broadcast::Sender<AppEvent> {
-        &self.events
     }
 
     /// Upserts `game_install` on `(game, root)`; 005's setup service calls it after

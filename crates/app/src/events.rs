@@ -3,6 +3,27 @@
 
 use serde::Serialize;
 
+use crate::jobs::dto::{JobId, JobKindDto, JobStageDto, JobStatusDto};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct JobProgressDto {
+    pub job_id: JobId,
+    pub kind: JobKindDto,
+    pub stage: JobStageDto,
+    pub done: u32,
+    pub total: u32,
+    pub eta_ms: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct JobFinishedDto {
+    pub job_id: JobId,
+    pub status: JobStatusDto,
+    pub failed_items: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DataChangedDto {
@@ -10,8 +31,10 @@ pub struct DataChangedDto {
     pub domains: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppEvent {
+    JobProgress(JobProgressDto),
+    JobFinished(JobFinishedDto),
     DataChanged(DataChangedDto),
 }
 
