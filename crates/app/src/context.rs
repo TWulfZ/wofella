@@ -12,6 +12,7 @@ use wolluf_store::{DbHandle, InstanceLock, Vault, open_cache_db, open_user_db};
 
 use crate::errors::{AppError, keys};
 use crate::events::AppEvent;
+use crate::features::players::PlayersService;
 use crate::features::plays::PlaysService;
 use crate::jobs::{JobRunner, JobService};
 
@@ -268,6 +269,11 @@ impl AppContext {
         self.events.subscribe()
     }
 
+    /// No subscriber is not an error: the CLI may run without listening.
+    pub(crate) fn emit(&self, event: AppEvent) {
+        let _ = self.events.send(event);
+    }
+
     pub fn runtime(&self) -> Handle {
         self.runtime.handle()
     }
@@ -284,11 +290,14 @@ impl AppContext {
         PlaysService::new(self)
     }
 
+    pub fn players(&self) -> PlayersService<'_> {
+        PlayersService::new(self)
+    }
+
     pub(crate) fn user_db(&self) -> &DbHandle {
         &self.user
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn cache_db(&self) -> &DbHandle {
         &self.cache
     }

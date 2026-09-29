@@ -30,13 +30,16 @@ macro_rules! stable_enum {
     };
 }
 
+pub mod identity;
 pub mod names;
 pub mod params;
 pub mod scope;
 pub mod selection;
+mod service;
 pub mod stats;
 
 #[cfg(test)]
 pub(crate) mod testkit;
 
 pub use params::IdentityParams;
+pub use service::{PlayersService, RefreshIdentityJob};

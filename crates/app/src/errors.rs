@@ -15,6 +15,16 @@ pub mod keys {
     pub const LAZER_NOT_SUPPORTED: &str = "setup.error.lazer_not_supported";
 }
 
+/// Spec 004 IPC: the players slice's `players.error.*` keys (`players.json` in the UI).
+pub mod players_keys {
+    pub const UNKNOWN_ALIAS: &str = "players.error.unknown_alias";
+    pub const UNKNOWN_PROFILE: &str = "players.error.unknown_profile";
+    pub const DUPLICATE_ALIAS: &str = "players.error.duplicate_alias";
+    pub const INVALID_LABEL: &str = "players.error.invalid_label";
+    pub const EMPTY_ALIASES: &str = "players.error.empty_aliases";
+    pub const SELF_OVERLAP: &str = "players.error.self_overlap";
+}
+
 /// Rust never builds user-facing prose: the UI localises `message_key` with `args` (§7).
 /// `args` holds strings only, so no number can exceed 2^53 on the wire, and a `BTreeMap` keeps
 /// the wire order deterministic.

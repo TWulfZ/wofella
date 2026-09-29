@@ -31,6 +31,7 @@ use wolluf_store::repo::ledger::{
 
 use crate::context::blocking_join_error;
 use crate::errors::AppError;
+use crate::features::players::RefreshIdentityJob;
 use crate::features::plays::record::{Links, PlayDraft, draft};
 use crate::jobs::dto::{JobKindDto, JobStageDto, JobSummaryDto, SyncSummaryDto};
 use crate::jobs::{ItemError, ItemResult, Job, JobCtx, JobFuture, JobSummary};
@@ -439,7 +440,8 @@ impl SyncRun<'_> {
             } else {
                 Vec::new()
             },
-            follow_ups: Vec::new(),
+            // Every sync refreshes identity, so the wizard never reads stale stats (spec 004).
+            follow_ups: vec![Box::new(RefreshIdentityJob)],
         })
     }
 
@@ -1220,13 +1222,7 @@ mod tests {
         assert_eq!(counts(&f).0, 1);
         assert_eq!(s.conflicts, 1);
         assert_eq!(fin.failed_items, 1);
-        let job = f.ctx.jobs().list(None).await.unwrap().remove(0);
-        let ulid = ulid::Ulid::from_string(&job.id.0).unwrap();
-        let failures = f
-            .ctx
-            .cache_db()
-            .read(|c| item_failure::list(c, ulid))
-            .unwrap();
+        let failures = failures(&f, &fin.job_id);
         assert_eq!(failures.len(), 1);
         assert_eq!(failures[0].code, ErrorCode::Conflict);
         assert_eq!(failures[0].item_ref, plays(&f)[0].id.to_string());
@@ -1260,7 +1256,15 @@ mod tests {
                 break;
             }
         }
-        let job = f.ctx.jobs().list(None).await.unwrap().remove(0);
+        let job = f
+            .ctx
+            .jobs()
+            .list(None)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|j| j.id == id)
+            .unwrap();
         assert_eq!(
             job.error.map(|e| e.code),
             Some(crate::errors::ErrorCodeDto::OsuDirNotFound)
@@ -1552,9 +1556,12 @@ mod tests {
         // before the third starts, so it lands in this window.
         let third = submit();
         events.extend(events_until(&mut rx, &third).await);
+        // The chained identity refresh reports `players` on its own; only `plays` is ours.
         assert!(
-            !events.iter().any(|e| matches!(e, AppEvent::DataChanged(_))),
-            "an unchanged install emits no DataChanged: {events:?}"
+            !events.iter().any(
+                |e| matches!(e, AppEvent::DataChanged(d) if d.domains.iter().any(|d| d == "plays"))
+            ),
+            "an unchanged install emits no DataChanged{{plays}}: {events:?}"
         );
 
         let mut more = fx.scores.clone();
