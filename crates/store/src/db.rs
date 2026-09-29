@@ -1,7 +1,7 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -52,24 +52,37 @@ pub struct Conn<'a>(pub(crate) &'a Connection);
 type WriteJob = Box<dyn FnOnce(&mut Connection) + Send>;
 
 struct Writer {
-    queue: Option<Sender<WriteJob>>,
-    thread: Option<JoinHandle<()>>,
+    queue: Mutex<Option<Sender<WriteJob>>>,
+    thread: Mutex<Option<JoinHandle<()>>>,
 }
 
-impl Drop for Writer {
-    fn drop(&mut self) {
-        // Closing the queue ends the thread's loop; joining makes the connection close before
-        // the handle is gone, so a reopen right after sees a released file.
-        self.queue.take();
-        if let Some(thread) = self.thread.take() {
+impl Writer {
+    fn stop(&self) {
+        // Closing the queue ends the thread's loop once in-flight writes drain; joining makes
+        // the connection close before `stop` returns, so a reopen sees a released file.
+        lock(&self.queue).take();
+        let thread = lock(&self.thread).take();
+        if let Some(thread) = thread {
             let _ = thread.join();
         }
     }
 }
 
+impl Drop for Writer {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+/// `None` once closed.
 struct ReadPool {
-    conns: Vec<Mutex<Connection>>,
+    conns: Vec<Mutex<Option<Connection>>>,
     next: AtomicUsize,
+}
+
+/// A panic while holding the lock leaves the guarded value intact, so poisoning is ignored.
+fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// One writer thread plus a small read pool per database file (D6, architecture §5.2): writes
@@ -93,7 +106,7 @@ impl DbHandle {
         init(&mut conn)?;
 
         let readers = (0..READ_POOL_SIZE)
-            .map(|_| open_reader(path).map(Mutex::new))
+            .map(|_| open_reader(path).map(|c| Mutex::new(Some(c))))
             .collect::<Result<Vec<_>, _>>()?;
 
         let (queue, jobs) = crossbeam_channel::bounded::<WriteJob>(WRITE_QUEUE_CAPACITY);
@@ -104,8 +117,8 @@ impl DbHandle {
 
         Ok(Self {
             writer: Arc::new(Writer {
-                queue: Some(queue),
-                thread: Some(thread),
+                queue: Mutex::new(Some(queue)),
+                thread: Mutex::new(Some(thread)),
             }),
             readers: Arc::new(ReadPool {
                 conns: readers,
@@ -121,7 +134,7 @@ impl DbHandle {
         F: FnOnce(&Tx<'_>) -> Result<R, StoreError> + Send + 'static,
         R: Send + 'static,
     {
-        let queue = self.writer.queue.as_ref().ok_or(StoreError::WriterGone)?;
+        let queue = lock(&self.writer.queue).clone().ok_or(StoreError::Closed)?;
         let (reply, result) = crossbeam_channel::bounded(1);
         let job: WriteJob = Box::new(move |conn| {
             let outcome = catch_unwind(AssertUnwindSafe(|| run_in_tx(conn, f)))
@@ -129,6 +142,8 @@ impl DbHandle {
             let _ = reply.send(outcome);
         });
         queue.send(job).map_err(|_| StoreError::WriterGone)?;
+        // A held sender keeps the writer loop alive, which would stall `close` until the reply.
+        drop(queue);
         result.recv().map_err(|_| StoreError::WriterGone)?
     }
 
@@ -141,14 +156,22 @@ impl DbHandle {
         let free = (0..pool.conns.len())
             .map(|i| &pool.conns[(start + i) % pool.conns.len()])
             .find_map(|m| m.try_lock().ok());
-        // A panic in an earlier read leaves the connection itself intact, so poisoning is ignored.
         let guard = match free {
             Some(guard) => guard,
-            None => pool.conns[start]
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner),
+            None => lock(&pool.conns[start]),
         };
-        f(Conn(&guard))
+        let conn = guard.as_ref().ok_or(StoreError::Closed)?;
+        f(Conn(conn))
+    }
+
+    /// Blocking. Drains and joins the writer, then closes the readers, for every clone; later
+    /// calls get `Closed`. The order matches a plain drop: a read-only connection closing last
+    /// never checkpoints, so the on-disk main file and WAL are the same either way.
+    pub fn close(&self) {
+        self.writer.stop();
+        for conn in &self.readers.conns {
+            lock(conn).take();
+        }
     }
 }
 
@@ -283,6 +306,18 @@ pub(crate) mod tests {
         assert!(matches!(res, Err(StoreError::WriterPanicked(ref m)) if m.contains("boom")));
         insert(&db, 1).unwrap();
         assert_eq!(count(&db), 1);
+    }
+
+    #[test]
+    fn close_ends_every_clone() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = counter_db(dir.path(), DbKind::User);
+        let other = db.clone();
+        insert(&db, 1).unwrap();
+        db.close();
+        assert!(matches!(insert(&other, 2), Err(StoreError::Closed)));
+        assert!(matches!(other.read(|_| Ok(())), Err(StoreError::Closed)));
+        other.close();
     }
 
     fn pragma<T: rusqlite::types::FromSql + Send + 'static>(
