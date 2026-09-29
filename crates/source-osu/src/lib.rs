@@ -5,6 +5,8 @@ pub mod codec;
 pub mod diag;
 pub mod error;
 mod stable;
+#[cfg(any(test, feature = "test-support"))]
+pub mod testkit;
 
 pub use diag::{DiagCode, Diagnostic, Diagnostics};
 pub use error::{CodecError, SourceError};

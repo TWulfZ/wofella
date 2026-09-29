@@ -3,6 +3,8 @@
 pub mod collection_db;
 pub mod reader;
 pub mod replay_name;
+pub mod score_header;
+pub mod scores_db;
 pub mod version;
 pub mod writer;
 
