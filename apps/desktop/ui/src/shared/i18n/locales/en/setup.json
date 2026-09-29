@@ -1,0 +1,29 @@
+{
+  "setup": {
+    "title": "Find your osu! install",
+    "intro": "wolluf reads your osu! stable folder without changing anything in it. Pick the install to use.",
+    "detecting": "Looking for osu! installs…",
+    "noneFound": "No osu! stable install was found automatically. Use Browse… to pick its folder.",
+    "detectFailed": "Automatic detection failed.",
+    "candidates": "Detected installs",
+    "browse": "Browse…",
+    "confirm": "Use this install",
+    "confirming": "Setting up…",
+    "customPath": "Chosen folder",
+    "osuDbVersion": "osu!.db {{version}}",
+    "missing": "Missing: {{files}}",
+    "missingDirectory": "folder not found",
+    "invalid": "Not a valid install",
+    "source": {
+      "env": "WOLLUF_OSU_DIR",
+      "registry": "Registry",
+      "local_app_data": "Local AppData",
+      "wsl_user_profile": "Windows user folder",
+      "drive_scan": "Drive scan",
+      "program_files": "Program Files"
+    },
+    "error": {
+      "lazer_not_supported": "“{{path}}” is an osu!lazer install. wolluf reads osu! stable only."
+    }
+  }
+}

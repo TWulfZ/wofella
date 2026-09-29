@@ -28,7 +28,10 @@ export function setupStatus(overrides: Partial<SetupStatusDto> = {}): SetupStatu
 }
 
 export async function bootApp(path: string, handlers: CommandHandlers = {}, plugins: PluginHandlers = {}) {
-  const calls = mockCommands({ setupStatus: () => setupStatus(), jobsList: () => [], ...handlers }, plugins);
+  const calls = mockCommands(
+    { setupStatus: () => setupStatus(), setupDetectInstalls: () => [], jobsList: () => [], ...handlers },
+    plugins,
+  );
   const queryClient = createQueryClient();
   const router = createAppRouter(queryClient, createMemoryHistory({ initialEntries: [path] }));
   const view = render(
