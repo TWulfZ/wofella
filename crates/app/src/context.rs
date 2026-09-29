@@ -14,6 +14,7 @@ use crate::errors::{AppError, keys};
 use crate::events::AppEvent;
 use crate::features::players::PlayersService;
 use crate::features::plays::PlaysService;
+use crate::features::setup::SetupService;
 use crate::jobs::{JobRunner, JobService};
 
 pub use wolluf_store::repo::ledger::InstallId;
@@ -292,6 +293,12 @@ impl AppContext {
 
     pub fn players(&self) -> PlayersService<'_> {
         PlayersService::new(self)
+    }
+
+    /// Reads the system environment (and `reg.exe` on WSL) at each call; shells that need a
+    /// fixed environment use `SetupService::with_env`.
+    pub fn setup(&self) -> SetupService<'_> {
+        SetupService::new(self)
     }
 
     pub(crate) fn user_db(&self) -> &DbHandle {

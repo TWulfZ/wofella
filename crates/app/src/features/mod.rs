@@ -3,3 +3,4 @@
 
 pub mod players;
 pub mod plays;
+pub mod setup;
