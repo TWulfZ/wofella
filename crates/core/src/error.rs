@@ -12,4 +12,11 @@ pub enum CoreError {
     InvalidKeymode(u8),
     #[error("column {col} is outside a {keymode}-column keymode")]
     ColumnOutOfRange { col: u8, keymode: u8 },
+    #[error("invalid {type_name} hex {input:?}: expected lowercase hex of the exact length")]
+    InvalidHex {
+        type_name: &'static str,
+        input: String,
+    },
+    #[error("unknown game {0:?}")]
+    UnknownGame(String),
 }

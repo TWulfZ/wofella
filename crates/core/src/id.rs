@@ -100,6 +100,66 @@ stable_id!(
     StageId
 );
 
+/// Closed enum persisted and sent as fixed strings; discriminants never reach disk or the wire
+/// (§11), so `as_str` is the single source for `FromStr`, `Display` and serde.
+macro_rules! stable_str_enum {
+    (
+        $(#[$meta:meta])*
+        pub enum $name:ident, unknown = $unknown:path {
+            $($(#[$vmeta:meta])* $variant:ident => $text:literal),+ $(,)?
+        }
+    ) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize)]
+        #[serde(try_from = "String")]
+        pub enum $name {
+            $($(#[$vmeta])* $variant),+
+        }
+
+        impl $name {
+            pub const ALL: &'static [Self] = &[$(Self::$variant),+];
+
+            pub const fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $text),+
+                }
+            }
+        }
+
+        impl std::str::FromStr for $name {
+            type Err = $crate::error::CoreError;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                match s {
+                    $($text => Ok(Self::$variant),)+
+                    _ => Err($unknown(s.to_owned())),
+                }
+            }
+        }
+
+        impl TryFrom<String> for $name {
+            type Error = $crate::error::CoreError;
+
+            fn try_from(s: String) -> Result<Self, Self::Error> {
+                s.parse()
+            }
+        }
+
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(self.as_str())
+            }
+        }
+
+        impl serde::Serialize for $name {
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                serializer.serialize_str(self.as_str())
+            }
+        }
+    };
+}
+pub(crate) use stable_str_enum;
+
 #[cfg(test)]
 mod tests {
     use super::*;
