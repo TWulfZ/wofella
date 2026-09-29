@@ -1,0 +1,8 @@
+---
+source: crates/app/src/features/players/selection.rs
+expression: text
+---
+version: 1
+decision: me, not_me
+match_source: cfg_username, linked_account
+session_match_kind: equal, prefix

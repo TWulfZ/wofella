@@ -3,5 +3,9 @@
 
 pub mod names;
 pub mod params;
+pub mod selection;
+
+#[cfg(test)]
+pub(crate) mod testkit;
 
 pub use params::IdentityParams;
