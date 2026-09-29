@@ -85,12 +85,20 @@ pub(crate) fn error_line(e: &AppError) -> String {
 }
 
 pub(crate) fn error(e: &AppError) {
-    let mut err = std::io::stderr().lock();
-    // Nothing useful is left to do when stderr itself is gone.
-    let _ = writeln!(err, "{}", error_line(e));
+    stderr_line(&error_line(e));
     if let Some(details) = &e.details {
-        let _ = writeln!(err, "  details: {details}");
+        stderr_line(&format!("  details: {details}"));
     }
+}
+
+/// A non-fatal diagnostic; it never changes the exit code.
+pub(crate) fn warning(message: &str) {
+    stderr_line(&format!("warning: {message}"));
+}
+
+pub(crate) fn stderr_line(line: &str) {
+    // Nothing useful is left to do when stderr itself is gone.
+    let _ = writeln!(std::io::stderr().lock(), "{line}");
 }
 
 #[cfg(test)]
