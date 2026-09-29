@@ -5,12 +5,13 @@ Training companion for osu!mania **stable**. It diagnoses per-pattern weaknesses
 ## Sources of truth (read before non-trivial work)
 - `docs/architecture.md`: layers, dependency rules D1–D17, storage, feedback loop, phases F0–F5. **Binding.** Change it only through an ADR.
 - `docs/adr/`: accepted decisions (MADR).
-- `docs/specs/<id>-<slug>/`: the spec and tasks for each feature or phase.
+- `odd/tasks/<feature-name>.md`: the one working document of an in-flight substantial feature, on its branch; removed at close (`wolluf-odd`).
+- `docs/specs/`: frozen F0 record (specs 001–006 + index). No new specs; read for context.
 - `docs/research/`: verified domain findings (hit windows, formats, calculators, prior art, the pilot user's data). Grep these files before searching the web.
 - `research/scripts/`: Python prototypes that act as oracles for porting (osu!.db / scores.db readers, replay re-judge harness).
 
 ## Workflow
-Any feature, phase task or behavioural change goes through the **`wolluf-sdd` skill**: spec → tasks → TDD implementation → gates → commit. Only trivial fixes skip it.
+Every change request runs through the **`wolluf-odd` skill** (Organic Driven Development): small, understood changes create no documents; substantial work keeps one `odd/tasks/<feature-name>.md`, removed at close. Explain, review, audit and plan requests are read-only: no files, and a requested plan goes in the reply.
 
 ## Environment
 - Rust lives in `~/.cargo/bin`. Non-interactive shells need `export PATH="$HOME/.cargo/bin:$PATH"`.
@@ -35,7 +36,7 @@ Any feature, phase task or behavioural change goes through the **`wolluf-sdd` sk
 - `osu-db` on crates.io: 0.3.0 (2021) cannot read the current osu!.db. Prefer our own codec, validated against `research/scripts/*/osudb.py` and `sdb.py`.
 
 ## Commands
-Gates (wolluf-sdd §4), from the repo root:
+Gates, from the repo root (per change, the ones `wolluf-odd` §6 marks as applicable; all of them at feature close):
 - `cargo fmt --all --check`
 - `cargo clippy --workspace --all-targets -- -D warnings` (002 also runs it with `--all-features`)
 - `cargo xtask check-layers`

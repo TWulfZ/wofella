@@ -1,6 +1,7 @@
 # 000 F0 Base: index
 
 Status: In progress (close stage ran 2026-09-28; open items under "Close status")
+No new specs are added here. F0's open "Close status" items are resolved as ordinary `wolluf-odd` work and ticked here; everything after F0 follows `wolluf-odd`.
 Phase: F0 · Owner: twulfz · Date: 2026-09-28
 Links: architecture §12 (F0 row), §4 (D1–D17), §13 (O1, O9, O10); `.claude/skills/wolluf-sdd/SKILL.md`
 

@@ -3,3 +3,4 @@ research/out/
 research/**/*.json
 research/**/*.csv
 /target/
+__pycache__/

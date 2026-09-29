@@ -3,7 +3,7 @@
 Status: accepted 2026-09-28 (spec 001 T15). This file expands architecture §11. The architecture and its ADRs win on conflict; change this file in the same PR as the rule it describes.
 
 ## Language
-- Code, identifiers, comments, doc comments, TODOs, docs, ADRs, specs and commit messages are in **English**, whatever language the conversation or the surrounding file uses.
+- Code, identifiers, comments, doc comments, TODOs, docs, ADRs, feature documents and commit messages are in **English**, whatever language the conversation or the surrounding file uses.
 - Only user-facing strings (i18n values in `es`/`en`, UI copy, error messages a human reads) follow the product locale. Rust never builds user-facing prose: it returns a stable `message_key` plus args (§7), and the UI localises.
 
 ## Comments
@@ -12,18 +12,18 @@ Comments explain **why**, never what. The code already says what it does.
 Write a comment only for:
 - a **business rule or domain invariant** the code cannot express (why a validation exists, what osu! stable actually does);
 - a **non-obvious technical decision**: a race, an ordering that looks arbitrary but is load-bearing, a library or DB workaround, a rejected alternative worth recording;
-- a **reference** to an ADR, spec, research file or ticket that carries the reasoning (`// ADR 0014`, `// research 03 l.168`).
+- a **reference** to an ADR, research file, F0 spec or ticket (never an `odd/tasks/` document, which is removed at close) that carries the reasoning (`// ADR 0014`, `// research 03 l.168`).
 
-Never comment a name that already explains itself, restate the next line in prose, or narrate a well-named function. Prefer one line; use a block only for a genuine invariant or trap. If the explanation already lives in a spec or ADR, link it instead of copying it. This rule overrides "match the surrounding file's density": match a neighbour's style, not its volume.
+Never comment a name that already explains itself, restate the next line in prose, or narrate a well-named function. Prefer one line; use a block only for a genuine invariant or trap. If the explanation already lives in an ADR, research file or F0 spec, link it instead of copying it. This rule overrides "match the surrounding file's density": match a neighbour's style, not its volume.
 
 ## Commits
 - Conventional Commits (`feat`, `fix`, `docs`, `build`, `test`, `refactor`, `chore`, `ci`), imperative mood, ≤ 72 characters, English.
 - **Subject only by default.** Add a body only for heavy commits (a migration, a breaking change, an architectural tradeoff), and use it for the why and what breaks, never a bullet list restating the diff.
 - Never add `Co-Authored-By` or any other attribution trailer.
-- One task of a spec's `tasks.md` = one commit. `Cargo.lock` is committed together with the manifest change that moved it.
+- Every task closes with at least one work-unit commit; small work is exactly one (`wolluf-odd` §4, §6). `Cargo.lock` is committed together with the manifest change that moved it.
 
 ## ADRs
-- MADR format from `.claude/skills/wolluf-sdd/templates/adr.md`, stored as `docs/adr/NNNN-kebab-title.md` with `Status: Proposed | Accepted | Superseded by NNNN` and the four headings Context, Decision, Alternatives considered, Consequences.
+- MADR format from `.claude/skills/wolluf-odd/templates/adr.md`, stored as `docs/adr/NNNN-kebab-title.md` with `Status: Proposed | Accepted | Superseded by NNNN` and the four headings Context, Decision, Alternatives considered, Consequences.
 - An ADR is **required** for:
   - any new internal crate edge or any change to `xtask/layers.toml` (D1). The PR that touches `layers.toml` names the ADR;
   - storage changes: a new store, a user.db table that changes the ledger's meaning, the vault layout, a change to the `PlayId` or `VersionKey` encoding (ADR 0003, ADR 0006);
@@ -51,7 +51,7 @@ Never comment a name that already explains itself, restate the next line in pros
 ## Errors
 - Libraries use one `thiserror` enum per crate with precise variants. `anyhow` is allowed only in `apps/cli` and `xtask`.
 - `unwrap`, `expect`, `panic!`, `todo!`, `unimplemented!` and `dbg!` are denied workspace-wide, bins included; bins use `?` with `anyhow`.
-- Errors that reach the UI are `AppError { code: ErrorCode, message_key, args, details, retryable }`. `ErrorCode` is the closed §7 list of stable strings; adding one needs a spec and a UI mapping.
+- Errors that reach the UI are `AppError { code: ErrorCode, message_key, args, details, retryable }`. `ErrorCode` is the closed §7 list of stable strings; adding one edits the architecture §7 list in the same commit and needs a UI mapping with en and es fallbacks.
 - Parsers are lenient and collect `Diagnostics` for odd sections. Unknown format versions are handled as ADR 0015 decides (accepted with a warning only after full structural validation); nothing guesses silently.
 
 ## Lint policy and allowances
@@ -77,17 +77,17 @@ Allowed exceptions, and only these:
 - Sunny is a clean-room reimplementation from the paper: never read or copy GPL/LGPL sources while writing it.
 
 ## Fixtures and the corpus
-- **Never commit** real beatmaps, audio, replays, skins or the user's osu! DBs, and no player names beyond those a spec explicitly allows.
+- **Never commit** real beatmaps, audio, replays, skins or the user's osu! DBs, and no player names beyond those the user explicitly approves, recorded in an ADR or in a one-line WHY comment at the fixture generator.
 - Committed fixtures are either **synthetic** (built by DSLs and test-support builders) or **minimized and anonymized** extracts produced by `cargo xtask fixtures` (spec 002), with a leak check. Third-party player names are replaced (e.g. `Rosalind`, `Kovacs`, `Sterling`); md5 values are replaced with derived ones.
 - The pilot corpus at `WOLLUF_CORPUS` (`/mnt/e/Games/osu!`) is **read-only, always**. Tests and tools only read it; outputs go to a tempdir or the app data dir, and a corpus test asserts nothing under the root changed.
 - Corpus tests are `#[ignore]` and run with `WOLLUF_CORPUS="/mnt/e/Games/osu!" cargo nextest run --run-ignored only`. They assert invariants and selections against independently computed oracles, never hard-coded counts that drift.
 - Every bug found in the corpus gets a synthetic regression fixture (§10).
 
 ## Tests and gates
-- Behaviour work is test-first: write the failing test, then the minimum code (`wolluf-sdd` §3).
+- Behaviour work is test-first: write the failing test, then the minimum code (`wolluf-odd` §6).
 - Domain tests are pure and millisecond-fast. Store tests use in-memory or temp SQLite with the real migrations; no repository fakes (D8).
 - Golden outputs use `insta`; property tests use `proptest`; compile-fail gates use `trybuild`.
-- Before a task or spec is declared done, the `wolluf-sdd` §4 gate block runs. A failing gate is reported with its output, never skipped or fixed by loosening a test.
+- Before a task is declared done, the gates `wolluf-odd` §6 marks as applicable run; the full `CLAUDE.md` gate block runs at feature close. A failing gate is reported with its output, never skipped or fixed by loosening a test.
 
 ## New-feature checklist
 Copy into the PR description:
