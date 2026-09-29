@@ -9,7 +9,9 @@ pub mod install;
 pub mod paths;
 pub mod probe;
 mod process;
+pub mod replay_dir;
 pub mod snapshot;
+pub mod songs;
 mod stable;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testkit;
