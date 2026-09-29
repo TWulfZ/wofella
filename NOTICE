@@ -1,0 +1,16 @@
+wolluf
+Copyright (c) 2026 TWulfZ
+
+Licensed under the MIT License; see LICENSE.
+
+Third-party code included: none yet.
+
+Ported code is attributed here in the same commit that brings it in
+(docs/conventions.md, "Licensing and NOTICE"; ADR 0008). Each entry names
+the project, the upstream path, the licence, the copyright line, and where
+the port lives in this repository. Planned MIT ports: Interlude `prelude/`,
+mania-hub `algorithms/`, LeoBlack tables.
+
+Dependencies pulled from crates.io and npm keep their own licences; the
+allowlist lives in deny.toml. Sunny is reimplemented clean-room from its
+paper and contains no third-party code.

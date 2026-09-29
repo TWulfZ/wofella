@@ -38,7 +38,10 @@ Any feature, phase task or behavioural change goes through the **`wolluf-sdd` sk
 Fill these in as they come to exist:
 - `cargo nextest run --workspace`
 - `cargo xtask check-layers`
+- `cargo xtask lint-canary`
+- `cargo xtask stage-lock --check`
 - `cargo xtask bindings`
+- `cargo deny check`
 - `cargo clippy --workspace --all-targets -- -D warnings`
 - `pnpm -C apps/desktop/ui test`
 - Corpus harness: `WOLLUF_CORPUS=/mnt/e/Games/osu! cargo nextest run --run-ignored only`
