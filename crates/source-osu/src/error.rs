@@ -89,6 +89,9 @@ pub enum SourceError {
     },
     #[error("{} is an osu!lazer install", .path.display())]
     LazerInstall { path: PathBuf },
+    /// The file kept changing across every stable-read retry: osu! is most likely writing it.
+    #[error("{} kept changing while being read", .path.display())]
+    Changing { path: PathBuf },
 }
 
 impl SourceError {
@@ -107,6 +110,7 @@ impl SourceError {
             Self::Io { .. } => ErrorCode::Internal,
             Self::InvalidInstall { .. } => ErrorCode::OsuDirNotFound,
             Self::LazerInstall { .. } => ErrorCode::UnsupportedFormat,
+            Self::Changing { .. } => ErrorCode::OsuRunning,
         }
     }
 

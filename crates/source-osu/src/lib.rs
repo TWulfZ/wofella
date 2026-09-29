@@ -9,6 +9,7 @@ pub mod install;
 pub mod paths;
 pub mod probe;
 mod process;
+pub mod snapshot;
 mod stable;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testkit;
