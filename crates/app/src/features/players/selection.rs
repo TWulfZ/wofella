@@ -11,33 +11,6 @@ use super::names::{SessionMatchKind, norm_len, normalize, session_match};
 /// Returned in the DTO; bump when the same inputs would select differently.
 pub const SELECTION_VERSION: u32 = 1;
 
-macro_rules! stable_enum {
-    ($(#[$meta:meta])* $name:ident { $($variant:ident => $text:literal),+ $(,)? }) => {
-        $(#[$meta])*
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-        pub enum $name {
-            $($variant),+
-        }
-
-        impl $name {
-            pub const ALL: &'static [Self] = &[$(Self::$variant),+];
-
-            pub const fn as_str(self) -> &'static str {
-                match self {
-                    $(Self::$variant => $text),+
-                }
-            }
-
-            pub fn parse(s: &str) -> Option<Self> {
-                match s {
-                    $($text => Some(Self::$variant),)+
-                    _ => None,
-                }
-            }
-        }
-    };
-}
-
 stable_enum!(
     /// The user's persisted answer (`identity_decision`); stable strings, never renumbered.
     Decision { Me => "me", NotMe => "not_me" }
