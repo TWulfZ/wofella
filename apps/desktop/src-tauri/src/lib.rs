@@ -49,6 +49,12 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             // The specta half only reads argument types, and `AppHandle` is skipped there; the Tauri half
             // strips the generic and infers `R`, so a concrete runtime here serves every `R`.
             commands::app::app_open_logs_dir::<tauri::Wry>,
+            commands::players::players_list_aliases,
+            commands::players::players_list_profiles,
+            commands::players::players_set_profile_aliases,
+            commands::players::players_decide_alias,
+            commands::players::players_create_profile,
+            commands::players::players_set_default,
         ])
 }
 

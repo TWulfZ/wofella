@@ -1,0 +1,156 @@
+---
+source: crates/app/src/features/players/dto.rs
+expression: "serde_json::to_string_pretty(&wire).unwrap()"
+---
+{
+  "aliasList": {
+    "aliases": [
+      {
+        "aliasId": 1,
+        "autoMatch": {
+          "kind": "prefix",
+          "source": "cfg_username"
+        },
+        "byKeymode": [
+          {
+            "bucket": "k7",
+            "n": 2
+          },
+          {
+            "bucket": "unknown",
+            "n": 1
+          }
+        ],
+        "decision": null,
+        "firstPlayedAt": "2026-04-25T00:00:00.000Z",
+        "inSelfProfile": true,
+        "isEmptyName": false,
+        "lastPlayedAt": "2026-04-25T01:00:00.000Z",
+        "nOffline": 2,
+        "nOnline": 1,
+        "nPlays": 3,
+        "nWithReplay": 3,
+        "normalizedLength": 6,
+        "rawName": "TWulfZ",
+        "selected": true,
+        "topCharts": [
+          {
+            "chartMd5": "0123456789abcdef0123456789abcdef",
+            "n": 2,
+            "title": "Title",
+            "version": "7K Hard"
+          }
+        ]
+      },
+      {
+        "aliasId": 2,
+        "autoMatch": null,
+        "byKeymode": [],
+        "decision": "not_me",
+        "firstPlayedAt": null,
+        "inSelfProfile": false,
+        "isEmptyName": true,
+        "lastPlayedAt": null,
+        "nOffline": 0,
+        "nOnline": 0,
+        "nPlays": 0,
+        "nWithReplay": 0,
+        "normalizedLength": 0,
+        "rawName": "",
+        "selected": false,
+        "topCharts": [
+          {
+            "chartMd5": "fedcba9876543210fedcba9876543210",
+            "n": 1,
+            "title": null,
+            "version": null
+          }
+        ]
+      }
+    ],
+    "cfgUsernameAvailable": true,
+    "selectionVersion": 1,
+    "wizardNeeded": true
+  },
+  "profiles": [
+    {
+      "aliasIds": [
+        1
+      ],
+      "isDefault": true,
+      "label": "Me",
+      "mergeMode": "merged",
+      "profileKind": "self",
+      "ref": {
+        "id": 1,
+        "kind": "profile"
+      },
+      "scopes": [
+        {
+          "aliasIds": [
+            1
+          ],
+          "keymode": 7,
+          "scopeHash": "abababababababababababababababababababababababababababababababab"
+        }
+      ]
+    },
+    {
+      "aliasIds": [
+        3,
+        4
+      ],
+      "isDefault": false,
+      "label": "Rosalind",
+      "mergeMode": "separate",
+      "profileKind": "other",
+      "ref": {
+        "id": 2,
+        "kind": "profile"
+      },
+      "scopes": [
+        {
+          "aliasIds": [
+            3
+          ],
+          "keymode": 7,
+          "scopeHash": "0101010101010101010101010101010101010101010101010101010101010101"
+        },
+        {
+          "aliasIds": [
+            4
+          ],
+          "keymode": 7,
+          "scopeHash": "0202020202020202020202020202020202020202020202020202020202020202"
+        }
+      ]
+    },
+    {
+      "aliasIds": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "isDefault": false,
+      "label": "",
+      "mergeMode": "merged",
+      "profileKind": "all_players",
+      "ref": {
+        "kind": "all_players"
+      },
+      "scopes": [
+        {
+          "aliasIds": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "keymode": 7,
+          "scopeHash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        }
+      ]
+    }
+  ]
+}

@@ -19,6 +19,13 @@ export const commands = {
 	 *  (ADR 0009).
 	 */
 	appOpenLogsDir: () => typedError<null, IpcError>(__TAURI_INVOKE("app_open_logs_dir")),
+	playersListAliases: () => typedError<AliasListDto, IpcError>(__TAURI_INVOKE("players_list_aliases")),
+	/**  Persisted profiles plus the virtual All players entry, each with its scopes for `keymode`. */
+	playersListProfiles: (keymode: number) => typedError<ProfileEntryDto[], IpcError>(__TAURI_INVOKE("players_list_profiles", { keymode })),
+	playersSetProfileAliases: (input: SetProfileAliasesInput) => typedError<ProfileEntryDto, IpcError>(__TAURI_INVOKE("players_set_profile_aliases", { input })),
+	playersDecideAlias: (input: DecideAliasInput) => typedError<AliasListDto, IpcError>(__TAURI_INVOKE("players_decide_alias", { input })),
+	playersCreateProfile: (input: CreateProfileInput) => typedError<ProfileEntryDto, IpcError>(__TAURI_INVOKE("players_create_profile", { input })),
+	playersSetDefault: (profileId: number) => typedError<null, IpcError>(__TAURI_INVOKE("players_set_default", { profileId })),
 };
 
 /** Events */
@@ -29,12 +36,66 @@ export const events = {
 };
 
 /* Types */
+export type AliasDecisionInput = {
+	aliasId: number,
+	/**  `null` clears the decision, handing the alias back to the auto rule (R6). */
+	decision: DecisionDto | null,
+};
+
+/**  Rows arrive in the R6 order; the UI does not re-sort them. */
+export type AliasListDto = {
+	selectionVersion: number,
+	cfgUsernameAvailable: boolean,
+	wizardNeeded: boolean,
+	aliases: AliasRowDto[],
+};
+
+export type AliasRowDto = {
+	aliasId: number,
+	/**  Lossy UTF-8 for display only; `aliasId` is the key the UI sends back. */
+	rawName: string,
+	isEmptyName: boolean,
+	normalizedLength: number,
+	nPlays: number,
+	byKeymode: KeymodeCountDto[],
+	firstPlayedAt: string | null,
+	lastPlayedAt: string | null,
+	nOnline: number,
+	nOffline: number,
+	nWithReplay: number,
+	topCharts: TopChartDto[],
+	autoMatch: AutoMatchDto | null,
+	decision: DecisionDto | null,
+	selected: boolean,
+	inSelfProfile: boolean,
+};
+
+export type AutoMatchDto = {
+	source: MatchSourceDto,
+	kind: MatchKindDto,
+};
+
+export type CreateProfileInput = {
+	label: string,
+	aliasIds: number[],
+	mergeMode?: MergeModeDto | null,
+};
+
 export type DataChanged = DataChangedDto;
 
 export type DataChangedDto = {
 	/**  Query-key roots the UI invalidates (`plays`, `players`, `setup`, `jobs`). */
 	domains: string[],
 };
+
+export type DecideAliasInput = {
+	decisions: AliasDecisionInput[],
+	completesWizard: boolean,
+};
+
+export type DecisionDto = "me" | "not_me";
+
+export type EntryRefDto = { kind: "profile"; id: number } | { kind: "all_players" };
 
 /**  Wire mirror of core's `ErrorCode`: domain types never derive specta (D13). */
 export type ErrorCodeDto = "OSU_DIR_NOT_FOUND" | "UNSUPPORTED_FORMAT" | "PARSE_FAILED" | "OSU_RUNNING" | "CONSENT_REQUIRED" | "SIGNATURE_INVALID" | "NOT_FOUND" | "INVALID_INPUT" | "CONFLICT" | "CANCELLED" | "INTERNAL";
@@ -123,6 +184,44 @@ export type JobStatusDto = "queued" | "running" | "ok" | "failed" | "cancelled";
 /**  Per-kind result, stored as `job_run.summary_json`. */
 export type JobSummaryDto = { kind: "sync_plays"; counters: SyncSummaryDto };
 
+export type KeymodeCountDto = {
+	/**  `k1`..`k16`, `unknown` or `non_mania` (spec 004 `KeymodeBucket`). */
+	bucket: string,
+	n: number,
+};
+
+export type MatchKindDto = "equal" | "prefix";
+
+export type MatchSourceDto = "cfg_username" | "linked_account";
+
+export type MergeModeDto = "merged" | "separate";
+
+export type ProfileEntryDto = {
+	ref: EntryRefDto,
+	profileKind: ProfileKindDto,
+	/**  Empty for All players: the UI shows its i18n label. */
+	label: string,
+	isDefault: boolean,
+	mergeMode: MergeModeDto,
+	aliasIds: number[],
+	scopes: ScopeDto[],
+};
+
+export type ProfileKindDto = "self" | "other" | "all_players";
+
+export type ScopeDto = {
+	/**  64 hex chars (`ScopeHash`). */
+	scopeHash: string,
+	aliasIds: number[],
+	keymode: number,
+};
+
+export type SetProfileAliasesInput = {
+	profileId: number,
+	aliasIds: number[],
+	mergeMode?: MergeModeDto | null,
+};
+
 export type SetupStatusDto = {
 	install: InstallDto | null,
 	identityReady: boolean,
@@ -150,6 +249,13 @@ export type SyncSummaryDto = {
 	chartMd5Mismatch: number,
 	orphanReplays: number,
 	failedItems: number,
+};
+
+export type TopChartDto = {
+	chartMd5: string,
+	title: string | null,
+	version: string | null,
+	n: number,
 };
 
 /* Tauri Specta runtime */

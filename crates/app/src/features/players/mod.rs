@@ -30,6 +30,7 @@ macro_rules! stable_enum {
     };
 }
 
+pub mod dto;
 pub mod identity;
 pub mod names;
 pub mod params;

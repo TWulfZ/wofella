@@ -2,6 +2,7 @@
 
 pub mod app;
 pub mod jobs;
+pub mod players;
 pub mod setup;
 
 use std::sync::Arc;

@@ -128,4 +128,95 @@ mod commands_smoke {
             .unwrap_err();
         assert_eq!(err["code"], json!("NOT_FOUND"), "{err}");
     }
+
+    /// Spec 004 AC13: the six players commands answer over IPC. Data-dependent behaviour is
+    /// covered by `PlayersService`'s tests; an empty ledger is enough to prove the wiring.
+    #[test]
+    fn players_commands_answer() {
+        let h = Harness::new();
+        let list = h.invoke("players_list_aliases", json!({})).unwrap();
+        assert_eq!(list["aliases"], json!([]), "{list}");
+        assert_eq!(list["wizardNeeded"], json!(false));
+        assert_eq!(list["cfgUsernameAvailable"], json!(false));
+        assert!(list["selectionVersion"].is_number(), "{list}");
+
+        let decided = h
+            .invoke(
+                "players_decide_alias",
+                json!({ "input": { "decisions": [], "completesWizard": false } }),
+            )
+            .unwrap();
+        assert_eq!(decided["aliases"], json!([]), "{decided}");
+
+        // The decide call bootstrapped the self profile; with no aliases it has no scopes.
+        let profiles = h
+            .invoke("players_list_profiles", json!({ "keymode": 7 }))
+            .unwrap();
+        assert_eq!(
+            profiles,
+            json!([{
+                "ref": { "kind": "profile", "id": 1 },
+                "profileKind": "self",
+                "label": "Me",
+                "isDefault": true,
+                "mergeMode": "merged",
+                "aliasIds": [],
+                "scopes": [],
+            }, {
+                "ref": { "kind": "all_players" },
+                "profileKind": "all_players",
+                "label": "",
+                "isDefault": false,
+                "mergeMode": "merged",
+                "aliasIds": [],
+                "scopes": [],
+            }])
+        );
+    }
+
+    #[test]
+    fn players_errors_have_codes() {
+        let h = Harness::new();
+        let err = h
+            .invoke("players_list_profiles", json!({ "keymode": 0 }))
+            .unwrap_err();
+        assert_eq!(err["code"], json!("INVALID_INPUT"), "{err}");
+        assert_eq!(err["messageKey"], json!("players.error.invalid_keymode"));
+
+        let err = h
+            .invoke("players_set_default", json!({ "profileId": 99 }))
+            .unwrap_err();
+        assert_eq!(err["code"], json!("NOT_FOUND"), "{err}");
+
+        let err = h
+            .invoke(
+                "players_create_profile",
+                json!({ "input": { "label": "  ", "aliasIds": [1] } }),
+            )
+            .unwrap_err();
+        assert_eq!(err["code"], json!("INVALID_INPUT"), "{err}");
+
+        let err = h
+            .invoke(
+                "players_set_profile_aliases",
+                json!({ "input": { "profileId": 99, "aliasIds": [], "mergeMode": "separate" } }),
+            )
+            .unwrap_err();
+        assert_eq!(err["code"], json!("NOT_FOUND"), "{err}");
+
+        let err = h
+            .invoke(
+                "players_decide_alias",
+                json!({ "input": {
+                    "decisions": [
+                        { "aliasId": 1, "decision": "me" },
+                        { "aliasId": 1, "decision": null },
+                    ],
+                    "completesWizard": true,
+                } }),
+            )
+            .unwrap_err();
+        assert_eq!(err["code"], json!("INVALID_INPUT"), "{err}");
+        assert_eq!(err["messageKey"], json!("players.error.duplicate_alias"));
+    }
 }

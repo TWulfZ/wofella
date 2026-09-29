@@ -43,6 +43,13 @@ mod bindings {
             "setupStatus",
             "jobsStart",
             "appOpenLogsDir",
+            "playersListAliases",
+            "playersListProfiles",
+            "playersSetProfileAliases",
+            "playersDecideAlias",
+            "playersCreateProfile",
+            "playersSetDefault",
+            "AliasRowDto",
             "job-progress",
             "IpcError",
         ] {

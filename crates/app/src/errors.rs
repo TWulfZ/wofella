@@ -23,6 +23,7 @@ pub mod players_keys {
     pub const INVALID_LABEL: &str = "players.error.invalid_label";
     pub const EMPTY_ALIASES: &str = "players.error.empty_aliases";
     pub const SELF_OVERLAP: &str = "players.error.self_overlap";
+    pub const INVALID_KEYMODE: &str = "players.error.invalid_keymode";
 }
 
 /// Rust never builds user-facing prose: the UI localises `message_key` with `args` (§7).
