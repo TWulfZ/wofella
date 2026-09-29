@@ -31,7 +31,13 @@ export function setupStatus(overrides: Partial<SetupStatusDto> = {}): SetupStatu
 export async function bootApp(path: string, handlers: CommandHandlers = {}, plugins: PluginHandlers = {}) {
   resetJobTray();
   const calls = mockCommands(
-    { setupStatus: () => setupStatus(), setupDetectInstalls: () => [], jobsList: () => [], ...handlers },
+    {
+      setupStatus: () => setupStatus(),
+      setupDetectInstalls: () => [],
+      jobsList: () => [],
+      playersListAliases: () => ({ selectionVersion: 1, cfgUsernameAvailable: true, wizardNeeded: false, aliases: [] }),
+      ...handlers,
+    },
     plugins,
   );
   const queryClient = createQueryClient();

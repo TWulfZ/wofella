@@ -1,0 +1,56 @@
+{
+  "players": {
+    "wizard": {
+      "title": "Which of these are you?",
+      "intro": "These names appear in your osu! scores. Tick every name that is yours: only those plays count toward your skill.",
+      "noMatch": "None of these names matched your osu! login. Tick the names that are yours.",
+      "cfgMissing": "wolluf could not read your osu! login from the osu! config, so nothing was preselected.",
+      "empty": "No plays yet. Sync your osu! scores first.",
+      "syncNow": "Sync now",
+      "syncing": "Importing your plays… The list updates when the import finishes.",
+      "confirm": "Confirm",
+      "submitting": "Saving…"
+    },
+    "settings": {
+      "title": "Identity",
+      "intro": "Choose which names are yours. Your choices always win over the automatic match.",
+      "save": "Save",
+      "saved": "Saved"
+    },
+    "table": {
+      "selectAll": "Select all",
+      "name": "Name",
+      "plays": "Plays",
+      "keymodes": "Keymodes",
+      "played": "Played",
+      "split": "Online / offline",
+      "replays": "Replays",
+      "topCharts": "Top charts"
+    },
+    "noName": "(no name)",
+    "autoMatch": {
+      "cfg_username": "matches your osu! login",
+      "linked_account": "matches your osu! account"
+    },
+    "decision": {
+      "me": "confirmed",
+      "not_me": "not you"
+    },
+    "split": "{{online}} online · {{offline}} offline",
+    "keymode": {
+      "unknown": "Unknown",
+      "non_mania": "Other modes"
+    },
+    "dateRange": "{{from}} – {{to}}",
+    "chartTimes": "×{{n}}",
+    "error": {
+      "unknown_alias": "Name #{{aliasId}} no longer exists.",
+      "unknown_profile": "Profile #{{profileId}} no longer exists.",
+      "duplicate_alias": "Name #{{aliasId}} was listed twice.",
+      "invalid_label": "A profile name must have 1 to 64 characters.",
+      "empty_aliases": "Pick at least one name for this profile.",
+      "self_overlap": "Some of these names are yours and also belong to another profile ({{profileIds}}). A name can be in only one of them.",
+      "invalid_keymode": "{{keymode}}K is not a supported keymode."
+    }
+  }
+}

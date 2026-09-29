@@ -1,0 +1,56 @@
+{
+  "players": {
+    "wizard": {
+      "title": "¿Cuáles de estos eres tú?",
+      "intro": "Estos nombres aparecen en tus puntuaciones de osu!. Marca todos los que sean tuyos: solo esas jugadas cuentan para tu habilidad.",
+      "noMatch": "Ninguno de estos nombres coincide con tu usuario de osu!. Marca los nombres que sean tuyos.",
+      "cfgMissing": "wolluf no pudo leer tu usuario de osu! de la configuración de osu!, así que no se preseleccionó nada.",
+      "empty": "Todavía no hay jugadas. Sincroniza primero tus puntuaciones de osu!.",
+      "syncNow": "Sincronizar ahora",
+      "syncing": "Importando tus jugadas… La lista se actualiza cuando termine la importación.",
+      "confirm": "Confirmar",
+      "submitting": "Guardando…"
+    },
+    "settings": {
+      "title": "Identidad",
+      "intro": "Elige qué nombres son tuyos. Tus decisiones siempre ganan a la coincidencia automática.",
+      "save": "Guardar",
+      "saved": "Guardado"
+    },
+    "table": {
+      "selectAll": "Seleccionar todo",
+      "name": "Nombre",
+      "plays": "Jugadas",
+      "keymodes": "Modos de teclas",
+      "played": "Jugado",
+      "split": "Online / offline",
+      "replays": "Replays",
+      "topCharts": "Mapas más jugados"
+    },
+    "noName": "(sin nombre)",
+    "autoMatch": {
+      "cfg_username": "coincide con tu usuario de osu!",
+      "linked_account": "coincide con tu cuenta de osu!"
+    },
+    "decision": {
+      "me": "confirmado",
+      "not_me": "no eres tú"
+    },
+    "split": "{{online}} online · {{offline}} offline",
+    "keymode": {
+      "unknown": "Desconocido",
+      "non_mania": "Otros modos"
+    },
+    "dateRange": "{{from}} – {{to}}",
+    "chartTimes": "×{{n}}",
+    "error": {
+      "unknown_alias": "El nombre #{{aliasId}} ya no existe.",
+      "unknown_profile": "El perfil #{{profileId}} ya no existe.",
+      "duplicate_alias": "El nombre #{{aliasId}} aparece dos veces.",
+      "invalid_label": "El nombre de un perfil debe tener entre 1 y 64 caracteres.",
+      "empty_aliases": "Elige al menos un nombre para este perfil.",
+      "self_overlap": "Algunos de estos nombres son tuyos y también pertenecen a otro perfil ({{profileIds}}). Un nombre solo puede estar en uno de ellos.",
+      "invalid_keymode": "{{keymode}}K no es un modo de teclas compatible."
+    }
+  }
+}

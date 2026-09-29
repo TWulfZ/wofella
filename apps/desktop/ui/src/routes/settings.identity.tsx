@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { IdentityWizard } from "@/features/players";
 
-// Placeholder for the settings link; 004 T12 replaces it with the alias table in edit mode.
 export const Route = createFileRoute("/settings/identity")({
-  component: () => <div />,
+  component: () => <IdentityWizard mode="settings" />,
 });

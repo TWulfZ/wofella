@@ -9,7 +9,7 @@ const DEV_PORT = 1420;
 
 export default defineConfig({
   // The router plugin must run before react so the generated route tree exists when JSX is transformed.
-  plugins: [tanstackRouter({ target: "react", autoCodeSplitting: true }), react(), tailwindcss()],
+  plugins: [tanstackRouter({ target: "react", autoCodeSplitting: true, routeFileIgnorePattern: "\\.test(-d)?\\.tsx?$" }), react(), tailwindcss()],
   resolve: {
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },

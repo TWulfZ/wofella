@@ -1,5 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { commands, type JobId } from "@/ipc/bindings";
 import { call } from "@/ipc/client";
@@ -8,7 +7,7 @@ import { formatEta } from "@/shared/format";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
 import { Progress } from "@/shared/ui/progress";
-import { jobsListQuery } from "./queries";
+import { useHydratedJobs } from "./hooks";
 import { isFinished, type TrayJob } from "./store";
 import { jobTrayStore, useJobTray } from "./tray";
 
@@ -98,16 +97,8 @@ function trayOrder(a: TrayJob, b: TrayJob): number {
 
 export function JobTray() {
   const { t } = useTranslation();
-  const jobs = useJobTray((s) => s.jobs);
+  const jobs = useHydratedJobs();
   const open = useJobTray((s) => s.open);
-  const list = useQuery(jobsListQuery());
-
-  // Re-runs whenever DataChanged{jobs} refetches the list, which is how a lagged event stream recovers.
-  useEffect(() => {
-    if (list.data !== undefined) {
-      jobTrayStore.getState().hydrate(list.data);
-    }
-  }, [list.data]);
 
   const ordered = [...jobs.values()].sort(trayOrder);
   const running = ordered.filter((j) => !isFinished(j.status)).length;
