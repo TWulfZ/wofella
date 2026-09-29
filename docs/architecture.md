@@ -170,11 +170,11 @@ wolluf/
 │  ├─ audio/       wolluf-audio      # (F4) symphonia → signalsmith-stretch|rubato → vorbis_rs; heavy deps isolated from domain builds
 │  └─ app/         wolluf-app        # Tauri-agnostic application layer
 │     └─ src/{context.rs, jobs/, errors.rs, events.rs, export/, telemetry/,
-│             features/{players, library, plays, skill, sessions, recs, drills, feedback, model, privacy, meta}/}
+│             features/{setup, players, library, plays, skill, sessions, recs, drills, feedback, model, privacy, meta}/}
 ├─ apps/
-│  ├─ desktop/src-tauri/   # thin shell: commands/<feature>.rs, event bridge, tauri-specta export, plugins (dialog, shell, log, updater)
+│  ├─ desktop/src-tauri/   # thin shell: commands/<feature>.rs, event bridge, tauri-specta export, plugins (dialog, opener, log; updater in F5) (ADR 0009)
 │  ├─ desktop/ui/          # React 19 + Vite + TS strict (layout in §8)
-│  └─ cli/                 # `wolluf` CLI over wolluf-app: sync, index, rejudge --parity, analyze, skill recompute --verify, eval, fit, pack
+│  └─ cli/                 # `wolluf` CLI over wolluf-app: setup, sync, players, jobs, osg (F0); index, rejudge --parity, analyze, skill recompute --verify, eval, fit, pack
 ├─ params/
 │  ├─ schema/param-pack.schema.json  # generated from wolluf-engine param structs (schemars); packs are data only
 │  ├─ default/                       # hand-set default pack sources (TOML per section), compiled into the binary
@@ -457,14 +457,14 @@ scores.db mixes the user's own plays (under several aliases, some offline like `
 
 **Server:** append-only object storage (batches as `ndjson.zst`), a per-install rate limit, per-contributor weight caps and a delete endpoint. There is no training server-side and no domain logic on the server.
 
-**Offline fit (`wolluf-cli fit --snapshot <dataset-manifest>`, Rust, reusing the same likelihood code as the client, so there is no train/serve skew):**
+**Offline fit (`wolluf fit --snapshot <dataset-manifest>`, Rust, reusing the same likelihood code as the client, so there is no train/serve skew):**
 - **Frozen dataset.** A manifest of object hashes, so every pack can be retrained exactly.
 - **Pattern-rule thresholds.** Grid or coordinate search maximising macro-F1 on the gold set. The gold set = hand labels ∪ crowd corrections agreed by **≥ 3 independent installs**. Crowd labels never override hand labels.
 - **Difficulty calibration d_{s,a}.** Ridge or isotonic from features to the dan scale, using the ordinal labels (KomeijiDove, Jinjin, BMS st/oj, O2Jam [H]). IRT item offsets are fitted by alternating MAP over the players' θ, *only where the data suffices*; otherwise they shrink to the content model. Player overlap is what links the Jinjin and BMS scales, which labels alone cannot link.
 - **Also fitted:** IRT discriminations per pattern family, population priors, σ-drift and the feedback weights from §6.3.
 - **Python** is allowed in `research/` notebooks for exploration only. It is never on the release path, and a pack is always the output of the Rust fit.
 
-### 6.5 Eval gate (`wolluf-eval`, run by `wolluf-cli eval --suite release`)
+### 6.5 Eval gate (`wolluf-eval`, run by `wolluf eval --suite release`)
 
 | Suite | Data | Metric | Role |
 |---|---|---|---|
@@ -510,7 +510,7 @@ Gate rules live in `params/gates.toml`. A pack cannot be released without a comm
 
 ### Errors
 - Domain crates use one `thiserror` enum per crate with precise variants (`JudgeError::FrameStreamTruncated`, `ChartError::UnsupportedKeymode`). There is no `anyhow` in libraries; it is allowed only in the CLI and xtask.
-- Parsers are **lenient with a Diagnostics collector**: odd sections produce warnings. **Unknown DB format versions are a hard, explicit error**; the parser never guesses.
+- Parsers are **lenient with a Diagnostics collector**: odd sections produce warnings. **Unknown DB format versions are a hard, explicit error** (`UNSUPPORTED_FORMAT`); the parser never guesses. A version is unknown when it is older than the format's minimum, in the lazer range, or newer than the newest verified build *and* fails any structural invariant. A newer build that passes full structural validation (exact EOF included) is decoded with the newest layout and carries a `format.unverified_version` warning (ADR 0015).
 - `AppError {code: ErrorCode, message_key, args, details, retryable}`. `ErrorCode` is a closed, stable string enum:
   `OSU_DIR_NOT_FOUND, UNSUPPORTED_FORMAT, PARSE_FAILED, OSU_RUNNING, CONSENT_REQUIRED, SIGNATURE_INVALID, NOT_FOUND, INVALID_INPUT, CONFLICT, CANCELLED, INTERNAL`.
   The UI localises from the key and never receives prose built in Rust.
@@ -548,6 +548,7 @@ Gate rules live in `params/gates.toml`. A pack cannot be released without a comm
 | feedback | `feedback_submit(FeedbackInput)` (discriminated union: rating, relabel, exclude_play, report_disagree, preference_reset, undo) |
 | drills | `drills_plan` (preview, no writes), `drills_confirm_export(preview_id)` (the only path that mints `ExportPermit`) |
 | jobs | `jobs_list`, `jobs_start(kind)`, `jobs_cancel(id)` |
+| app | `app_open_logs_dir` (shell-only: opens the logs folder through the opener plugin; ADR 0009) |
 | model | `model_manifest`, `model_check_updates`, `model_apply_pack`, `model_rollback` |
 | privacy | `privacy_get_consent`, `privacy_preview_batch`, `privacy_set_consent`, `privacy_delete_remote` |
 | meta | `meta_keymodes`, `meta_axes`, `meta_patterns`: the UI renders axes, patterns and keymodes from data |
@@ -601,7 +602,7 @@ Gate rules live in `params/gates.toml`. A pack cannot be released without a comm
    - an insta golden;
    - 10–20 gold examples in `fixtures/labels/` (labelling them in the Playfield is fastest).
 5. Bump `patterns::VERSION` and run `cargo xtask stage-lock`. CI fails otherwise.
-6. Run `wolluf-cli eval --suite patterns`. The new rule must hit its F1 target, with no regression in other rules, because overlap resolution can steal their spans. Attach the report to the PR.
+6. Run `wolluf eval --suite patterns`. The new rule must hit its F1 target, with no regression in other rules, because overlap resolution can steal their spans. Attach the report to the PR.
 7. Downstream needs no change: the axis mapping comes from the registry, and the skill model gives the new pattern an offset starting at 0.
 8. On the next launch, clients recompute segments → difficulty → evidence → fold in the bulk pool. Existing user corrections still apply because they are anchored by time.
 
@@ -617,8 +618,8 @@ Gate rules live in `params/gates.toml`. A pack cannot be released without a comm
 
 ### 9.4 Ship a new model version
 - **Case A, parameters only** (recalibration, new thresholds, priors):
-  1. `wolluf-cli fit --snapshot S` → candidate pack.
-  2. `wolluf-cli eval --suite release --candidate pack@X --baseline current`.
+  1. `wolluf fit --snapshot S` → candidate pack.
+  2. `wolluf eval --suite release --candidate pack@X --baseline current`.
   3. Commit `eval-report.json` → `cargo xtask pack-sign` → publish.
   4. Clients verify, run the shadow check, adopt, and recompute **only the stages whose declared sections changed** (a calibrator change never re-judges).
   5. Clients see the θ-diff notice, with rollback available.
@@ -654,7 +655,7 @@ Gate rules live in `params/gates.toml`. A pack cannot be released without a comm
 | Store tests | Migrations from zero and from every `fixtures/userdb/vN.db`; idempotent re-ingest (same scores.db → 0 new rows); cache rebuild from empty == incremental state | in-memory + temp SQLite |
 | App tests | In-memory SQLite with real migrations, seeded from fixtures. Cases: the session-user rule (garbage cfg → `TWulfZ` auto; `""`/`W` never auto; every other alias unticked; decisions win); exclusion → refold removes the play's influence; alias change → new scope_hash; **telemetry never includes plays outside self scopes or excluded plays** | nextest |
 | Compile-fail | Export without `ExportPermit`; telemetry without `ConsentToken`/`SelfScope` | trybuild |
-| Corpus harnesses (`#[ignore]`, `WOLLUF_CORPUS=/mnt/e/Games/osu!`) | Re-judge parity over ~4.3k 7K replays by mods × LN ratio × V1/V2 (≥ 98% exact on rice without mods; LN tagged with confidence); library index smoke test (< 0.5% parse failures); S1–S6 on real data. Reports are committed to `reports/` and a threshold file blocks regressions | `cargo xtask parity`, `wolluf-cli eval` |
+| Corpus harnesses (`#[ignore]`, `WOLLUF_CORPUS=/mnt/e/Games/osu!`) | Re-judge parity over ~4.3k 7K replays by mods × LN ratio × V1/V2 (≥ 98% exact on rice without mods; LN tagged with confidence); library index smoke test (< 0.5% parse failures); S1–S6 on real data. Reports are committed to `reports/` and a threshold file blocks regressions | `cargo xtask parity`, `wolluf eval` |
 | UI | vitest + testing-library with typed `mockIPC` fixtures; a few Playwright smokes against `vite dev`. Windows E2E (play → replay → θ moves → report → drill imported) starts as a manual checklist and is automated once the flow stabilises | vitest, Playwright |
 
 Real beatmaps, audio and replays are **never committed**. Every bug found in the corpus gets a synthetic regression fixture.
@@ -670,7 +671,7 @@ Real beatmaps, audio and replays are **never committed**. Every bug found in the
 - **Nightly or local:** `cargo xtask nightly` runs the corpus parity and full eval and commits the reports.
 - **`release.yml`, on tag:** tauri-action signed Windows installer plus the updater manifest.
 - **`pack.yml`:** refuses any `params/released/*.json` without a linked passing report and a valid signature.
-- **Reproducibility:** pinned toolchain; `Cargo.lock` and `pnpm-lock.yaml` committed; `wolluf-cli skill recompute --verify` hashes the derived tables across two runs.
+- **Reproducibility:** pinned toolchain; `Cargo.lock` and `pnpm-lock.yaml` committed; `wolluf skill recompute --verify` hashes the derived tables across two runs.
 
 ---
 
@@ -720,7 +721,7 @@ The local feedback capture schema (§5.3) exists from F0/F1, so every signal col
 | O7 | θ scale for LN | Jinjin LN dans as anchor despite few labels (60 KomeijiDove LN, 14 dans) vs a separate LN scale | F3 |
 | O8 | Per-chart IRT offsets | Ever identifiable at this community size, or pattern/feature-level calibration only | F5, based on data volume |
 | O9 | Vault default | Archive all plays (current default) vs self only; size cap policy | F0 (revisit with real sizes) |
-| O10 | IPC generator | tauri-specta v2 (default) vs ts-rs + hand wrappers if the RC regresses | F0 |
+| O10 | IPC generator | tauri-specta v2 (default) vs ts-rs + hand wrappers if the RC regresses | Closed in F0: tauri-specta `=2.0.0-rc.25`, ts-rs fallback kept (ADR 0009) |
 | O11 | Local multi-person chart calibration from downloaded replays | Off by default; enable only if it measurably improves S1/S3 locally | F5 |
 | O12 | Interactive/bulk pool split | Keep a single pool if profiling in F3 shows interactive latency is fine | F3 |
 

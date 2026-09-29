@@ -29,19 +29,39 @@ Any feature, phase task or behavioural change goes through the **`wolluf-sdd` sk
 
 ## Domain facts that are easy to get wrong
 - The 7K Regular axes are **jack, tech, speed, stream**. Stamina is derived. The LN axes are general, tech, inverse, release.
-- This stable build (osu!.db 20260924) saves **failed plays** to scores.db and `Data/r` (fails appear from 2026-04 on). The `Data/r` naming is `<beatmap md5>-<FILETIME>.osr`, and `.osg` is undocumented (F0 spike).
+- This stable build (osu!.db 20260924) saves **failed plays** to scores.db and `Data/r` (fails appear from 2026-04 on). The `Data/r` naming is `<beatmap md5>-<FILETIME>.osr`. The `.osg` layout, invariants and verdicts are in `docs/research/04-osg-format.md` (ADR 0012, Proposed).
 - The cfg `Username` can be garbage (`TWulfZasdasdasd d jSS||`), so identity matches by normalized prefix: only the session user (aliases equal to, or a prefix of, the newest cfg login, normalized length ≥ 4) is auto-selected; every other alias is listed unticked, with no suggestion (architecture §5.6, ADR 0005).
 - Replay time must accumulate **all** frames, including lead-in; osrparse is wrong here. Rate-mod windows are `floor(base × rate)` in map time. Under ScoreV2, LN heads and tails are judged separately. LN judging is approximate, so tag it with a confidence.
 - `osu-db` on crates.io: 0.3.0 (2021) cannot read the current osu!.db. Prefer our own codec, validated against `research/scripts/*/osudb.py` and `sdb.py`.
 
 ## Commands
-Fill these in as they come to exist:
-- `cargo nextest run --workspace`
+Gates (wolluf-sdd §4), from the repo root:
+- `cargo fmt --all --check`
+- `cargo clippy --workspace --all-targets -- -D warnings` (002 also runs it with `--all-features`)
 - `cargo xtask check-layers`
-- `cargo xtask lint-canary`
 - `cargo xtask stage-lock --check`
-- `cargo xtask bindings`
+- `cargo xtask lint-canary` (a new clippy.toml path needs a matching call in `xtask/lint-canary/src/lib.rs`)
 - `cargo deny check`
-- `cargo clippy --workspace --all-targets -- -D warnings`
-- `pnpm -C apps/desktop/ui test`
-- Corpus harness: `WOLLUF_CORPUS=/mnt/e/Games/osu! cargo nextest run --run-ignored only`
+- `cargo nextest run --workspace`
+- `cargo xtask bindings && git diff --exit-code apps/desktop/ui/src/ipc/bindings.ts`
+- `pnpm -C apps/desktop/ui exec tsc --noEmit && pnpm -C apps/desktop/ui lint && pnpm -C apps/desktop/ui test` (`pnpm -C apps/desktop/ui build` for `dist/`)
+
+Corpus harnesses (`#[ignore]`, read-only; do not run while osu! is running, the tests fail if the corpus changes):
+- All: `WOLLUF_CORPUS="/mnt/e/Games/osu!" cargo nextest run --workspace --run-ignored only`
+- Codecs, with the AC15 speed budgets (release only): `WOLLUF_CORPUS="/mnt/e/Games/osu!" cargo nextest run -p wolluf-source-osu --all-features --release --run-ignored only`. `WOLLUF_PYTHON` overrides the `python3` used for the oracle.
+- Sync, identity and `.osg` on the pilot: `WOLLUF_CORPUS="/mnt/e/Games/osu!" cargo nextest run -p wolluf-app --run-ignored only` (filter with `-E 'test(corpus_sync_pilot)'`, `players_corpus_selection`, `osg_corpus_invariants`)
+
+Fixtures (deterministic; a second run must leave `git diff fixtures/` empty):
+- `cargo xtask fixtures dbs --corpus "/mnt/e/Games/osu!"` (anonymized, minimized DBs)
+- `cargo xtask fixtures synthetic` (synthetic `.osr`)
+
+CLI (`cargo run -p wolluf-cli -- …`, binary `wolluf`; global `--data-dir <DIR>`, `--json`, `--log <FILTER>`):
+- `wolluf setup detect`, `wolluf setup set <path>`, `wolluf setup status`
+- `wolluf sync` (Ctrl-C cancels, exit 130), `wolluf players list`, `wolluf jobs list [--limit N]`
+- `wolluf osg dump <file> [--format table|json|csv] [--events] [--limit N]`
+- `wolluf osg survey --corpus <root> [--json] [--strict] [--max-files N]` (opens no data dir; use `--release` for timing)
+- Env: `WOLLUF_OSU_DIR` (install candidate checked first), `WOLLUF_DATA_DIR` (data dir), `WOLLUF_LOG` (log filter)
+
+Desktop:
+- `cargo tauri dev`, run from `apps/desktop/src-tauri`. On WSLg a blank window needs `WEBKIT_DISABLE_DMABUF_RENDERER=1`.
+- Windows build: clone natively on NTFS (not `\\wsl$`), rustup msvc toolchain 1.98.1, VS Build Tools with the C++ workload, WebView2 runtime, Node 24 + pnpm; then `cargo tauri build --bundles nsis`. Cross-compiling from WSL is not supported.
