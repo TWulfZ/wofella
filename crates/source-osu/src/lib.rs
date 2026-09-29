@@ -1,6 +1,7 @@
 //! Read-only osu! stable adapter (D9): pure codecs over `&[u8]` plus IO helpers that never write
 //! (specs 002, 003, 006).
 
+pub mod cfg_files;
 pub mod codec;
 pub mod diag;
 pub mod error;
