@@ -1,4 +1,6 @@
+mod bindings;
 mod check_layers;
+mod stage_lock;
 
 use std::path::{Path, PathBuf};
 
@@ -38,10 +40,8 @@ fn run(command: Command) -> anyhow::Result<()> {
     match command {
         Command::CheckLayers => check_layers::run(&root),
         Command::LintCanary => anyhow::bail!("xtask lint-canary: not implemented yet (spec 001)"),
-        Command::StageLock { .. } => {
-            anyhow::bail!("xtask stage-lock: not implemented yet (spec 001)")
-        }
-        Command::Bindings => anyhow::bail!("xtask bindings: not implemented yet (spec 001)"),
+        Command::StageLock { check } => stage_lock::run(&root, check),
+        Command::Bindings => bindings::run(&root),
     }
 }
 
@@ -81,11 +81,7 @@ mod tests {
 
     #[test]
     fn unimplemented_subcommands_fail_loudly() {
-        for command in [
-            Command::LintCanary,
-            Command::StageLock { check: true },
-            Command::Bindings,
-        ] {
+        for command in [Command::LintCanary] {
             let err = run(command).unwrap_err().to_string();
             assert!(err.contains("not implemented"), "{command:?}: {err}");
         }
