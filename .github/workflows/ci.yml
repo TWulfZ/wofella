@@ -1,0 +1,143 @@
+# Architecture §10 (CI), spec 001 T14. Spec 005 T19 adds the desktop-windows bundle job
+# and the exact Node/pnpm pins.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Superseded PR runs are cancelled; main keeps one result per commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+  # webkit2gtk 4.1 stack that Tauri 2 links on Linux (architecture §10 build matrix).
+  TAURI_LINUX_DEPS: >-
+    libwebkit2gtk-4.1-dev
+    libayatana-appindicator3-dev
+    librsvg2-dev
+    libxdo-dev
+    libssl-dev
+  BINDINGS_TS: apps/desktop/ui/src/ipc/bindings.ts
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      # No argument: rustup installs the channel pinned in rust-toolchain.toml, the single source of
+      # the version. Auto-install on first cargo call is not relied on (spec 001 Risks).
+      - name: Install pinned toolchain
+        run: |
+          rustup toolchain install
+          rustc --version
+      - uses: Swatinem/rust-cache@v2
+      # `cargo xtask bindings` builds wolluf-desktop once 005 adds export-bindings, and that links Tauri.
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          # shellcheck disable=SC2086 # the package list must word-split
+          sudo apt-get install -y --no-install-recommends $TAURI_LINUX_DEPS
+      - name: cargo fmt
+        run: cargo fmt --all --check
+      - name: check-layers
+        run: cargo xtask check-layers
+      - name: stage-lock
+        run: cargo xtask stage-lock --check
+      - name: lint-canary
+        run: cargo xtask lint-canary
+      - name: bindings drift
+        run: |
+          cargo xtask bindings
+          if [ -f "$BINDINGS_TS" ]; then
+            # A freshly generated but untracked file would pass `git diff`, so require it to be committed.
+            git ls-files --error-unmatch -- "$BINDINGS_TS" > /dev/null \
+              || { echo "::error file=$BINDINGS_TS::generated bindings are not committed"; exit 1; }
+            git diff --exit-code -- "$BINDINGS_TS" \
+              || { echo "::error file=$BINDINGS_TS::bindings drift: run 'cargo xtask bindings' and commit"; exit 1; }
+          fi
+
+  deny:
+    name: deny
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: EmbarkStudios/cargo-deny-action@v2.1.1
+        with:
+          command: check
+          # The action image ships an older rustc; match rust-toolchain.toml so `cargo metadata` agrees.
+          rust-version: "1.98.1"
+
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install pinned toolchain
+        run: |
+          rustup toolchain install
+          rustc --version
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.146
+      - name: Install Tauri system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          # shellcheck disable=SC2086 # the package list must word-split
+          sudo apt-get install -y --no-install-recommends $TAURI_LINUX_DEPS
+      # Per OS because cfg(windows) code (winreg discovery, spec 002) only compiles on Windows.
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: cargo nextest
+        run: cargo nextest run --workspace --profile ci
+
+  ui:
+    name: ui
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # Job-level `if` cannot call hashFiles (no checkout yet), so each step carries the guard.
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        if: hashFiles('apps/desktop/ui/package.json') != ''
+        with:
+          package_json_file: apps/desktop/ui/package.json
+      - uses: actions/setup-node@v7
+        if: hashFiles('apps/desktop/ui/package.json') != ''
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: apps/desktop/ui/pnpm-lock.yaml
+      - name: pnpm install
+        if: hashFiles('apps/desktop/ui/package.json') != ''
+        run: pnpm -C apps/desktop/ui install --frozen-lockfile
+      - name: tsc
+        if: hashFiles('apps/desktop/ui/package.json') != ''
+        run: pnpm -C apps/desktop/ui exec tsc --noEmit
+      - name: eslint
+        if: hashFiles('apps/desktop/ui/package.json') != ''
+        run: pnpm -C apps/desktop/ui lint
+      - name: vitest
+        if: hashFiles('apps/desktop/ui/package.json') != ''
+        run: pnpm -C apps/desktop/ui test
