@@ -11,7 +11,8 @@ import type {
 } from "@/ipc/bindings";
 import { type CommandHandlers, type MockCall, mockCommands, mockIpcError } from "@/ipc/mocks";
 import { renderWithRouter } from "@/shared/testing/renderWithRouter";
-import { LabelScreen } from "./LabelScreen";
+import { LabelScreen, type LabelScreenProps } from "./LabelScreen";
+import { LABEL_PREFS } from "./prefs";
 
 const TAXONOMY: PatternDefDto[] = [
   { id: "regular.jack.minijack", axis: "7k.regular.jack", key: "mj", description: "exactly two notes in one column" },
@@ -143,7 +144,11 @@ function argsOf(calls: MockCall[], cmd: string): Record<string, unknown>[] {
   return calls.filter((c) => c.cmd === cmd).map((c) => c.args);
 }
 
-function renderScreen(windows: (LabelWindowDto | null)[] = [WINDOW_A, WINDOW_B], extra: CommandHandlers = {}) {
+function renderScreen(
+  windows: (LabelWindowDto | null)[] = [WINDOW_A, WINDOW_B],
+  extra: CommandHandlers = {},
+  props: Partial<LabelScreenProps> = {},
+) {
   let eventSeq = 0;
   const calls = mockCommands({
     labelTaxonomy: () => TAXONOMY,
@@ -165,7 +170,7 @@ function renderScreen(windows: (LabelWindowDto | null)[] = [WINDOW_A, WINDOW_B],
     },
     ...extra,
   });
-  renderWithRouter(<LabelScreen keymode={7} seed="42" />, { path: "/label" });
+  renderWithRouter(<LabelScreen keymode={7} seed="42" {...props} />, { path: "/label" });
   return calls;
 }
 
@@ -625,5 +630,70 @@ describe("LabelScreen", () => {
     await userEvent.click(screen.getByRole("button", { name: "Pause" }));
     await userEvent.click(screen.getByRole("button", { name: "Play" }));
     expect(FakeAudioContext.created).toBe(1);
+  });
+});
+
+describe("LabelScreen scroll and zoom controls", () => {
+  function osuSpeed(): HTMLElement {
+    return screen.getByRole("spinbutton", { name: "osu! speed" });
+  }
+
+  it("starts in the osu! mode at the default speed, overridable by a prop", async () => {
+    renderScreen(undefined, {}, { defaultOsuSpeed: 30 });
+    await roundLoaded();
+    expect(await screen.findByRole("combobox", { name: "Scroll mode" })).toHaveValue("osu");
+    expect(osuSpeed()).toHaveValue(30);
+    expect(screen.queryByRole("slider", { name: "Scroll speed" })).not.toBeInTheDocument();
+  });
+
+  it("defaults the osu! speed to 20 without a prop", async () => {
+    renderScreen();
+    await roundLoaded();
+    expect(await screen.findByRole("spinbutton", { name: "osu! speed" })).toHaveValue(20);
+  });
+
+  it("changes the osu! speed with F3 and F4 while typing in the answer box, and keeps it", async () => {
+    renderScreen();
+    await roundLoaded();
+    await screen.findByRole("spinbutton", { name: "osu! speed" });
+    await userEvent.type(answerBox(), "js");
+    await userEvent.keyboard("{F4}{F4}{F3}{F4}");
+    expect(osuSpeed()).toHaveValue(22);
+    expect(answerBox()).toHaveValue("js");
+    expect(answerBox()).toHaveFocus();
+    expect(localStorage.getItem(LABEL_PREFS.osuSpeedKey)).toBe("22");
+
+    answerBox().blur();
+    await userEvent.keyboard("{F3}");
+    expect(osuSpeed()).toHaveValue(21);
+  });
+
+  it("stops F3 and F4 at the ends of the 1..40 range", async () => {
+    renderScreen(undefined, {}, { defaultOsuSpeed: 40 });
+    await roundLoaded();
+    await screen.findByRole("spinbutton", { name: "osu! speed" });
+    await userEvent.keyboard("{F4}");
+    expect(osuSpeed()).toHaveValue(40);
+  });
+
+  it("switches to the px/ms slider, carrying over the old px/ms preference", async () => {
+    localStorage.setItem(LABEL_PREFS.legacyScrollKey, "1.25");
+    renderScreen();
+    await roundLoaded();
+    await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Scroll mode" }), "pxPerMs");
+    expect(screen.getByRole("slider", { name: "Scroll speed" })).toHaveValue("1.25");
+    expect(screen.queryByRole("spinbutton", { name: "osu! speed" })).not.toBeInTheDocument();
+    expect(localStorage.getItem(LABEL_PREFS.scrollKindKey)).toBe("pxPerMs");
+    expect(answerBox()).toHaveFocus();
+  });
+
+  it("keeps the zoom and draws the playfield without a fixed maximum width", async () => {
+    renderScreen();
+    await roundLoaded();
+    const zoom = await screen.findByRole("slider", { name: "Zoom" });
+    fireEvent.change(zoom, { target: { value: "1.5" } });
+    expect(zoom).toHaveValue("1.5");
+    expect(localStorage.getItem(LABEL_PREFS.zoomKey)).toBe("1.5");
+    expect(screen.getByTestId("playfield").querySelector("[class*='max-w']")).toBeNull();
   });
 });

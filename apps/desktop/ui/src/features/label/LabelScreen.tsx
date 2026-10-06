@@ -11,7 +11,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { Playfield } from "@/features/playfield";
+import { clampOsuSpeed, DEFAULT_STAGE_PARAMS, Playfield } from "@/features/playfield";
 import type { PatternDefDto } from "@/ipc/bindings";
 import { useErrorText } from "@/ipc/errorText";
 import { Button } from "@/shared/ui/button";
@@ -24,7 +24,19 @@ import { SessionFooter } from "./components/SessionFooter";
 import { Transport } from "./components/Transport";
 import { isPatternActive, togglePattern, withoutThumb } from "./draft";
 import { formatClock } from "./format";
-import { readOffsetMs, readScroll, type ScrollPref, writeOffsetMs, writeScroll } from "./prefs";
+import {
+  readOffsetMs,
+  readScrollPrefs,
+  readZoom,
+  scrollFromPrefs,
+  type ScrollPrefs,
+  writeFit,
+  writeOffsetMs,
+  writeOsuSpeed,
+  writePxPerMs,
+  writeScrollKind,
+  writeZoom,
+} from "./prefs";
 import { chartAudioQuery, chartWindowQuery, labelStatsQuery, labelTaxonomyQuery, useLabelMutations } from "./queries";
 import { type AudioInput, type ClosableAudioContext, SectionPlayer } from "./sectionPlayer";
 import { type FlagToggle, initialSession, sampleExclusion, sessionReducer, submitFlags, undoTarget } from "./session";
@@ -34,11 +46,21 @@ export interface LabelScreenParams {
   /** Audio heard before the window, so its first notes land in context. */
   prerollMs: number;
   postrollMs: number;
-  /** Fixed scroll speed offered when the stored preference is "fit". */
+  /** px/ms mode speed until one is chosen. */
   defaultPxPerMs: number;
+  /** osu! speed until one is chosen, when the caller passes none. */
+  defaultOsuSpeed: number;
 }
 
-export const LABEL_SCREEN_PARAMS: LabelScreenParams = { prerollMs: 1000, postrollMs: 250, defaultPxPerMs: 1 };
+export const LABEL_SCREEN_PARAMS: LabelScreenParams = {
+  prerollMs: 1000,
+  postrollMs: 250,
+  defaultPxPerMs: 1,
+  defaultOsuSpeed: 20,
+};
+
+// osu!mania's in-game bindings: F3 slower, F4 faster.
+const OSU_SPEED_KEYS: Readonly<Record<string, number>> = { F3: -1, F4: 1 };
 
 const MS_PER_SECOND = 1000;
 const NO_INLINE = { toggleMixed: false, toggleUnsure: false, thumb: null } as const;
@@ -67,13 +89,17 @@ export interface LabelScreenProps {
   seed?: string;
   createAudioContext?: () => ClosableAudioContext;
   params?: LabelScreenParams;
+  /** The player's osu! speed (cfg ManiaSpeed), used until a speed is chosen here. */
+  defaultOsuSpeed?: number;
 }
 
 function newSeed(): string {
   return String(Date.now());
 }
 
-export function LabelScreen({ keymode, seed, createAudioContext, params = LABEL_SCREEN_PARAMS }: LabelScreenProps) {
+export function LabelScreen(props: LabelScreenProps) {
+  const { keymode, seed, createAudioContext, params = LABEL_SCREEN_PARAMS } = props;
+  const defaultOsuSpeed = props.defaultOsuSpeed ?? params.defaultOsuSpeed;
   const [session, setSession] = useState(() => ({ id: 0, seed: seed ?? newSeed() }));
   return (
     <LabelSession
@@ -82,6 +108,7 @@ export function LabelScreen({ keymode, seed, createAudioContext, params = LABEL_
       seed={session.seed}
       createAudioContext={createAudioContext ?? (() => new AudioContext())}
       params={params}
+      defaultOsuSpeed={defaultOsuSpeed}
       onRestart={() => {
         setSession((s) => ({ id: s.id + 1, seed: newSeed() }));
       }}
@@ -94,6 +121,7 @@ interface LabelSessionProps {
   seed: string;
   createAudioContext: () => ClosableAudioContext;
   params: LabelScreenParams;
+  defaultOsuSpeed: number;
   onRestart: () => void;
 }
 
@@ -126,7 +154,7 @@ function thumbSide(toggle: FlagToggle): ThumbSide | null {
   return toggle === "thumbLeft" ? "left" : toggle === "thumbRight" ? "right" : null;
 }
 
-function LabelSession({ keymode, seed, createAudioContext, params, onRestart }: LabelSessionProps) {
+function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpeed, onRestart }: LabelSessionProps) {
   const { t } = useTranslation();
   const errorText = useErrorText();
   const [state, dispatch] = useReducer(sessionReducer, seed, initialSession);
@@ -197,8 +225,25 @@ function LabelSession({ keymode, seed, createAudioContext, params, onRestart }: 
   useEffect(() => {
     player.setOffsetMs(offsetMs);
   }, [player, offsetMs]);
-  const [scroll, setScroll] = useState<ScrollPref>(readScroll);
-  const [fixedSpeed, setFixedSpeed] = useState(() => (typeof scroll === "number" ? scroll : params.defaultPxPerMs));
+  const [scroll, setScroll] = useState(() =>
+    readScrollPrefs({ osuSpeed: defaultOsuSpeed, pxPerMs: params.defaultPxPerMs }),
+  );
+  const [zoom, setZoom] = useState(readZoom);
+  const updateScroll = (patch: Partial<ScrollPrefs>): void => {
+    setScroll((current) => ({ ...current, ...patch }));
+    if (patch.kind !== undefined) {
+      writeScrollKind(patch.kind);
+    }
+    if (patch.osuSpeed !== undefined) {
+      writeOsuSpeed(patch.osuSpeed);
+    }
+    if (patch.pxPerMs !== undefined) {
+      writePxPerMs(patch.pxPerMs);
+    }
+    if (patch.fit !== undefined) {
+      writeFit(patch.fit);
+    }
+  };
 
   useEffect(() => {
     if (md5 !== null) {
@@ -317,7 +362,20 @@ function LabelSession({ keymode, seed, createAudioContext, params, onRestart }: 
   // Outside a text field every printable key belongs to the answer line: single-key commands there would fire while
   // a pattern key such as `st` or `bu` is being typed.
   const onWindowKey = useEffectEvent((e: KeyboardEvent) => {
-    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || e.isComposing || isTextField(e.target)) {
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) {
+      return;
+    }
+    // Not printable, so they never reach the answer line and work wherever the focus is, as in game.
+    const speedStep = OSU_SPEED_KEYS[e.key];
+    if (speedStep !== undefined) {
+      e.preventDefault();
+      if (scroll.kind === "osu") {
+        const osuSpeed = clampOsuSpeed(scroll.osuSpeed + speedStep * DEFAULT_STAGE_PARAMS.osuSpeedStep);
+        updateScroll(scroll.fit ? { osuSpeed, fit: false } : { osuSpeed });
+      }
+      return;
+    }
+    if (isTextField(e.target)) {
       return;
     }
     const onButton = e.target instanceof Element && e.target.closest("button") !== null;
@@ -480,13 +538,11 @@ function LabelSession({ keymode, seed, createAudioContext, params, onRestart }: 
                 writeOffsetMs(value);
               }}
               scroll={scroll}
-              fixedSpeed={fixedSpeed}
-              onScroll={(next) => {
-                setScroll(next);
-                if (next !== "fit") {
-                  setFixedSpeed(next);
-                }
-                writeScroll(next);
+              onScroll={updateScroll}
+              zoom={zoom}
+              onZoom={(value) => {
+                setZoom(value);
+                writeZoom(value);
               }}
               onSettle={focusAnswer}
             />
@@ -499,8 +555,9 @@ function LabelSession({ keymode, seed, createAudioContext, params, onRestart }: 
               <Playfield
                 window={chart.data}
                 clock={playback.clock}
-                scroll={scroll}
-                className="h-full w-full max-w-[34rem] rounded-md"
+                scroll={scrollFromPrefs(scroll)}
+                zoom={zoom}
+                className="h-full w-full"
               />
             </div>
           </>

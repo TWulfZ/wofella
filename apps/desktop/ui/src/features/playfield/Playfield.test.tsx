@@ -2,8 +2,9 @@ import { act, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Clock } from "./audioClock";
 import { DEFAULT_PLAYFIELD_THEME, draw } from "./draw";
-import { DEFAULT_PLAYFIELD_VIEW, Playfield } from "./Playfield";
+import { Playfield } from "./Playfield";
 import { fitPxPerMs, project } from "./project";
+import { DEFAULT_STAGE_PARAMS, judgeYFromHitPosition, osuPxPerMs, type ScrollMode } from "./stage";
 import { type FillOp, recordingContext } from "./testCanvas";
 import type { ChartWindow, ColumnHand } from "./types";
 
@@ -23,13 +24,19 @@ const WINDOW: ChartWindow = {
   chartSpan: { firstMs: 0, endMs: 60_000 },
   audioFilename: null,
 };
-const W = 700;
+const CONTAINER_W = 700;
 const H = 600;
+// 30 virtual px per column, 7 columns, scaled from the 480-px space to H.
+const STAGE_W = (30 * 7 * H) / 480;
+// HitPosition 400 of 480 lands at y = 500 when H = 600.
+const HIT_POSITION = 400;
 const JUDGE_Y = 500;
+const SPEED_20: ScrollMode = { kind: "osu", speed: 20 };
+const PX: ScrollMode = { kind: "pxPerMs", value: 0.5 };
 
-function expectedOps(nowMs: number, pxPerMs: number, judgeY = JUDGE_Y): FillOp[] {
+function expectedOps(nowMs: number, pxPerMs: number, judgeY = JUDGE_Y, width = STAGE_W): FillOp[] {
   const { ctx, ops } = recordingContext();
-  const view = { width: W, height: H, judgeY };
+  const view = { width, height: H, judgeY };
   draw(ctx, project(WINDOW, { ...view, nowMs, pxPerMs }), DEFAULT_PLAYFIELD_THEME, view);
   return ops;
 }
@@ -121,57 +128,98 @@ function observer(): FakeResizeObserver {
 
 describe("Playfield", () => {
   it("draws nothing until the container has a size", () => {
-    render(<Playfield window={WINDOW} clock={null} scroll="fit" judgeY={JUDGE_Y} />);
+    render(<Playfield window={WINDOW} clock={null} scroll="fit" hitPosition={HIT_POSITION} />);
     expect(rec.ops).toEqual([]);
   });
 
-  it("without a clock, draws the whole window once at its start with the fit speed, at device resolution", () => {
-    const { container } = render(<Playfield window={WINDOW} clock={null} scroll={0.9} judgeY={JUDGE_Y} />);
-    observer().resize(W, H);
+  it("without a clock, draws the window from its start at the judgement line at the chosen speed, at device resolution", () => {
+    const { container } = render(<Playfield window={WINDOW} clock={null} scroll={SPEED_20} hitPosition={HIT_POSITION} />);
+    observer().resize(CONTAINER_W, H);
     const canvas = container.querySelector("canvas");
-    expect(canvas?.width).toBe(W * 2);
+    expect(canvas?.width).toBe(STAGE_W * 2);
     expect(canvas?.height).toBe(H * 2);
     expect(rec.transforms.at(-1)).toEqual([2, 0, 0, 2, 0, 0]);
-    expect(rec.ops).toEqual(expectedOps(WINDOW.fromMs, fitPxPerMs(WINDOW, H, JUDGE_Y)));
+    expect(rec.ops).toEqual(expectedOps(WINDOW.fromMs, osuPxPerMs(20, H)));
     expect(frames.size).toBe(0);
   });
 
-  it("puts the judgement line near the bottom by default", () => {
-    render(<Playfield window={WINDOW} clock={null} scroll="fit" />);
-    observer().resize(W, H);
-    const judgeY = H - DEFAULT_PLAYFIELD_VIEW.judgeInsetPx;
-    expect(rec.ops).toEqual(expectedOps(WINDOW.fromMs, fitPxPerMs(WINDOW, H, judgeY), judgeY));
+  it("fits the whole window only when asked to", () => {
+    render(<Playfield window={WINDOW} clock={null} scroll="fit" hitPosition={HIT_POSITION} />);
+    observer().resize(CONTAINER_W, H);
+    expect(rec.ops).toEqual(expectedOps(WINDOW.fromMs, fitPxPerMs(WINDOW, H, JUDGE_Y)));
+  });
+
+  it("puts the judgement line at the default HitPosition when none is given", () => {
+    render(<Playfield window={WINDOW} clock={null} scroll={PX} />);
+    observer().resize(CONTAINER_W, H);
+    const judgeY = judgeYFromHitPosition(DEFAULT_STAGE_PARAMS.defaultHitPosition, H);
+    expect(rec.ops).toEqual(expectedOps(WINDOW.fromMs, 0.5, judgeY));
+  });
+
+  it("sizes the stage from the columns and the height, centred, and scales it with the zoom", () => {
+    const { container, rerender } = render(<Playfield window={WINDOW} clock={null} scroll={PX} hitPosition={HIT_POSITION} />);
+    observer().resize(CONTAINER_W, H);
+    const canvas = container.querySelector("canvas");
+    expect(canvas?.style.width).toBe(`${STAGE_W}px`);
+    expect(canvas?.style.left).toBe(`${(CONTAINER_W - STAGE_W) / 2}px`);
+
+    rec.ops.length = 0;
+    rerender(<Playfield window={WINDOW} clock={null} scroll={PX} hitPosition={HIT_POSITION} zoom={1.5} />);
+    expect(canvas?.style.width).toBe(`${STAGE_W * 1.5}px`);
+    expect(rec.ops).toEqual(expectedOps(WINDOW.fromMs, 0.5, JUDGE_Y, STAGE_W * 1.5));
+  });
+
+  it("uses the given column widths and never grows wider than its container", () => {
+    const { container, rerender } = render(
+      <Playfield window={WINDOW} clock={null} scroll={PX} hitPosition={HIT_POSITION} columnWidths={[42, 42, 42, 42, 42, 42, 42]} />,
+    );
+    observer().resize(CONTAINER_W, H);
+    const canvas = container.querySelector("canvas");
+    expect(canvas?.style.width).toBe(`${(42 * 7 * H) / 480}px`);
+
+    rerender(<Playfield window={WINDOW} clock={null} scroll={PX} hitPosition={HIT_POSITION} zoom={2} columnWidths={[42, 42, 42, 42, 42, 42, 42]} />);
+    expect(canvas?.style.width).toBe(`${CONTAINER_W}px`);
+    expect(canvas?.style.left).toBe("0px");
   });
 
   it("scrolls with the clock on every animation frame while it plays", () => {
     const clock = fakeClock(1200, true);
-    render(<Playfield window={WINDOW} clock={clock} scroll={0.5} judgeY={JUDGE_Y} />);
-    observer().resize(W, H);
+    render(<Playfield window={WINDOW} clock={clock} scroll={SPEED_20} hitPosition={HIT_POSITION} />);
+    observer().resize(CONTAINER_W, H);
     rec.ops.length = 0;
     runFrame();
-    expect(rec.ops).toEqual(expectedOps(1200, 0.5));
+    expect(rec.ops).toEqual(expectedOps(1200, osuPxPerMs(20, H)));
 
     clock.nowMsValue = 1300;
     rec.ops.length = 0;
     runFrame();
-    expect(rec.ops).toEqual(expectedOps(1300, 0.5));
+    expect(rec.ops).toEqual(expectedOps(1300, osuPxPerMs(20, H)));
+  });
+
+  it("divides the scroll velocity by the rate in map time", () => {
+    const clock = fakeClock(1200, true);
+    render(<Playfield window={WINDOW} clock={clock} scroll={PX} hitPosition={HIT_POSITION} rate={2} />);
+    observer().resize(CONTAINER_W, H);
+    rec.ops.length = 0;
+    runFrame();
+    expect(rec.ops).toEqual(expectedOps(1200, 0.25));
   });
 
   it("uses the fit speed while playing when asked to", () => {
     const clock = fakeClock(1200, true);
-    render(<Playfield window={WINDOW} clock={clock} scroll="fit" judgeY={JUDGE_Y} />);
-    observer().resize(W, H);
+    render(<Playfield window={WINDOW} clock={clock} scroll="fit" hitPosition={HIT_POSITION} />);
+    observer().resize(CONTAINER_W, H);
     rec.ops.length = 0;
     runFrame();
     expect(rec.ops).toEqual(expectedOps(1200, fitPxPerMs(WINDOW, H, JUDGE_Y)));
   });
 
-  it("shows the static window while the clock is paused and follows it once it plays", () => {
+  it("shows the window from its start at the chosen speed while paused and follows the clock once it plays", () => {
     const clock = fakeClock(1700, false);
-    render(<Playfield window={WINDOW} clock={clock} scroll={0.5} judgeY={JUDGE_Y} />);
-    observer().resize(W, H);
+    render(<Playfield window={WINDOW} clock={clock} scroll={PX} hitPosition={HIT_POSITION} />);
+    observer().resize(CONTAINER_W, H);
     runFrame();
-    expect(rec.ops).toEqual(expectedOps(WINDOW.fromMs, fitPxPerMs(WINDOW, H, JUDGE_Y)));
+    expect(rec.ops).toEqual(expectedOps(WINDOW.fromMs, 0.5));
 
     rec.ops.length = 0;
     runFrame();
@@ -184,9 +232,9 @@ describe("Playfield", () => {
 
   it("cancels the animation frame and the observer on unmount", () => {
     const clock = fakeClock(1200, true);
-    const { unmount } = render(<Playfield window={WINDOW} clock={clock} scroll={0.5} judgeY={JUDGE_Y} />);
+    const { unmount } = render(<Playfield window={WINDOW} clock={clock} scroll={PX} hitPosition={HIT_POSITION} />);
     const ro = observer();
-    ro.resize(W, H);
+    ro.resize(CONTAINER_W, H);
     const pending = [...frames.keys()];
     expect(pending).toHaveLength(1);
     unmount();
