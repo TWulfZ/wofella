@@ -112,7 +112,11 @@ pub fn read_song_file(
         }
         kind => SongFileError::Io { kind },
     };
-    // Size and type come from the opened handle, so the file checked is the file read.
+    // Windows refuses to open a directory (PermissionDenied), so a folder named like the audio
+    // file is turned away before the open; size still comes from the handle that is read.
+    if !path.is_file() {
+        return Err(SongFileError::Missing);
+    }
     let file = File::open(&path).map_err(io_error)?;
     let meta = file.metadata().map_err(io_error)?;
     if !meta.is_file() {

@@ -76,6 +76,7 @@ Rejected: porting mania-hub's replay renderer. It lives outside `algorithms/`, t
   - Space and Enter repeat; Enter could double-submit (the guard now holds until a new window object arrives).
   Also fixed: the audio loop clamp when the section starts past the audio end; Escape and a Clear button; thumb buttons drop an inline tl/tr. Parent spot check: tsc and lint clean; vitest 36 files, 254 passed.
 - 2026-10-06 Known behaviour: between rounds the player pauses; each window starts with Space or Play.
+- 2026-10-06 CI windows-2025: RED `read_song_file_reports_a_missing_file` gave `Io { kind: PermissionDenied }` (Windows cannot open a directory; Linux can, so it does not reproduce locally). The open-then-stat change from the T3 fixes caused it. Fix: `is_file` before the open, size still from the handle. Local: read_song_file 5 passed, clippy and fmt clean.
 
 ## Next step
 T8: full gate block in this worktree; the pilot tries the Label screen (`cargo tauri dev` from apps/desktop/src-tauri, or a Windows build) and confirms audio sync; then CLAUDE.md Desktop notes and remove this document.
