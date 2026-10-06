@@ -100,6 +100,8 @@ pub(crate) enum LibraryCmd {
     Scales,
     /// Primary pattern segments per pattern.
     Patterns,
+    /// Per name-hint target: segmented share in hinted charts vs the library, and the lift.
+    Hints,
 }
 
 #[derive(Debug, Args)]

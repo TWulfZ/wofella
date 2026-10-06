@@ -736,3 +736,38 @@ async fn no_pattern_answers_and_thumb_sides_are_stored_counted_and_exported() {
     assert_eq!(lines[1]["no_pattern"], false);
     assert_eq!(lines[1]["thumb_pref"], "right");
 }
+
+/// The gold protocol stays blind: name hints never reach the sampler or the window it shows.
+#[test]
+fn chart_facts_drop_name_hints() {
+    use crate::features::library::dto::{ChartLabelDto, LibraryChartDto};
+    let label = |source: &str, scale: &str, text: &str| ChartLabelDto {
+        source: source.to_owned(),
+        scale: scale.to_owned(),
+        level_ord: None,
+        level_text: text.to_owned(),
+        skill_tag: None,
+        is_variant: false,
+    };
+    let chart = LibraryChartDto {
+        md5: "1".repeat(32),
+        title: String::new(),
+        artist: String::new(),
+        version: String::new(),
+        creator: String::new(),
+        keymode: 7,
+        n_notes: 1,
+        n_ln: 0,
+        ln_ratio: 0.0,
+        length_ms: 1,
+        nps: 1.0,
+        labels: vec![
+            label("name_hint", "hint_axis", "7k.regular.jack"),
+            label("road_to_gamma", "jinjin_dan", "gamma_entry"),
+            label("name_hint", "hint_pattern", "regular.jack.minijack"),
+        ],
+    };
+    let facts = chart_facts(&[chart], &BTreeSet::new());
+    let scales: Vec<&str> = facts[0].labels.iter().map(|l| l.scale.as_str()).collect();
+    assert_eq!(scales, ["jinjin_dan"]);
+}

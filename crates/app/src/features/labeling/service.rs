@@ -9,6 +9,7 @@ use serde::Serialize;
 use wolluf_core::{
     ChartMd5, ColMask, Keymode, PatternId, ProfileId, SegmentAnchor, TimeUs, UnixUs,
 };
+use wolluf_engine::labels::source as label_source;
 use wolluf_engine::profile::{KeymodeProfile, Registry};
 use wolluf_engine::taxonomy;
 use wolluf_store::repo::labels::{
@@ -536,6 +537,8 @@ fn chart_facts(charts: &[LibraryChartDto], played: &BTreeSet<ChartMd5>) -> Vec<C
                 labels: c
                     .labels
                     .iter()
+                    // The gold protocol stays blind: name hints never reach the sampler.
+                    .filter(|l| l.source != label_source::NAME_HINT)
                     .map(|l| LevelLabel {
                         source: l.source.clone(),
                         scale: l.scale.clone(),

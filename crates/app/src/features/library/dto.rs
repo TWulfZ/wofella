@@ -95,3 +95,25 @@ pub struct ScaleCountDto {
     pub rows: u32,
     pub charts: u32,
 }
+
+/// How far the engine's segments agree with one name-hint target over the library. Shares are
+/// of a chart's segmented time; charts without segmented time have no share and are left out.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct HintAgreementDto {
+    pub keymode: u8,
+    /// `hint_pattern` or `hint_axis`.
+    pub scale: String,
+    pub target_id: String,
+    /// Charts carrying the hint.
+    pub hinted_charts: u32,
+    /// Hinted charts with segmented time.
+    pub segmented_charts: u32,
+    /// Mean share of the target over the segmented hinted charts; a pattern counts its primary
+    /// segments, an axis every segment on it.
+    pub mean_share: Option<f64>,
+    /// Mean share of the target over every segmented chart of the keymode.
+    pub baseline_share: f64,
+    /// `mean_share / baseline_share`; `None` without either.
+    pub lift: Option<f64>,
+}

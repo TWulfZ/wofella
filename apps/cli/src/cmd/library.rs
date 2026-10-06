@@ -1,4 +1,4 @@
-//! `wolluf library index|list|scales|patterns` over `LibraryService` and `IndexLibrary` (F1).
+//! `wolluf library index|list|scales|patterns|hints` over `LibraryService` and `IndexLibrary` (F1).
 
 use std::future::Future;
 use std::process::ExitCode;
@@ -6,7 +6,8 @@ use std::process::ExitCode;
 use wolluf_app::context::AppContext;
 use wolluf_app::errors::AppError;
 use wolluf_app::features::library::dto::{
-    ChartLabelDto, LibraryChartDto, LibraryFilterDto, PatternCountDto, ScaleCountDto,
+    ChartLabelDto, HintAgreementDto, LibraryChartDto, LibraryFilterDto, PatternCountDto,
+    ScaleCountDto,
 };
 use wolluf_app::jobs::JobStatusDto;
 use wolluf_app::jobs::dto::{JobDto, JobStartDto, JobSummaryDto};
@@ -46,6 +47,14 @@ pub(crate) async fn run(ctx: &AppContext, cmd: LibraryCmd, json: bool) -> anyhow
                 render::json(&counts)?;
             } else {
                 render::text(&patterns_table(&counts))?;
+            }
+        }
+        LibraryCmd::Hints => {
+            let rows = ctx.library().hint_agreement().await?;
+            if json {
+                render::json(&rows)?;
+            } else {
+                render::text(&hints_table(&rows))?;
             }
         }
     }
@@ -191,6 +200,42 @@ fn patterns_table(counts: &[PatternCountDto]) -> String {
     )
 }
 
+fn share(s: Option<f64>) -> String {
+    s.map_or_else(|| "-".to_owned(), |s| format!("{:.1}", s * PERCENT))
+}
+
+/// Shares in percent of segmented time.
+fn hints_table(rows: &[HintAgreementDto]) -> String {
+    let rows: Vec<Vec<String>> = rows
+        .iter()
+        .map(|r| {
+            vec![
+                r.keymode.to_string(),
+                r.scale.clone(),
+                r.target_id.clone(),
+                r.hinted_charts.to_string(),
+                r.segmented_charts.to_string(),
+                share(r.mean_share),
+                share(Some(r.baseline_share)),
+                r.lift.map_or_else(|| "-".to_owned(), |l| format!("{l:.2}")),
+            ]
+        })
+        .collect();
+    render::table(
+        &[
+            "KEYS",
+            "SCALE",
+            "TARGET",
+            "HINTED",
+            "SEGMENTED",
+            "MEAN%",
+            "BASE%",
+            "LIFT",
+        ],
+        &rows,
+    )
+}
+
 fn scales_table(scales: &[ScaleCountDto]) -> String {
     let rows: Vec<Vec<String>> = scales
         .iter()
@@ -264,6 +309,8 @@ mod tests {
         assert_eq!(duration(3_600_000), "60:00");
         assert_eq!(ln_percent(1.0 / 3.0), "33.3");
         assert_eq!(labels(&[]), "-");
+        assert_eq!(share(None), "-");
+        assert_eq!(share(Some(0.1234)), "12.3");
         assert_eq!(
             labels(&[lab("insane", "4", false), lab("satellite", "sl2", true)]),
             "insane:4 satellite:sl2*"

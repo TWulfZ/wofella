@@ -107,6 +107,13 @@ fn scales_is_an_array() {
 }
 
 #[test]
+fn hints_is_an_array() {
+    let (env, _) = synced();
+    assert!(env.json(&["library", "hints"]).is_array());
+    assert!(stdout(&env, &["library", "hints"]).starts_with("KEYS"));
+}
+
+#[test]
 fn chart_show_prints_the_window_and_key_row() {
     let (env, md5) = synced();
     let out = stdout(&env, &["chart", "show", &md5, "--from", "0", "--to", "2"]);

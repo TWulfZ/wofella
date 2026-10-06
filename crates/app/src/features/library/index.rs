@@ -1,7 +1,7 @@
 //! `IndexLibrary` (F1): parses every catalog chart of a keymode with an engine profile into
-//! `chart_parsed`, writes its difficulty-name labels into `chart_label` and its pattern segments
-//! into `segment`. Each chart is memoized per md5 and stage in `derivation` (architecture §7),
-//! so a rerun only does what is new and a cancel means "run it again".
+//! `chart_parsed`, writes its difficulty-name labels and name hints into `chart_label` and its
+//! pattern segments into `segment`. Each chart is memoized per md5 and stage in `derivation`
+//! (architecture §7), so a rerun only does what is new and a cancel means "run it again".
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -9,7 +9,7 @@ use std::sync::mpsc;
 
 use wolluf_core::{ChartMd5, ErrorCode, Keymode, StageId, VersionKey};
 use wolluf_engine::EngineError;
-use wolluf_engine::labels::{LabelInput, extract_labels};
+use wolluf_engine::labels::LabelInput;
 use wolluf_engine::profile::Registry;
 use wolluf_engine::rows_blob::{decode_rows, encode_rows};
 use wolluf_engine::stage::chart_parse::parse_chart;
@@ -292,7 +292,7 @@ fn labels_of(chart: &CatalogChart) -> Vec<ChartLabel> {
         creator: &chart.creator,
         set_id: chart.set_id,
     };
-    extract_labels(&input)
+    chart_label::run(&input)
         .into_iter()
         .map(|l| ChartLabel {
             source: l.source,
@@ -751,6 +751,49 @@ mod tests {
         assert!(labels(&plain).is_empty());
         let (_, second) = reindex(&f).await;
         assert_eq!(second.labels_written, 0, "labels are memoized per chart");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn name_hints_are_written_with_the_labels() {
+        let hinted = Map::k7("hinted").named("100 Various - Jack Pack", "Minijack 1.1x (200bpm)");
+        let (f, first) = synced(std::slice::from_ref(&hinted), &[]).await;
+        assert_eq!(first.labels_written, 2);
+        let rows = f
+            .ctx
+            .cache_db()
+            .read(|c| label_repo::list_for(c, md5(&hinted), chart_label::vkey().unwrap()))
+            .unwrap();
+        let rows: Vec<(&str, &str, &str, Option<&str>, bool)> = rows
+            .iter()
+            .map(|l| {
+                (
+                    l.source.as_str(),
+                    l.scale.as_str(),
+                    l.level_text.as_str(),
+                    l.skill_tag.as_deref(),
+                    l.is_variant,
+                )
+            })
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                (
+                    "name_hint",
+                    "hint_axis",
+                    "7k.regular.jack",
+                    Some("jack"),
+                    true
+                ),
+                (
+                    "name_hint",
+                    "hint_pattern",
+                    "regular.jack.minijack",
+                    Some("minijack"),
+                    true
+                ),
+            ]
+        );
     }
 
     fn patterns_key() -> VersionKey {

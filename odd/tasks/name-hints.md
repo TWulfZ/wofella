@@ -31,13 +31,23 @@ Section-level human labels are expensive. Names give chart-level weak labels at 
 - The integration draft covers vocabulary, label JSON, protocol (gold vs correct queues, consensus, reliability, anti-bot), chart-feature exchange, recommendations API sketch, licensing, privacy and an open-questions list.
 
 ## Tasks
-- [ ] T1: engine hint extraction + chart_label rows + VERSION bump + stage-lock. Route: delegated. Tier: medium. Commit: —
-- [ ] T2: app IndexLibrary writes hints; agreement query; CLI `library hints`; corpus report. Route: delegated (same writer). Tier: medium. Commit: —
+- [x] T1: engine hint extraction + chart_label rows + VERSION bump + stage-lock. Route: delegated. Tier: medium. Commit: `feat(engine): extract pattern and axis hints from chart names`
+- [x] T2: app IndexLibrary writes hints; agreement query; CLI `library hints`; corpus report. Route: delegated (same writer). Tier: medium. Commit: `feat(app): index name hints and report hint-segment agreement`
 - [x] T3: `docs/integration/mania-tracker.md` draft. Route: inline. Tier: passive. Commit: `docs: draft mania-tracker integration contract`
 - [ ] T4: close: gates, corpus, remove this document. Route: inline. Tier: passive. Commit: —
 
 ## Progress
 - 2026-10-05 T3: draft written (vocabulary, label JSON, two-queue protocol, consensus/reliability/anti-bot, feature exchange, recommendations API sketch, licensing/privacy, open questions). Readback done.
 
+- 2026-10-05 T1+T2: RED per layer → GREEN; workspace 856 passed. chart_label VERSION 2 (golden e572e798…).
+  - Hints count common words only in difficulty names, skill tags or pack/practice/dan folders.
+  - `wolluf label` filters hint rows, so it stays blind.
+  - Corpus (pilot): 1,957 hints on 1,752 charts, table recorded in the PR. The run ended red only because osu! started mid-run, so it needs a clean rerun.
+- Findings for D4 eval:
+  - `7k.regular.tech` has 0% segmented time, because every tech rule is tag-only (T5 design). The tech axis needs a primary representation or tag→axis attribution.
+  - trill and jumptrill score 0% even on hinted charts.
+  - speed and burst hints have lift < 1.
+  - jack, chordjack, bracket and LN inverse/release agree strongly (lift 2.5–15).
+
 ## Next step
-T1+T2: delegate the writer; T3 is written inline in parallel.
+T4: with osu! closed, rerun `corpus_name_hints` and `corpus_library_index`, then remove this document and open the PR.

@@ -5,7 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use tokio::sync::broadcast::error::RecvError;
-use wolluf_core::{ChartMd5, ErrorCode, Keymode, TimeUs};
+use wolluf_core::{ChartMd5, ErrorCode, Keymode, TimeUs, VersionKey};
+use wolluf_engine::labels::{scale as label_scale, source as label_source};
 use wolluf_engine::profile::Registry;
 use wolluf_engine::render::{RenderOpts, RowMark, render_window};
 use wolluf_engine::rows_blob::decode_rows;
@@ -19,8 +20,8 @@ use wolluf_store::repo::cache::{
 use wolluf_store::{Conn, DbHandle, StoreError};
 
 use super::dto::{
-    ChartDetailDto, ChartLabelDto, LibraryChartDto, LibraryFilterDto, PatternCountDto,
-    ScaleCountDto, SegmentDto,
+    ChartDetailDto, ChartLabelDto, HintAgreementDto, LibraryChartDto, LibraryFilterDto,
+    PatternCountDto, ScaleCountDto, SegmentDto,
 };
 use super::index::{IndexLibraryJob, Keys, Segmenters, catalog_install};
 use crate::context::{AppContext, blocking_join_error, songs_dir};
@@ -231,6 +232,26 @@ impl<'a> LibraryService<'a> {
         .await
     }
 
+    /// Per keymode profile with a patterns stage, one row per name-hint target, in (scale,
+    /// target) order: how much segmented time hinted charts spend on the target, against the
+    /// library. A measurement of the engine, not a gold check: hints are weak labels.
+    pub async fn hint_agreement(&self) -> Result<Vec<HintAgreementDto>, AppError> {
+        self.blocking(|dbs, keys| {
+            let segmenters = Segmenters::current()?;
+            let mut out = Vec::new();
+            for profile in Registry::builtin().profiles() {
+                let keymode = profile.keymode.columns();
+                let Some(segmenter) = segmenters.get(keymode) else {
+                    continue;
+                };
+                let vkey = segmenter.vkey();
+                out.extend(dbs.cache.read(|c| hint_agreement(c, keys, keymode, vkey))?);
+            }
+            Ok(out)
+        })
+        .await
+    }
+
     /// Every parsed chart of a keymode with its labels, in md5 order: `list` without paging,
     /// read from the stored summaries so no blob is loaded.
     pub async fn overview(&self, keymode: Keymode) -> Result<Vec<LibraryChartDto>, AppError> {
@@ -272,6 +293,98 @@ impl<'a> LibraryService<'a> {
         })
         .await
     }
+}
+
+/// Segmented time of one chart, in µs, in total and per primary pattern and per axis.
+#[derive(Default)]
+struct SegmentedTime {
+    total: i64,
+    by_target: BTreeMap<(&'static str, String), i64>,
+}
+
+impl SegmentedTime {
+    fn of(rows: &[SegmentRow]) -> Self {
+        let mut t = Self::default();
+        for r in rows {
+            let us = r.t1.0 - r.t0.0;
+            t.total += us;
+            *t.by_target
+                .entry((label_scale::HINT_PATTERN, r.pattern.to_string()))
+                .or_default() += us;
+            *t.by_target
+                .entry((label_scale::HINT_AXIS, r.axis.to_string()))
+                .or_default() += us;
+        }
+        t
+    }
+
+    fn share(&self, target: &(&'static str, String)) -> f64 {
+        self.by_target.get(target).copied().unwrap_or(0) as f64 / self.total as f64
+    }
+}
+
+fn mean(shares: impl Iterator<Item = f64>) -> Option<f64> {
+    let (sum, n) = shares.fold((0.0, 0_u32), |(sum, n), s| (sum + s, n + 1));
+    (n > 0).then(|| sum / f64::from(n))
+}
+
+fn hint_agreement(
+    c: Conn<'_>,
+    keys: Keys,
+    keymode: u8,
+    segments: VersionKey,
+) -> Result<Vec<HintAgreementDto>, StoreError> {
+    let catalog = catalog_chart::list_by_keymode(c, keymode)?;
+    let mut segmented: BTreeMap<ChartMd5, SegmentedTime> = BTreeMap::new();
+    for chart in &catalog {
+        let time = SegmentedTime::of(&segment_repo::list_for(c, chart.md5, segments)?);
+        if time.total > 0 {
+            segmented.insert(chart.md5, time);
+        }
+    }
+    let in_keymode: BTreeSet<ChartMd5> = catalog.iter().map(|chart| chart.md5).collect();
+    let mut hinted: BTreeMap<(&'static str, String), BTreeSet<ChartMd5>> = BTreeMap::new();
+    for scale in [label_scale::HINT_AXIS, label_scale::HINT_PATTERN] {
+        let filter = LabelFilter {
+            scale: Some(scale.to_owned()),
+            ..LabelFilter::default()
+        };
+        for (md5, l) in label_repo::list_filtered(c, keys.label, &filter, u32::MAX)? {
+            if l.source == label_source::NAME_HINT && in_keymode.contains(&md5) {
+                hinted.entry((scale, l.level_text)).or_default().insert(md5);
+            }
+        }
+    }
+    Ok(hinted
+        .into_iter()
+        .map(|(target, charts)| {
+            let mean_share = mean(
+                charts
+                    .iter()
+                    .filter_map(|md5| segmented.get(md5))
+                    .map(|t| t.share(&target)),
+            );
+            let baseline_share = mean(segmented.values().map(|t| t.share(&target))).unwrap_or(0.0);
+            let lift = mean_share
+                .filter(|_| baseline_share > 0.0)
+                .map(|m| m / baseline_share);
+            HintAgreementDto {
+                keymode,
+                scale: target.0.to_owned(),
+                hinted_charts: saturating(charts.len() as u64),
+                segmented_charts: saturating(
+                    charts
+                        .iter()
+                        .filter(|md5| segmented.contains_key(*md5))
+                        .count() as u64,
+                ),
+                target_id: target.1,
+                mean_share,
+                baseline_share,
+                lift,
+            }
+        })
+        .collect())
 }
 
 fn key_of(taxonomy: &[taxonomy::PatternDef], pattern: &str) -> &'static str {
@@ -546,7 +659,7 @@ mod tests {
     use super::*;
     use crate::events::AppEvent;
     use crate::features::library::dto::{
-        LibraryFilterDto, PatternCountDto, ScaleCountDto, SegmentDto,
+        HintAgreementDto, LibraryFilterDto, PatternCountDto, ScaleCountDto, SegmentDto,
     };
     use crate::features::library::testkit::{Map, osu_text, synced};
     use crate::jobs::dto::{JobKindDto, JobStartDto, JobStatusDto};
@@ -815,6 +928,87 @@ mod tests {
                 charts: 1,
                 total_s: 0.5,
             }]
+        );
+    }
+
+    fn agreement(
+        scale: &str,
+        target: &str,
+        charts: (u32, u32),
+        mean: Option<f64>,
+        baseline: f64,
+        lift: Option<f64>,
+    ) -> HintAgreementDto {
+        HintAgreementDto {
+            keymode: 7,
+            scale: scale.into(),
+            target_id: target.into(),
+            hinted_charts: charts.0,
+            segmented_charts: charts.1,
+            mean_share: mean,
+            baseline_share: baseline,
+            lift,
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn hint_agreement_compares_hinted_charts_with_the_library() {
+        // One longjack segment over the whole segmented time.
+        let hinted = Map::jacks("hinted").named("100 Various - Jack Pack", "Longjack");
+        // Six presses in column 1: the same pattern, without a hint.
+        let other: Vec<(u8, i32)> = (0..6).map(|i| (1, 1_000 + i * 100)).collect();
+        let other = Map::new("other", 7, osu_text(7, "other", &other, &[]));
+        // The thumb trill of the patterns golden: segmented time on another axis.
+        let trill: Vec<(u8, i32)> = (0..24)
+            .map(|i| (3 + (i % 2) as u8, 1_000 + i * 100))
+            .collect();
+        let trill = Map::new("alternation", 7, osu_text(7, "alternation", &trill, &[]));
+        // Hinted, but nothing to segment.
+        let unsegmented = Map::k7("unsegmented").named("100 Artist - Song", "Jumptrill");
+        let (f, _) = synced(&[hinted, other, trill.clone(), unsegmented], &[]).await;
+        let svc = f.ctx.library();
+        let trill_axes: Vec<String> = svc
+            .segments(&trill.md5)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|s| s.axis_id)
+            .collect();
+        assert!(
+            !trill_axes.is_empty() && trill_axes.iter().all(|a| a != "7k.regular.jack"),
+            "{trill_axes:?}"
+        );
+
+        let third = 1.0 / 3.0;
+        let rows = svc.hint_agreement().await.unwrap();
+        assert_eq!(
+            rows,
+            [
+                agreement(
+                    "hint_axis",
+                    "7k.regular.jack",
+                    (1, 1),
+                    Some(1.0),
+                    2.0 * third,
+                    Some(1.5)
+                ),
+                agreement(
+                    "hint_pattern",
+                    "regular.jack.longjack",
+                    (1, 1),
+                    Some(1.0),
+                    2.0 * third,
+                    Some(1.5)
+                ),
+                agreement(
+                    "hint_pattern",
+                    "regular.stream.jumptrill",
+                    (1, 0),
+                    None,
+                    0.0,
+                    None
+                ),
+            ]
         );
     }
 
