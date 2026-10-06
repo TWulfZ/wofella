@@ -17,9 +17,10 @@
 //! Lengths stay in stable's 480-high units; lazer's ×1.6 belongs to rendering. Deliberate
 //! deviations: section names match case-insensitively and an unknown section is ignored (lazer:
 //! case-sensitive, unknown falls back to General); `Keys` above `max_keys` discards its block
-//! instead of allocating it; non-finite numbers count as unparsable; `NoteBodyStyle` values outside
-//! lazer's enum are ignored. Text is UTF-8 with or without BOM, or UTF-16 with a BOM, like lazer's
-//! `StreamReader`; invalid UTF-8 is decoded lossily and flagged in `decoded_lossily`.
+//! instead of allocating it; non-finite numbers count as unparsable; `NoteBodyStyle: 1` is
+//! `RepeatBottom` and other values outside lazer's enum are ignored. Text is UTF-8 with or without
+//! BOM, or UTF-16 with a BOM, like lazer's `StreamReader`; invalid UTF-8 is decoded lossily and
+//! flagged in `decoded_lossily`.
 
 use std::collections::BTreeMap;
 
@@ -441,6 +442,8 @@ fn parse_colour(value: &str) -> Option<Rgba> {
 fn parse_body_style(value: &str) -> Option<NoteBodyStyle> {
     match value {
         "0" | "Stretch" => Some(NoteBodyStyle::Stretch),
+        // Wiki "Repeat": lazer's numeric `Enum.TryParse` keeps it and draws it as a repeat style.
+        "1" => Some(NoteBodyStyle::RepeatBottom),
         "2" | "RepeatTop" => Some(NoteBodyStyle::RepeatTop),
         "3" | "RepeatBottom" => Some(NoteBodyStyle::RepeatBottom),
         "4" | "RepeatTopAndBottom" => Some(NoteBodyStyle::RepeatTopAndBottom),
@@ -777,6 +780,18 @@ mod tests {
             style("[General]\nVersion: 2.5\n[Mania]\nKeys: 7\nNoteBodyStyle: 1\n"),
             NoteBodyStyle::RepeatBottom
         );
+    }
+
+    #[test]
+    fn note_body_style_one_is_explicit_repeat() {
+        let style = |text: &str| mania(text, 7).note_body_style;
+        for version in ["", "[General]\nVersion: 1.0\n", "[General]\nVersion: 2.4\n"] {
+            assert_eq!(
+                style(&format!("{version}[Mania]\nKeys: 7\nNoteBodyStyle: 1\n")),
+                NoteBodyStyle::RepeatBottom,
+                "{version:?}"
+            );
+        }
     }
 
     #[test]
