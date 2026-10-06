@@ -13,6 +13,8 @@ pub mod keys {
     pub const INSTANCE_RUNNING: &str = "error.instance_running";
     pub const DATA_DIR_INSIDE_OSU: &str = "error.data_dir_inside_osu";
     pub const LAZER_NOT_SUPPORTED: &str = "setup.error.lazer_not_supported";
+    pub const CHART_AUDIO_UNAVAILABLE: &str = "error.chart_audio_unavailable";
+    pub const CHART_AUDIO_TOO_LARGE: &str = "error.chart_audio_too_large";
 }
 
 /// Spec 004 IPC: the players slice's `players.error.*` keys (`players.json` in the UI).

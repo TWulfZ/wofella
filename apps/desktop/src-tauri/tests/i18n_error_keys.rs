@@ -5,6 +5,7 @@
 mod i18n_error_keys {
     use std::path::PathBuf;
 
+    use wolluf_app::errors::keys;
     use wolluf_core::ErrorCode;
 
     const LOCALES: [&str; 2] = ["en", "es"];
@@ -32,5 +33,21 @@ mod i18n_error_keys {
             }
         }
         assert!(missing.is_empty(), "missing fallbacks: {missing:?}");
+    }
+
+    /// ADR 0018: the Label screen shows these when a chart's audio cannot be served.
+    #[test]
+    fn chart_audio_keys_have_en_and_es_text() {
+        let mut missing = Vec::new();
+        for lang in LOCALES {
+            let json = error_json(lang);
+            for key in [keys::CHART_AUDIO_UNAVAILABLE, keys::CHART_AUDIO_TOO_LARGE] {
+                let value = key.split('.').fold(&json, |node, part| &node[part]);
+                if !value.as_str().is_some_and(|s| !s.trim().is_empty()) {
+                    missing.push(format!("{lang}: {key}"));
+                }
+            }
+        }
+        assert!(missing.is_empty(), "missing keys: {missing:?}");
     }
 }

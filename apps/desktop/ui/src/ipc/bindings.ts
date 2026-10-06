@@ -26,6 +26,29 @@ export const commands = {
 	playersDecideAlias: (input: DecideAliasInput) => typedError<AliasListDto, IpcError>(__TAURI_INVOKE("players_decide_alias", { input })),
 	playersCreateProfile: (input: CreateProfileInput) => typedError<ProfileEntryDto, IpcError>(__TAURI_INVOKE("players_create_profile", { input })),
 	playersSetDefault: (profileId: number) => typedError<null, IpcError>(__TAURI_INVOKE("players_set_default", { profileId })),
+	/**  Notes, timing lines and layout of `[fromMs, toMs]` for the playfield; no segments. */
+	chartWindow: (md5: string, fromMs: number, toMs: number, layoutId: string | null) => typedError<ChartWindowDto, IpcError>(__TAURI_INVOKE("chart_window", { md5, fromMs, toMs, layoutId })),
+	labelTaxonomy: (keymode: number) => typedError<PatternDefDto[], IpcError>(__TAURI_INVOKE("label_taxonomy", { keymode })),
+	/**  `None` when no chart has a free window left. */
+	labelSample: (req: SampleRequestDto) => typedError<{
+	anchor: AnchorDto,
+	title: string,
+	artist: string,
+	version: string,
+	/**  `scale:level` of the label that placed the chart in its stratum. */
+	level: string | null,
+	/**  e.g. `dan_07/nps_2`; display only, never persisted. */
+	stratum: string,
+	played: boolean,
+} | null, IpcError>(__TAURI_INVOKE("label_sample", { req })),
+	/**  Short keys or full ids to full pattern ids, in input order without repeats. */
+	labelResolvePatterns: (keymode: number, tokens: string[]) => typedError<string[], IpcError>(__TAURI_INVOKE("label_resolve_patterns", { keymode, tokens })),
+	labelReshape: (anchor: AnchorDto, op: WindowOpDto) => typedError<AnchorDto, IpcError>(__TAURI_INVOKE("label_reshape", { anchor, op })),
+	labelSubmit: (req: LabelSubmitDto) => typedError<LabelEventDto, IpcError>(__TAURI_INVOKE("label_submit", { req })),
+	labelUndo: (eventId: string) => typedError<null, IpcError>(__TAURI_INVOKE("label_undo", { eventId })),
+	labelStats: () => typedError<LabelStatsDto, IpcError>(__TAURI_INVOKE("label_stats")),
+	/**  The chart's audio file for the playfield's WebAudio loop; the webview sends only the md5. */
+	chartAudio: (md5: string) => typedError<ChartAudioDto, IpcError>(__TAURI_INVOKE("chart_audio", { md5 })),
 };
 
 /** Events */
@@ -70,9 +93,60 @@ export type AliasRowDto = {
 	inSelfProfile: boolean,
 };
 
+/**  `[t0Ms, t1Ms)` of one chart. */
+export type AnchorDto = {
+	md5: string,
+	t0Ms: number,
+	t1Ms: number,
+	/**  1-based, column 1 leftmost, ascending. */
+	cols: number[],
+};
+
 export type AutoMatchDto = {
 	source: MatchSourceDto,
 	kind: MatchKindDto,
+};
+
+/**  The chart's `AudioFilename` from its set folder, for the webview to decode. */
+export type ChartAudioDto = {
+	/**  `application/octet-stream` when the extension is not mp3, ogg or wav. */
+	mime: string,
+	/**  RFC 4648 with padding. */
+	base64: string,
+};
+
+/**  The first and the last row of the chart (LN tails included); `0, 0` without rows. */
+export type ChartSpanDto = {
+	firstMs: number,
+	endMs: number,
+};
+
+/**  What a playfield draws for `[fromMs, toMs]` of one chart. No segments: labelling is blind. */
+export type ChartWindowDto = {
+	md5: string,
+	keymode: number,
+	fromMs: number,
+	toMs: number,
+	/**
+	 *  Taps and LN heads in `[fromMs, toMs]` plus LNs whose body enters from before `fromMs`,
+	 *  by `(tMs, col)`.
+	 */
+	notes: NoteDto[],
+	/**  The last red line at or before `fromMs`, then every line in `[fromMs, toMs]`. */
+	timing: TimingDto[],
+	layout: LayoutDto,
+	chartSpan: ChartSpanDto,
+	audioFilename: string | null,
+};
+
+export type ColumnDto = {
+	hand: HandDto,
+	finger: FingerDto,
+};
+
+export type CountDto = {
+	key: string,
+	count: number,
 };
 
 export type CreateProfileInput = {
@@ -99,6 +173,12 @@ export type EntryRefDto = { kind: "profile"; id: number } | { kind: "all_players
 
 /**  Wire mirror of core's `ErrorCode`: domain types never derive specta (D13). */
 export type ErrorCodeDto = "OSU_DIR_NOT_FOUND" | "UNSUPPORTED_FORMAT" | "PARSE_FAILED" | "OSU_RUNNING" | "CONSENT_REQUIRED" | "SIGNATURE_INVALID" | "NOT_FOUND" | "INVALID_INPUT" | "CONFLICT" | "CANCELLED" | "INTERNAL";
+
+export type FingerDto = "pinky" | "ring" | "middle" | "index" | "thumb";
+
+export type HandDto = "left" | "right" | 
+/**  Either thumb may take it. */
+"both";
 
 /**
  *  IndexLibrary counters. `failedItems` keeps the name every summary shares, which the job
@@ -212,11 +292,77 @@ export type KeymodeCountDto = {
 	n: number,
 };
 
+export type LabelEventDto = {
+	/**  The feedback event's ULID; undo takes it back. */
+	id: string,
+};
+
+/**  Over the self profile's labels that are not undone. Lists are sorted by key. */
+export type LabelStatsDto = {
+	total: number,
+	/**  Answers of "no clear pattern". */
+	noPattern: number,
+	mixed: number,
+	unsure: number,
+	thumbLeft: number,
+	thumbRight: number,
+	perPattern: CountDto[],
+	perAxis: CountDto[],
+	/**  A chart no longer in the library counts under `unknown`. */
+	perStratum: CountDto[],
+};
+
+export type LabelSubmitDto = {
+	anchor: AnchorDto,
+	/**  Full pattern ids of the chart's keymode: at least one, unless `no_pattern`. */
+	patterns: string[],
+	/**  "No clear pattern": a stored answer with empty `patterns` (a skip is never stored). */
+	noPattern: boolean,
+	mixed: boolean,
+	unsure: boolean,
+	/**  `None` is neutral. */
+	thumbPref: ThumbPrefDto | null,
+};
+
+export type LabelWindowDto = {
+	anchor: AnchorDto,
+	title: string,
+	artist: string,
+	version: string,
+	/**  `scale:level` of the label that placed the chart in its stratum. */
+	level: string | null,
+	/**  e.g. `dan_07/nps_2`; display only, never persisted. */
+	stratum: string,
+	played: boolean,
+};
+
+export type LayoutDto = {
+	id: string,
+	/**  One per column, leftmost first. */
+	columns: ColumnDto[],
+};
+
 export type MatchKindDto = "equal" | "prefix";
 
 export type MatchSourceDto = "cfg_username" | "linked_account";
 
 export type MergeModeDto = "merged" | "separate";
+
+export type NoteDto = {
+	tMs: number,
+	/**  0-based, column 0 leftmost. */
+	col: number,
+	/**  The LN tail; `None` for a tap. */
+	endMs: number | null,
+};
+
+export type PatternDefDto = {
+	id: string,
+	axis: string,
+	/**  Short key for typing labels. */
+	key: string,
+	description: string,
+};
 
 export type ProfileEntryDto = {
 	ref: EntryRefDto,
@@ -230,6 +376,24 @@ export type ProfileEntryDto = {
 };
 
 export type ProfileKindDto = "self" | "other" | "all_players";
+
+/**  One labelling round. Label bounds are inclusive and match as in the library listing. */
+export type SampleRequestDto = {
+	keymode: number,
+	/**  A `u64` in decimal: the sequence is a pure function of it and the labelled set. */
+	seed: string,
+	round: number,
+	/**  Defaults to the sampler's window. */
+	windowMs: number | null,
+	scale: string | null,
+	levelMin: number | null,
+	levelMax: number | null,
+	/**
+	 *  Windows already shown this session (skips are not stored); labelled ones are always
+	 *  avoided.
+	 */
+	exclude: AnchorDto[],
+};
 
 export type ScopeDto = {
 	/**  64 hex chars (`ScopeHash`). */
@@ -273,12 +437,27 @@ export type SyncSummaryDto = {
 	failedItems: number,
 };
 
+export type ThumbPrefDto = "left" | "right";
+
+/**  A red line has `beatLenMs` and `meter`, a green line `sv`. */
+export type TimingDto = {
+	tMs: number,
+	kind: TimingKindDto,
+	beatLenMs: number | null,
+	meter: number | null,
+	sv: number | null,
+};
+
+export type TimingKindDto = "red" | "green";
+
 export type TopChartDto = {
 	chartMd5: string,
 	title: string | null,
 	version: string | null,
 	n: number,
 };
+
+export type WindowOpDto = "widen" | "narrow" | "next" | "prev";
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {

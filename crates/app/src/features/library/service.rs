@@ -12,20 +12,24 @@ use wolluf_engine::render::{RenderOpts, RowMark, render_window};
 use wolluf_engine::rows_blob::decode_rows;
 use wolluf_engine::stage::chart_parse::parse_chart;
 use wolluf_engine::taxonomy;
-use wolluf_source_osu::songs::read_chart_verified;
+use wolluf_engine::window::{ChartWindow, ColumnFinger, ColumnHand, TimingLine, chart_window};
+use wolluf_source_osu::songs::{SongFileError, read_chart_verified, read_song_file};
 use wolluf_store::repo::cache::{
     CatalogChart, ChartLabel, LabelFilter, ParsedSummary, SegmentRow, catalog_chart,
     chart_label as label_repo, chart_parsed, segment as segment_repo,
 };
 use wolluf_store::{Conn, DbHandle, StoreError};
 
+use super::LibraryParams;
+use super::chart_audio::{base64, mime_of};
 use super::dto::{
-    ChartDetailDto, ChartLabelDto, HintAgreementDto, LibraryChartDto, LibraryFilterDto,
-    PatternCountDto, ScaleCountDto, SegmentDto,
+    ChartAudioDto, ChartDetailDto, ChartLabelDto, ChartSpanDto, ChartWindowDto, ColumnDto,
+    FingerDto, HandDto, HintAgreementDto, LayoutDto, LibraryChartDto, LibraryFilterDto, NoteDto,
+    PatternCountDto, ScaleCountDto, SegmentDto, TimingDto, TimingKindDto,
 };
 use super::index::{IndexLibraryJob, Keys, Segmenters, catalog_install};
 use crate::context::{AppContext, blocking_join_error, songs_dir};
-use crate::errors::AppError;
+use crate::errors::{AppError, keys};
 use crate::events::AppEvent;
 use crate::jobs::dto::{JobDto, JobId};
 
@@ -42,6 +46,7 @@ pub struct ChartRows {
 
 pub struct LibraryService<'a> {
     ctx: &'a AppContext,
+    params: LibraryParams,
 }
 
 #[derive(Clone)]
@@ -52,7 +57,15 @@ struct Dbs {
 
 impl<'a> LibraryService<'a> {
     pub fn new(ctx: &'a AppContext) -> Self {
-        Self { ctx }
+        Self {
+            ctx,
+            params: LibraryParams::default(),
+        }
+    }
+
+    pub fn with_params(mut self, params: LibraryParams) -> Self {
+        self.params = params;
+        self
     }
 
     async fn blocking<R: Send + 'static>(
@@ -176,6 +189,88 @@ impl<'a> LibraryService<'a> {
                 text.push_str(&legend(taxonomy, layout_id, &rows, from, to));
             }
             Ok(text)
+        })
+        .await
+    }
+
+    /// The notes, timing lines and layout a playfield draws for `[from_ms, to_ms]`, both
+    /// inclusive; `layout_id` defaults to the keymode profile's layout.
+    pub async fn chart_window(
+        &self,
+        md5: &str,
+        from_ms: i32,
+        to_ms: i32,
+        layout_id: Option<String>,
+    ) -> Result<ChartWindowDto, AppError> {
+        let md5 = parse_md5(md5)?;
+        if from_ms >= to_ms {
+            return Err(AppError::invalid_input()
+                .with_arg("fromMs", from_ms.to_string())
+                .with_arg("toMs", to_ms.to_string()));
+        }
+        self.blocking(move |dbs, keys| {
+            let parsed = dbs
+                .cache
+                .read(|c| chart_parsed::get(c, md5, keys.parse))?
+                .ok_or_else(|| not_found(md5))?;
+            let chart = decode_rows(&parsed.rows_blob)
+                .map_err(|e| AppError::internal(format!("rows blob of {md5}: {e}")))?;
+            let profile = Registry::builtin()
+                .profile(chart.keymode())
+                .ok_or_else(|| not_found(md5))?;
+            let layout = match layout_id {
+                None => profile.layout(),
+                Some(id) => profile
+                    .layout_by_id(&id)
+                    .ok_or_else(|| AppError::invalid_input().with_arg("layoutId", id))?,
+            };
+            let window = chart_window(&chart, &layout, from_ms, to_ms);
+            Ok(window_dto(md5, from_ms, to_ms, window))
+        })
+        .await
+    }
+
+    /// The chart's `AudioFilename`, read only from its own set folder in Songs: the webview
+    /// names a chart by md5 and never by path (ADR 0018).
+    pub async fn chart_audio(&self, md5: &str) -> Result<ChartAudioDto, AppError> {
+        let md5 = parse_md5(md5)?;
+        let max_bytes = self.params.max_audio_bytes;
+        self.blocking(move |dbs, keys| {
+            let (chart, parsed) = dbs.cache.read(|c| {
+                Ok((
+                    catalog_chart::get(c, md5)?,
+                    chart_parsed::get(c, md5, keys.parse)?,
+                ))
+            })?;
+            let (Some(chart), Some(parsed)) = (chart, parsed) else {
+                return Err(not_found(md5));
+            };
+            let rows = decode_rows(&parsed.rows_blob)
+                .map_err(|e| AppError::internal(format!("rows blob of {md5}: {e}")))?;
+            let audio = rows.meta().audio_filename.trim().to_owned();
+            if audio.is_empty() {
+                return Err(audio_unavailable(md5));
+            }
+            let install = catalog_install(&dbs.user, &dbs.cache)?.ok_or_else(|| not_found(md5))?;
+            let songs = songs_dir(&install.root_path);
+            let bytes =
+                read_song_file(&songs, Path::new(&chart.path), &audio, max_bytes).map_err(|e| {
+                    match e {
+                        SongFileError::Missing => audio_unavailable(md5),
+                        SongFileError::TooLarge { size, max } => AppError::new(e.code())
+                            .with_key(keys::CHART_AUDIO_TOO_LARGE)
+                            .with_arg("md5", md5.to_string())
+                            .with_arg("bytes", size.to_string())
+                            .with_arg("maxBytes", max.to_string()),
+                        SongFileError::Io { .. } => {
+                            AppError::internal(format!("audio of {md5}: {e}"))
+                        }
+                    }
+                })?;
+            Ok(ChartAudioDto {
+                mime: mime_of(&audio).to_owned(),
+                base64: base64(&bytes),
+            })
         })
         .await
     }
@@ -431,6 +526,74 @@ fn segment_dtos(
         .collect())
 }
 
+fn window_dto(md5: ChartMd5, from_ms: i32, to_ms: i32, w: ChartWindow) -> ChartWindowDto {
+    ChartWindowDto {
+        md5: md5.to_string(),
+        keymode: w.keymode,
+        from_ms,
+        to_ms,
+        notes: w
+            .notes
+            .into_iter()
+            .map(|n| NoteDto {
+                t_ms: n.t_ms,
+                col: n.col,
+                end_ms: n.end_ms,
+            })
+            .collect(),
+        timing: w.timing.into_iter().map(timing_dto).collect(),
+        layout: LayoutDto {
+            id: w.layout_id,
+            columns: w
+                .columns
+                .into_iter()
+                .map(|c| ColumnDto {
+                    hand: match c.hand {
+                        ColumnHand::Left => HandDto::Left,
+                        ColumnHand::Right => HandDto::Right,
+                        ColumnHand::Both => HandDto::Both,
+                    },
+                    finger: match c.finger {
+                        ColumnFinger::Pinky => FingerDto::Pinky,
+                        ColumnFinger::Ring => FingerDto::Ring,
+                        ColumnFinger::Middle => FingerDto::Middle,
+                        ColumnFinger::Index => FingerDto::Index,
+                        ColumnFinger::Thumb => FingerDto::Thumb,
+                    },
+                })
+                .collect(),
+        },
+        chart_span: ChartSpanDto {
+            first_ms: w.span.first_ms,
+            end_ms: w.span.end_ms,
+        },
+        audio_filename: w.audio_filename,
+    }
+}
+
+fn timing_dto(line: TimingLine) -> TimingDto {
+    match line {
+        TimingLine::Red {
+            t_ms,
+            beat_len_ms,
+            meter,
+        } => TimingDto {
+            t_ms,
+            kind: TimingKindDto::Red,
+            beat_len_ms: Some(beat_len_ms),
+            meter: Some(meter),
+            sv: None,
+        },
+        TimingLine::Green { t_ms, sv } => TimingDto {
+            t_ms,
+            kind: TimingKindDto::Green,
+            beat_len_ms: None,
+            meter: None,
+            sv: Some(sv),
+        },
+    }
+}
+
 fn ms_i32(t: TimeUs) -> i32 {
     let ms = t.as_ms_floor();
     i32::try_from(ms).unwrap_or(if ms < 0 { i32::MIN } else { i32::MAX })
@@ -471,6 +634,10 @@ fn parse_md5(md5: &str) -> Result<ChartMd5, AppError> {
 
 fn not_found(md5: ChartMd5) -> AppError {
     AppError::not_found().with_arg("md5", md5.to_string())
+}
+
+fn audio_unavailable(md5: ChartMd5) -> AppError {
+    not_found(md5).with_key(keys::CHART_AUDIO_UNAVAILABLE)
 }
 
 fn label_dto(l: ChartLabel) -> ChartLabelDto {
@@ -657,11 +824,15 @@ mod tests {
     use wolluf_core::ErrorCode;
 
     use super::*;
+    use crate::errors::keys;
     use crate::events::AppEvent;
+    use crate::features::library::LibraryParams;
     use crate::features::library::dto::{
-        HintAgreementDto, LibraryFilterDto, PatternCountDto, ScaleCountDto, SegmentDto,
+        ChartAudioDto, ChartSpanDto, ChartWindowDto, FingerDto, HandDto, HintAgreementDto,
+        LibraryFilterDto, NoteDto, PatternCountDto, ScaleCountDto, SegmentDto, TimingDto,
+        TimingKindDto,
     };
-    use crate::features::library::testkit::{Map, osu_text, synced};
+    use crate::features::library::testkit::{Map, osu_text, osu_text_timed, synced};
     use crate::jobs::dto::{JobKindDto, JobStartDto, JobStatusDto};
 
     const REGULAR_DAN: &str = "1 7K Dan Course - Regular Dan Phase";
@@ -888,6 +1059,265 @@ mod tests {
         assert_eq!(empty_window.unwrap_err().code, ErrorCode::InvalidInput);
         let unknown = svc.render(&"0".repeat(32), 0, 1, None, false).await;
         assert_eq!(unknown.unwrap_err().code, ErrorCode::NotFound);
+    }
+
+    fn note(t_ms: i32, col: u8, end_ms: Option<i32>) -> NoteDto {
+        NoteDto { t_ms, col, end_ms }
+    }
+
+    fn timing(
+        t_ms: i32,
+        kind: TimingKindDto,
+        beat: Option<(f64, u8)>,
+        sv: Option<f64>,
+    ) -> TimingDto {
+        TimingDto {
+            t_ms,
+            kind,
+            beat_len_ms: beat.map(|b| b.0),
+            meter: beat.map(|b| b.1),
+            sv,
+        }
+    }
+
+    fn windowed_chart(title: &str) -> Vec<u8> {
+        osu_text_timed(
+            7,
+            title,
+            &[
+                "0,500,4,1,0,100,1,0",
+                "1000,-50,4,1,0,100,0,0",
+                "2000,400,3,1,0,100,1,0",
+                "2500,-200,4,1,0,100,0,0",
+                "4000,300,4,1,0,100,1,0",
+            ],
+            &[
+                (0, 1_000),
+                (6, 2_200),
+                (1, 2_500),
+                (2, 2_500),
+                (0, 3_000),
+                (0, 3_200),
+            ],
+            &[
+                (3, 1_500, 2_600),
+                (4, 1_500, 2_100),
+                (2, 2_200, 2_400),
+                (5, 2_800, 3_500),
+            ],
+        )
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn chart_window_returns_notes_timing_layout_and_span() {
+        let map = Map::new("window", 7, windowed_chart("window"));
+        let silent_bytes = String::from_utf8(windowed_chart("silent"))
+            .unwrap()
+            .replace("AudioFilename: audio.mp3", "AudioFilename: ")
+            .into_bytes();
+        let silent = Map::new("silent", 7, silent_bytes);
+        let (f, _) = synced(&[map.clone(), silent.clone()], &[]).await;
+        let svc = f.ctx.library();
+
+        let w = svc
+            .chart_window(&map.md5, 2_200, 3_000, None)
+            .await
+            .unwrap();
+        assert_eq!((w.md5.as_str(), w.keymode), (map.md5.as_str(), 7));
+        assert_eq!((w.from_ms, w.to_ms), (2_200, 3_000));
+        assert_eq!(
+            w.notes,
+            [
+                note(1_500, 3, Some(2_600)),
+                note(2_200, 2, Some(2_400)),
+                note(2_200, 6, None),
+                note(2_500, 1, None),
+                note(2_500, 2, None),
+                note(2_800, 5, Some(3_500)),
+                note(3_000, 0, None),
+            ],
+            "the body entering from the top, both bounds inclusive, by (t, col)"
+        );
+        assert_eq!(
+            w.timing,
+            [
+                timing(2_000, TimingKindDto::Red, Some((400.0, 3)), None),
+                timing(2_500, TimingKindDto::Green, None, Some(0.5)),
+            ],
+            "the red line before the window, then the lines inside it"
+        );
+        assert_eq!(w.layout.id, "k7.313_right_thumb");
+        assert_eq!(w.layout.columns.len(), 7);
+        assert_eq!(
+            (w.layout.columns[0].hand, w.layout.columns[0].finger),
+            (HandDto::Left, FingerDto::Ring)
+        );
+        assert_eq!(
+            (w.layout.columns[3].hand, w.layout.columns[3].finger),
+            (HandDto::Right, FingerDto::Thumb)
+        );
+        assert_eq!(
+            w.chart_span,
+            ChartSpanDto {
+                first_ms: 1_000,
+                end_ms: 3_500
+            }
+        );
+        assert_eq!(w.audio_filename.as_deref(), Some("audio.mp3"));
+
+        let left = svc
+            .chart_window(&map.md5, 2_200, 3_000, Some("k7.313_left_thumb".into()))
+            .await
+            .unwrap();
+        assert_eq!(left.layout.id, "k7.313_left_thumb");
+        assert_eq!(left.layout.columns[3].hand, HandDto::Left);
+        assert_eq!(left.notes, w.notes);
+
+        let red_at_from = svc
+            .chart_window(&map.md5, 2_000, 2_100, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            red_at_from.timing,
+            [timing(2_000, TimingKindDto::Red, Some((400.0, 3)), None)],
+            "a red line at `from` is listed once"
+        );
+
+        let quiet = svc.chart_window(&silent.md5, 0, 1_000, None).await.unwrap();
+        assert_eq!(quiet.audio_filename, None);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn chart_window_rejects_bad_requests() {
+        let map = Map::new("window", 7, windowed_chart("window"));
+        let (f, _) = synced(std::slice::from_ref(&map), &[]).await;
+        let svc = f.ctx.library();
+
+        let code = |r: Result<ChartWindowDto, AppError>| r.unwrap_err().code;
+        assert_eq!(
+            code(svc.chart_window(&map.md5, 2_000, 2_000, None).await),
+            ErrorCode::InvalidInput
+        );
+        assert_eq!(
+            code(svc.chart_window(&map.md5, 3_000, 2_000, None).await),
+            ErrorCode::InvalidInput
+        );
+        assert_eq!(
+            code(
+                svc.chart_window(&map.md5, 0, 1, Some("k7.nope".into()))
+                    .await
+            ),
+            ErrorCode::InvalidInput
+        );
+        assert_eq!(
+            code(
+                svc.chart_window(&map.md5, 0, 1, Some("k4.generic".into()))
+                    .await
+            ),
+            ErrorCode::InvalidInput
+        );
+        assert_eq!(
+            code(svc.chart_window("not an md5", 0, 1, None).await),
+            ErrorCode::InvalidInput
+        );
+        assert_eq!(
+            code(svc.chart_window(&"0".repeat(32), 0, 1, None).await),
+            ErrorCode::NotFound
+        );
+    }
+
+    /// A chart naming `audio` as its `AudioFilename`; the title keeps the md5 unique.
+    fn with_audio(title: &str, audio: &str) -> Map {
+        let bytes = String::from_utf8(osu_text(7, title, &[(0, 1_000)], &[]))
+            .unwrap()
+            .replace(
+                "AudioFilename: audio.mp3",
+                &format!("AudioFilename: {audio}"),
+            )
+            .into_bytes();
+        Map::new(title, 7, bytes)
+    }
+
+    fn songs_file(map: &Map, name: &str) -> String {
+        format!("Songs/{}/{name}", map.folder.replace('\\', "/"))
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn chart_audio_returns_the_set_folder_file_as_base64() {
+        let mp3 = with_audio("mp3", "audio.mp3");
+        let ogg = with_audio("ogg", " Song.OGG ").nested_in("Normal");
+        let wav = with_audio("wav", "hit.wav");
+        let flac = with_audio("flac", "track.flac");
+        let maps = [mp3.clone(), ogg.clone(), wav.clone(), flac.clone()];
+        let (f, _) = synced(&maps, &[]).await;
+        f.write(songs_file(&mp3, "audio.mp3"), b"ID3 wolluf");
+        f.write(songs_file(&ogg, "Song.OGG"), b"OggS");
+        f.write(songs_file(&wav, "hit.wav"), b"RIFF");
+        f.write(songs_file(&flac, "track.flac"), b"fLaC");
+        let svc = f.ctx.library();
+
+        assert_eq!(
+            svc.chart_audio(&mp3.md5).await.unwrap(),
+            ChartAudioDto {
+                mime: "audio/mpeg".into(),
+                base64: "SUQzIHdvbGx1Zg==".into(),
+            }
+        );
+        let ogg = svc.chart_audio(&ogg.md5).await.unwrap();
+        assert_eq!(
+            (ogg.mime.as_str(), ogg.base64.as_str()),
+            ("audio/ogg", "T2dnUw==")
+        );
+        assert_eq!(svc.chart_audio(&wav.md5).await.unwrap().mime, "audio/wav");
+        assert_eq!(
+            svc.chart_audio(&flac.md5).await.unwrap().mime,
+            "application/octet-stream"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn chart_audio_rejects_missing_unsafe_and_oversized_files() {
+        let silent = with_audio("silent", "");
+        let gone = with_audio("gone", "audio.mp3");
+        let climbing = with_audio("climbing", "../secret.mp3");
+        let big = with_audio("big", "audio.mp3");
+        let maps = [silent.clone(), gone.clone(), climbing.clone(), big.clone()];
+        let (f, _) = synced(&maps, &[]).await;
+        f.write("Songs/secret.mp3", b"outside the set");
+        f.write(songs_file(&big, "audio.mp3"), b"0123456789");
+
+        let svc = f.ctx.library();
+        for map in [&silent, &gone, &climbing] {
+            let err = svc.chart_audio(&map.md5).await.unwrap_err();
+            assert_eq!(err.code, ErrorCode::NotFound, "{}", map.title);
+            assert_eq!(
+                err.message_key,
+                keys::CHART_AUDIO_UNAVAILABLE,
+                "{}",
+                map.title
+            );
+        }
+
+        let capped = LibraryService::new(&f.ctx).with_params(LibraryParams { max_audio_bytes: 9 });
+        let err = capped.chart_audio(&big.md5).await.unwrap_err();
+        assert_eq!(err.code, ErrorCode::UnsupportedFormat);
+        assert_eq!(err.message_key, keys::CHART_AUDIO_TOO_LARGE);
+        assert_eq!(err.args.get("maxBytes").map(String::as_str), Some("9"));
+        assert_eq!(
+            LibraryParams::default().max_audio_bytes,
+            64 * 1024 * 1024,
+            "the shipped cap"
+        );
+        assert!(svc.chart_audio(&big.md5).await.is_ok());
+
+        assert_eq!(
+            svc.chart_audio(&"0".repeat(32)).await.unwrap_err().code,
+            ErrorCode::NotFound
+        );
+        assert_eq!(
+            svc.chart_audio("../audio.mp3").await.unwrap_err().code,
+            ErrorCode::InvalidInput
+        );
     }
 
     fn longjack() -> SegmentDto {

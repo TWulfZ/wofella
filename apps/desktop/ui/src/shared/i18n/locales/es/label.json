@@ -1,0 +1,95 @@
+{
+  "label": {
+    "title": "Etiquetar",
+    "round": "Ronda {{round}}",
+    "sampling": "Eligiendo una ventana…",
+    "loadingChart": "Cargando el mapa…",
+    "played": "Jugado",
+    "notPlayed": "Sin jugar",
+    "level": "Nivel {{level}}",
+    "stratum": "Estrato {{stratum}}",
+    "window": {
+      "duration": "{{seconds}} s"
+    },
+    "transport": {
+      "play": "Reproducir",
+      "pause": "Pausar",
+      "loadingAudio": "Cargando el audio…",
+      "offset": "Desfase de audio",
+      "offsetValue": "{{value}} ms",
+      "scroll": "Velocidad de scroll",
+      "fit": "Ajustar a la ventana",
+      "scrollValue": "{{value}} px/ms"
+    },
+    "audio": {
+      "decodeFailed": "No se pudo decodificar el audio de este mapa, así que la ventana se reproduce sin sonido."
+    },
+    "patterns": "Patrones",
+    "axis": {
+      "regular_jack": "Jack",
+      "regular_tech": "Tech",
+      "regular_speed": "Velocidad",
+      "regular_stream": "Stream",
+      "ln_general": "LN general",
+      "ln_tech": "LN tech",
+      "ln_inverse": "LN inverso",
+      "ln_release": "LN release"
+    },
+    "flags": {
+      "title": "Marcas",
+      "mixed": "Mixto",
+      "unsure": "Dudoso",
+      "thumbLeft": "Pulgar izquierdo",
+      "thumbRight": "Pulgar derecho"
+    },
+    "answer": {
+      "label": "Respuesta",
+      "placeholder": "Teclas de patrón, p. ej. js m · Enter guarda",
+      "submit": "Guardar",
+      "noPattern": "Sin patrón",
+      "skip": "Saltar",
+      "undo": "Deshacer",
+      "help": "Ayuda",
+      "clear": "Limpiar"
+    },
+    "reshape": {
+      "title": "Ventana",
+      "widen": "Ampliar",
+      "narrow": "Acortar",
+      "prev": "Anterior",
+      "next": "Siguiente"
+    },
+    "answerError": {
+      "empty": "Escribe una respuesta primero, o h para ver la ayuda.",
+      "twoThumbSides": "Elige un solo lado para el pulgar.",
+      "commandInLine": "“{{word}}” es un comando; envíalo solo.",
+      "noPatternWithPatterns": "x significa que no hay un patrón claro; envíala sin patrones.",
+      "noPatternGiven": "No indicaste ningún patrón."
+    },
+    "error": {
+      "unknown_pattern": "Patrón desconocido: “{{pattern}}”.",
+      "window_too_short": "La ventana no puede durar menos de {{minMs}} ms."
+    },
+    "nothingToUndo": "No hay nada que deshacer en esta sesión.",
+    "undone": "Se deshizo la última etiqueta.",
+    "help": {
+      "labels": "Escribe las teclas de patrón o los ids completos, separados por espacios o comas, y Enter guarda la ventana y pasa a la siguiente. Al hacer clic en un chip se agrega o se quita su tecla.",
+      "noPattern": "x responde “sin patrón claro” y se guarda, a diferencia de saltar.",
+      "flags": "m y ? alternan mixto y dudoso, tl/tr marcan el lado del pulgar (el mismo lado otra vez lo quita); solos o dentro de una línea de etiquetas.",
+      "commands": "Solos en la línea: s salta, u deshace la última etiqueta, w+/w- amplían o acortan 1 s, n/p desplazan media ventana, q termina la sesión.",
+      "hotkeys": "Lo que escribas en cualquier parte va al cuadro de respuesta. Espacio reproduce o pausa mientras el cuadro está vacío, Enter guarda y Esc lo limpia."
+    },
+    "footer": {
+      "labelled": "Etiquetadas: {{count}}",
+      "skipped": "Saltadas: {{count}}",
+      "undone": "Deshechas: {{count}}",
+      "goldTotal": "Gold set: {{count}}",
+      "seed": "Semilla {{seed}}"
+    },
+    "done": {
+      "exhausted": "No quedan ventanas por etiquetar.",
+      "quit": "Sesión terminada.",
+      "newSession": "Nueva sesión"
+    }
+  }
+}

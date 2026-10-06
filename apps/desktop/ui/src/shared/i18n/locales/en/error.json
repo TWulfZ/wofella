@@ -16,6 +16,8 @@
       "INTERNAL": "Unexpected internal error. The logs folder has the details."
     },
     "instance_running": "wolluf is already running with this data folder ({{path}}).",
-    "data_dir_inside_osu": "The wolluf data folder ({{dataDir}}) cannot be inside the osu! folder ({{osuDir}})."
+    "data_dir_inside_osu": "The wolluf data folder ({{dataDir}}) cannot be inside the osu! folder ({{osuDir}}).",
+    "chart_audio_unavailable": "No audio file was found for this chart in its song folder.",
+    "chart_audio_too_large": "This chart's audio file is too large to load ({{bytes}} bytes, the limit is {{maxBytes}})."
   }
 }

@@ -81,6 +81,16 @@ async fn taxonomy_lists_the_keymode_patterns() {
     assert_eq!(svc.taxonomy(4).unwrap_err().code, ErrorCode::InvalidInput);
 }
 
+/// Shells (Tauri) need every service future to be `Send` for any borrow of the context.
+#[test]
+fn service_futures_are_send() {
+    fn is_send<T: Send>(_: T) {}
+    fn check(ctx: &crate::context::AppContext, req: SampleRequestDto) {
+        is_send(async move { ctx.labeling().sample(req).await });
+    }
+    let _ = check;
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn sample_is_deterministic_and_skips_labelled_windows() {
     let (f, maps) = library().await;

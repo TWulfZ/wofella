@@ -21,12 +21,24 @@ pub(crate) fn osu_text(
     taps: &[(u8, i32)],
     holds: &[(u8, i32, i32)],
 ) -> Vec<u8> {
+    osu_text_timed(keys, title, &["0,500,4,1,0,100,1,0"], taps, holds)
+}
+
+/// [`osu_text`] with its own `[TimingPoints]` lines.
+pub(crate) fn osu_text_timed(
+    keys: u8,
+    title: &str,
+    timing: &[&str],
+    taps: &[(u8, i32)],
+    holds: &[(u8, i32, i32)],
+) -> Vec<u8> {
     let x = |col: u8| (2 * u32::from(col) + 1) * 256 / u32::from(keys);
+    let timing = timing.join("\n");
     let mut text = format!(
         "osu file format v14\n\n[General]\nAudioFilename: audio.mp3\nMode: 3\n\n\
          [Metadata]\nTitle: {title}\nArtist: wolluf\nCreator: wolluf\nVersion: Test\n\n\
          [Difficulty]\nHPDrainRate: 8\nCircleSize: {keys}\nOverallDifficulty: 8\n\n\
-         [TimingPoints]\n0,500,4,1,0,100,1,0\n\n[HitObjects]\n"
+         [TimingPoints]\n{timing}\n\n[HitObjects]\n"
     );
     for (col, t) in taps {
         text.push_str(&format!("{},192,{t},1,0,0:0:0:0:\n", x(*col)));
