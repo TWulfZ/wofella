@@ -68,6 +68,16 @@ pub struct SkinIni {
 }
 
 impl SkinIni {
+    /// lazer gives a skin folder without `skin.ini` the latest version (`Skin.cs` L110-117).
+    pub fn absent(params: &SkinIniParams) -> Self {
+        Self {
+            name: None,
+            version: params.latest_version,
+            mania: BTreeMap::new(),
+            decoded_lossily: false,
+        }
+    }
+
     pub fn mania(&self, keys: u8) -> Option<&ManiaConfig> {
         self.mania.get(&keys)
     }

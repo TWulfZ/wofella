@@ -92,19 +92,28 @@ pub fn read_song_file(
     file_name: &str,
     max_bytes: u64,
 ) -> Result<Vec<u8>, SongFileError> {
-    let single_entry = !file_name.trim().is_empty()
-        && !file_name.contains(['/', '\\', '\0'])
-        && matches!(
-            Path::new(file_name).components().collect::<Vec<_>>()[..],
-            [Component::Normal(_)]
-        );
+    let single_entry = is_single_entry_name(file_name);
     let set_dir = chart_rel_path
         .parent()
         .filter(|dir| stays_inside(dir) && stays_inside(chart_rel_path));
     let (true, Some(set_dir)) = (single_entry, set_dir) else {
         return Err(SongFileError::Missing);
     };
-    let path = songs_dir.join(set_dir).join(file_name);
+    read_capped(&songs_dir.join(set_dir).join(file_name), max_bytes)
+}
+
+/// Names come from files anyone can edit (`.osu`, `skin.ini`, cfg), so they must name one entry
+/// of a folder and can never climb out of it once joined.
+pub(crate) fn is_single_entry_name(name: &str) -> bool {
+    !name.trim().is_empty()
+        && !name.contains(['/', '\\', '\0'])
+        && matches!(
+            Path::new(name).components().collect::<Vec<_>>()[..],
+            [Component::Normal(_)]
+        )
+}
+
+pub(crate) fn read_capped(path: &Path, max_bytes: u64) -> Result<Vec<u8>, SongFileError> {
     // Names Windows cannot open (`<>:"|?*`) are as absent as a missing file.
     let io_error = |e: io::Error| match e.kind() {
         io::ErrorKind::NotFound | io::ErrorKind::InvalidInput | io::ErrorKind::InvalidFilename => {
@@ -112,12 +121,12 @@ pub fn read_song_file(
         }
         kind => SongFileError::Io { kind },
     };
-    // Windows refuses to open a directory (PermissionDenied), so a folder named like the audio
+    // Windows refuses to open a directory (PermissionDenied), so a folder named like the wanted
     // file is turned away before the open; size still comes from the handle that is read.
     if !path.is_file() {
         return Err(SongFileError::Missing);
     }
-    let file = File::open(&path).map_err(io_error)?;
+    let file = File::open(path).map_err(io_error)?;
     let meta = file.metadata().map_err(io_error)?;
     if !meta.is_file() {
         return Err(SongFileError::Missing);

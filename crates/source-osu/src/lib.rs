@@ -10,6 +10,7 @@ pub mod paths;
 pub mod probe;
 mod process;
 pub mod replay_dir;
+pub mod skins;
 pub mod snapshot;
 pub mod songs;
 mod stable;
