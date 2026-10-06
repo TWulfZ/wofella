@@ -1,0 +1,75 @@
+# Tagged builds for testers: a `v<workspace version>[-suffix]` tag publishes a GitHub Release with the
+# portable exe and the NSIS installer. A `-suffix` (alpha, beta, rc) marks it as a pre-release.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  NODE_VERSION: "24.15"
+  TAURI_CLI_VERSION: "2.12.0"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  windows:
+    name: windows release
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      # The exe reports the Cargo version, so a tag that disagrees would ship a mislabelled build.
+      - name: Check tag against workspace version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
+          tag="${GITHUB_REF_NAME}"
+          case "$tag" in
+            "v$version" | "v$version"-*) echo "tag $tag matches $version" ;;
+            *) echo "::error::tag $tag does not start with v$version (workspace Cargo.toml)"; exit 1 ;;
+          esac
+      - name: Install pinned toolchain
+        run: |
+          rustup toolchain install
+          rustc --version
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: apps/desktop/ui/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: apps/desktop/ui/pnpm-lock.yaml
+      - name: pnpm install
+        run: pnpm -C apps/desktop/ui install --frozen-lockfile
+      - name: Install tauri-cli
+        run: cargo install tauri-cli --version "$TAURI_CLI_VERSION" --locked
+      - name: cargo tauri build
+        working-directory: apps/desktop/src-tauri
+        run: cargo tauri build --bundles nsis
+      - name: Stage assets
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist-release | Out-Null
+          $tag = "$env:GITHUB_REF_NAME"
+          Copy-Item target/release/wolluf-desktop.exe "dist-release/wolluf-$tag-portable.exe"
+          Copy-Item (Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1).FullName "dist-release/wolluf-$tag-setup.exe"
+          Get-ChildItem dist-release
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          flags=(--generate-notes --title "wolluf $tag")
+          if [[ "$tag" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "$tag" dist-release/* "${flags[@]}"
