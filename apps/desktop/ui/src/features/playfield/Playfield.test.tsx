@@ -1,11 +1,14 @@
 import { act, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Clock } from "./audioClock";
-import { DEFAULT_PLAYFIELD_THEME, draw } from "./draw";
+import { DEFAULT_PLAYFIELD_THEME, draw, drawSkinned } from "./draw";
 import { Playfield } from "./Playfield";
 import { fitPxPerMs, project } from "./project";
+import { skinLayout } from "./skinLayout";
+import { SKIN_SLOT } from "./skinModel";
 import { DEFAULT_STAGE_PARAMS, judgeYFromHitPosition, osuPxPerMs, type ScrollMode } from "./stage";
 import { type FillOp, recordingContext } from "./testCanvas";
+import { image, skin7k } from "./testSkin";
 import type { ChartWindow, ColumnHand } from "./types";
 
 const HANDS: ColumnHand[] = ["left", "left", "left", "right", "right", "right", "right"];
@@ -240,5 +243,54 @@ describe("Playfield", () => {
     unmount();
     expect(cancelled).toEqual(pending);
     expect(ro.disconnected).toBe(true);
+  });
+});
+
+describe("Playfield with a skin", () => {
+  const SKIN = skin7k({}, [[SKIN_SLOT.note(3), image(100, 50)]]);
+
+  function expectedSkinned(nowMs: number, pxPerMs: number, zoom = 1) {
+    const layout = skinLayout(SKIN, H, zoom);
+    const { ctx, all } = recordingContext();
+    const view = { width: Math.min(layout.width, CONTAINER_W), height: H, judgeY: layout.judgeY };
+    // The component draws in CSS px under the device-pixel transform (devicePixelRatio 2 here).
+    ctx.setTransform(2, 0, 0, 2, 0, 0);
+    drawSkinned(ctx, project(WINDOW, { ...view, nowMs, pxPerMs }), layout, SKIN, DEFAULT_PLAYFIELD_THEME, view);
+    return { all, layout };
+  }
+
+  it("draws with the skin, sized from its layout, and keeps zooming", () => {
+    const { container, rerender } = render(
+      <Playfield window={WINDOW} clock={null} scroll={PX} hitPosition={SKIN.hitPosition} columnWidths={SKIN.columnWidth} skin={SKIN} />,
+    );
+    observer().resize(CONTAINER_W, H);
+    const { all, layout } = expectedSkinned(WINDOW.fromMs, 0.5);
+    const canvas = container.querySelector("canvas");
+    expect(canvas?.style.width).toBe(`${layout.width}px`);
+    expect(rec.all).toEqual(all);
+    expect(rec.images.length).toBeGreaterThan(0);
+
+    rec.all.length = 0;
+    rerender(
+      <Playfield
+        window={WINDOW}
+        clock={null}
+        scroll={PX}
+        hitPosition={SKIN.hitPosition}
+        columnWidths={SKIN.columnWidth}
+        skin={SKIN}
+        zoom={1.25}
+      />,
+    );
+    const zoomed = expectedSkinned(WINDOW.fromMs, 0.5, 1.25);
+    expect(canvas?.style.width).toBe(`${zoomed.layout.width}px`);
+    expect(rec.all).toEqual(zoomed.all);
+  });
+
+  it("draws procedurally, with no image, when the skin is null", () => {
+    render(<Playfield window={WINDOW} clock={null} scroll={PX} hitPosition={HIT_POSITION} skin={null} />);
+    observer().resize(CONTAINER_W, H);
+    expect(rec.images).toEqual([]);
+    expect(rec.ops).toEqual(expectedOps(WINDOW.fromMs, 0.5));
   });
 });

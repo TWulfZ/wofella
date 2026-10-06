@@ -1,5 +1,12 @@
 import { queryOptions, skipToken, useMutation, useQueryClient } from "@tanstack/react-query";
-import { commands, type AnchorDto, type LabelSubmitDto, type SampleRequestDto, type WindowOpDto } from "@/ipc/bindings";
+import {
+  commands,
+  type AnchorDto,
+  type LabelSubmitDto,
+  type SampleRequestDto,
+  type SkinEntryDto,
+  type WindowOpDto,
+} from "@/ipc/bindings";
 import { call } from "@/ipc/client";
 import { qk } from "@/shared/queryKeys";
 import { toChartWindow, toLabelWindow } from "./mappers";
@@ -12,6 +19,36 @@ export const labelKeys = {
   chartWindow: (md5: string, fromMs: number, toMs: number) => qk("labels", "chartWindow", md5, fromMs, toMs),
   chartAudio: (md5: string) => qk("labels", "chartAudio", md5),
 };
+
+export const SKIN_QUERY_PARAMS = {
+  /** A skin added or switched in osu! shows up without a restart; Reload skin is the immediate path. */
+  listStaleTimeMs: 60_000,
+} as const;
+
+export const skinKeys = {
+  all: qk("skins"),
+  list: () => qk("skins", "list"),
+  get: (folder: string, keymode: number, iniMtime: string | null) => qk("skins", "get", folder, keymode, iniMtime),
+};
+
+export function skinListQuery() {
+  return queryOptions({
+    queryKey: skinKeys.list(),
+    queryFn: () => call(commands.skinList()),
+    staleTime: SKIN_QUERY_PARAMS.listStaleTimeMs,
+  });
+}
+
+export function skinGetQuery(entry: SkinEntryDto | null, keymode: number) {
+  return queryOptions({
+    // The ini mtime is in the key so an edited skin.ini is a new entry rather than a stale hit (ADR 0019).
+    queryKey: skinKeys.get(entry?.folder ?? "", keymode, entry?.iniMtime ?? null),
+    queryFn: entry === null ? skipToken : () => call(commands.skinGet(entry.folder, keymode)),
+    staleTime: Infinity,
+    // Only the skin on screen is kept: its base64 is MBs and its decoded form lives with the screen.
+    gcTime: 0,
+  });
+}
 
 export function labelTaxonomyQuery(keymode: number) {
   return queryOptions({

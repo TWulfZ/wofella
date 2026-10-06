@@ -11,7 +11,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { clampOsuSpeed, DEFAULT_STAGE_PARAMS, Playfield } from "@/features/playfield";
+import { clampOsuSpeed, DEFAULT_STAGE_PARAMS, Playfield, useLoadedSkin } from "@/features/playfield";
 import type { PatternDefDto } from "@/ipc/bindings";
 import { useErrorText } from "@/ipc/errorText";
 import { Button } from "@/shared/ui/button";
@@ -21,12 +21,15 @@ import { ChartHeader } from "./components/ChartHeader";
 import { FlagToggles } from "./components/FlagToggles";
 import { PatternChips } from "./components/PatternChips";
 import { SessionFooter } from "./components/SessionFooter";
+import { SkinPicker } from "./components/SkinPicker";
 import { Transport } from "./components/Transport";
 import { isPatternActive, togglePattern, withoutThumb } from "./draft";
 import { formatClock } from "./format";
 import {
+  hasStoredOsuSpeed,
   readOffsetMs,
   readScrollPrefs,
+  readSkinChoice,
   readZoom,
   scrollFromPrefs,
   type ScrollPrefs,
@@ -35,11 +38,21 @@ import {
   writeOsuSpeed,
   writePxPerMs,
   writeScrollKind,
+  writeSkinChoice,
   writeZoom,
 } from "./prefs";
-import { chartAudioQuery, chartWindowQuery, labelStatsQuery, labelTaxonomyQuery, useLabelMutations } from "./queries";
+import {
+  chartAudioQuery,
+  chartWindowQuery,
+  labelStatsQuery,
+  labelTaxonomyQuery,
+  skinGetQuery,
+  skinListQuery,
+  useLabelMutations,
+} from "./queries";
 import { type AudioInput, type ClosableAudioContext, SectionPlayer } from "./sectionPlayer";
 import { type FlagToggle, initialSession, sampleExclusion, sessionReducer, submitFlags, undoTarget } from "./session";
+import { selectedSkin, skinOptions } from "./skins";
 import type { Anchor, LabelWindow, ThumbSide } from "./types";
 
 export interface LabelScreenParams {
@@ -48,7 +61,7 @@ export interface LabelScreenParams {
   postrollMs: number;
   /** px/ms mode speed until one is chosen. */
   defaultPxPerMs: number;
-  /** osu! speed until one is chosen, when the caller passes none. */
+  /** osu! speed until one is chosen, when neither the caller nor the cfg (ManiaSpeed) gives one. */
   defaultOsuSpeed: number;
 }
 
@@ -89,7 +102,7 @@ export interface LabelScreenProps {
   seed?: string;
   createAudioContext?: () => ClosableAudioContext;
   params?: LabelScreenParams;
-  /** The player's osu! speed (cfg ManiaSpeed), used until a speed is chosen here. */
+  /** Used until a speed is chosen here, ahead of the cfg ManiaSpeed. */
   defaultOsuSpeed?: number;
 }
 
@@ -99,7 +112,7 @@ function newSeed(): string {
 
 export function LabelScreen(props: LabelScreenProps) {
   const { keymode, seed, createAudioContext, params = LABEL_SCREEN_PARAMS } = props;
-  const defaultOsuSpeed = props.defaultOsuSpeed ?? params.defaultOsuSpeed;
+  const defaultOsuSpeed = props.defaultOsuSpeed ?? null;
   const [session, setSession] = useState(() => ({ id: 0, seed: seed ?? newSeed() }));
   return (
     <LabelSession
@@ -121,7 +134,7 @@ interface LabelSessionProps {
   seed: string;
   createAudioContext: () => ClosableAudioContext;
   params: LabelScreenParams;
-  defaultOsuSpeed: number;
+  defaultOsuSpeed: number | null;
   onRestart: () => void;
 }
 
@@ -225,9 +238,37 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
   useEffect(() => {
     player.setOffsetMs(offsetMs);
   }, [player, offsetMs]);
+  const skinList = useQuery(skinListQuery());
+  const [skinChoice, setSkinChoice] = useState(readSkinChoice);
+  const skinEntry = selectedSkin(skinList.data, skinChoice);
+  const skinFile = useQuery(skinGetQuery(skinEntry, keymode));
+  const loadedSkin = useLoadedSkin(skinFile.data ?? null);
+  const [skinReloading, setSkinReloading] = useState(false);
+  const reloadSkin = async (): Promise<void> => {
+    setSkinReloading(true);
+    try {
+      const { data } = await skinList.refetch();
+      const next = selectedSkin(data, skinChoice);
+      // A changed ini mtime is a new query key that fetches on its own; the same key must be refetched by hand.
+      const sameKey =
+        next !== null && skinEntry !== null && next.folder === skinEntry.folder && next.iniMtime === skinEntry.iniMtime;
+      if (sameKey) {
+        await skinFile.refetch();
+      }
+    } finally {
+      setSkinReloading(false);
+    }
+  };
+
   const [scroll, setScroll] = useState(() =>
-    readScrollPrefs({ osuSpeed: defaultOsuSpeed, pxPerMs: params.defaultPxPerMs }),
+    readScrollPrefs({ osuSpeed: params.defaultOsuSpeed, pxPerMs: params.defaultPxPerMs }),
   );
+  const [osuSpeedChosen, setOsuSpeedChosen] = useState(hasStoredOsuSpeed);
+  const cfgOsuSpeed = skinList.data?.maniaSpeed ?? null;
+  // The cfg arrives after the first render, so the default is applied on read instead of seeding the state.
+  const effectiveScroll: ScrollPrefs = osuSpeedChosen
+    ? scroll
+    : { ...scroll, osuSpeed: clampOsuSpeed(defaultOsuSpeed ?? cfgOsuSpeed ?? params.defaultOsuSpeed) };
   const [zoom, setZoom] = useState(readZoom);
   const updateScroll = (patch: Partial<ScrollPrefs>): void => {
     setScroll((current) => ({ ...current, ...patch }));
@@ -235,6 +276,7 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
       writeScrollKind(patch.kind);
     }
     if (patch.osuSpeed !== undefined) {
+      setOsuSpeedChosen(true);
       writeOsuSpeed(patch.osuSpeed);
     }
     if (patch.pxPerMs !== undefined) {
@@ -369,9 +411,9 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
     const speedStep = OSU_SPEED_KEYS[e.key];
     if (speedStep !== undefined) {
       e.preventDefault();
-      if (scroll.kind === "osu") {
-        const osuSpeed = clampOsuSpeed(scroll.osuSpeed + speedStep * DEFAULT_STAGE_PARAMS.osuSpeedStep);
-        updateScroll(scroll.fit ? { osuSpeed, fit: false } : { osuSpeed });
+      if (effectiveScroll.kind === "osu") {
+        const osuSpeed = clampOsuSpeed(effectiveScroll.osuSpeed + speedStep * DEFAULT_STAGE_PARAMS.osuSpeedStep);
+        updateScroll(effectiveScroll.fit ? { osuSpeed, fit: false } : { osuSpeed });
       }
       return;
     }
@@ -487,6 +529,18 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
   const rangeText = anchor === null ? "" : `${formatClock(anchor.t0Ms)}–${formatClock(anchor.t1Ms)}`;
   const durationText =
     anchor === null ? "" : t("label.window.duration", { seconds: ((anchor.t1Ms - anchor.t0Ms) / MS_PER_SECOND).toFixed(1) });
+  const skinError = skinList.isError ? skinList.error : skinFile.isError ? skinFile.error : null;
+  const skinNotices = [
+    ...(skinError === null ? [] : [errorText(skinError)]),
+    ...(loadedSkin.failedSlots.length === 0
+      ? []
+      : [t("label.skin.decodeFailed", { slots: loadedSkin.failedSlots.join(", ") })]),
+    ...(skinList.data?.maniaSpeedBpmScale === true && effectiveScroll.kind === "osu"
+      ? [t("label.skin.bpmScaleIgnored")]
+      : []),
+  ];
+  const skin = loadedSkin.skin;
+  const skinProps = skin === null ? {} : { skin, hitPosition: skin.hitPosition, columnWidths: skin.columnWidth };
   const audioNotice = audio.isError
     ? errorText(audio.error)
     : playback.notice === "decodeFailed"
@@ -537,7 +591,7 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
                 setOffsetMs(value);
                 writeOffsetMs(value);
               }}
-              scroll={scroll}
+              scroll={effectiveScroll}
               onScroll={updateScroll}
               zoom={zoom}
               onZoom={(value) => {
@@ -546,6 +600,25 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
               }}
               onSettle={focusAnswer}
             />
+            <SkinPicker
+              options={skinOptions(skinList.data, keymode)}
+              folder={skinEntry?.folder ?? null}
+              ready={skinList.data !== undefined}
+              reloading={skinReloading}
+              onChange={(folder) => {
+                setSkinChoice({ folder });
+                writeSkinChoice({ folder });
+                focusAnswer();
+              }}
+              onReload={() => {
+                void reloadSkin();
+              }}
+            />
+            {skinNotices.map((notice) => (
+              <p key={notice} role="status" className="text-muted-foreground bg-muted/60 self-start rounded-md px-2.5 py-1 text-xs">
+                {notice}
+              </p>
+            ))}
             {audioNotice !== null && (
               <p role="status" className="text-muted-foreground bg-muted/60 self-start rounded-md px-2.5 py-1 text-xs">
                 {audioNotice}
@@ -555,8 +628,9 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
               <Playfield
                 window={chart.data}
                 clock={playback.clock}
-                scroll={scrollFromPrefs(scroll)}
+                scroll={scrollFromPrefs(effectiveScroll)}
                 zoom={zoom}
+                {...skinProps}
                 className="h-full w-full"
               />
             </div>

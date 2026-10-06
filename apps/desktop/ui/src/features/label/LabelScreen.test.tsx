@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -8,6 +8,9 @@ import type {
   LabelWindowDto,
   PatternDefDto,
   SampleRequestDto,
+  SkinDto,
+  SkinEntryDto,
+  SkinListDto,
 } from "@/ipc/bindings";
 import { type CommandHandlers, type MockCall, mockCommands, mockIpcError } from "@/ipc/mocks";
 import { renderWithRouter } from "@/shared/testing/renderWithRouter";
@@ -47,6 +50,41 @@ function chartWindow(md5: string, fromMs: number, toMs: number): ChartWindowDto 
     },
     chartSpan: { firstMs: 0, endMs: 90_000 },
     audioFilename: "audio.mp3",
+  };
+}
+
+const NO_SKINS: SkinListDto = { skins: [], current: null, maniaSpeed: null, maniaSpeedBpmScale: null };
+
+function skinEntry(folder: string, keymodes: number[], iniMtime = "1"): SkinEntryDto {
+  return { folder, name: folder, keymodes, iniMtime };
+}
+
+const BROKEN_MIME = "image/x-broken";
+
+/** A skin that draws column 3's note from an image, so a skinned frame always issues a drawImage. */
+function skinDto(folder: string, keymode: number, noteMime = "image/png"): SkinDto {
+  return {
+    folder,
+    name: folder,
+    version: 2.5,
+    config: {
+      keys: keymode,
+      columnWidth: Array.from({ length: keymode }, () => 42),
+      columnSpacing: Array.from({ length: keymode - 1 }, () => 0),
+      columnLineWidth: Array.from({ length: keymode + 1 }, () => 2),
+      hitPosition: 428,
+      lightPosition: 413,
+      widthForNoteHeightScale: 42,
+      noteBodyStyle: "repeat_bottom",
+      judgementLine: true,
+      keysUnderNotes: false,
+      upsideDown: false,
+      barlineHeight: 1.2,
+      colours: { column: [], columnLine: null, judgementLine: null, barline: null, hold: null },
+    },
+    images: [{ slot: "note.3", file: 0 }],
+    files: [{ mime: noteMime, scale: 1, width: 100, height: 50, base64: "iVBORw0KGgo=" }],
+    diagnostics: [],
   };
 }
 
@@ -163,6 +201,8 @@ function renderScreen(
       return { id: `01EVENT${eventSeq}` };
     },
     labelUndo: () => null,
+    skinList: () => NO_SKINS,
+    skinGet: (args) => skinDto(String(args["folder"]), Number(args["keymode"])),
     labelReshape: (args) => {
       const anchor = args["anchor"] as AnchorDto;
       const half = (anchor.t1Ms - anchor.t0Ms) / 2;
@@ -695,5 +735,226 @@ describe("LabelScreen scroll and zoom controls", () => {
     expect(zoom).toHaveValue("1.5");
     expect(localStorage.getItem(LABEL_PREFS.zoomKey)).toBe("1.5");
     expect(screen.getByTestId("playfield").querySelector("[class*='max-w']")).toBeNull();
+  });
+});
+
+describe("LabelScreen skins", () => {
+  interface RecordingCanvas {
+    images: unknown[];
+    fills: number;
+  }
+  let canvas: RecordingCanvas;
+  let bitmaps: { close: ReturnType<typeof vi.fn> }[];
+
+  class SizedResizeObserver {
+    constructor(private readonly callback: ResizeObserverCallback) {}
+    observe(target: Element): void {
+      const entry = { target, contentRect: { width: 800, height: 600 } };
+      queueMicrotask(() => {
+        this.callback([entry as unknown as ResizeObserverEntry], this);
+      });
+    }
+    unobserve(): void {
+      // Sized once on observe; nothing to stop.
+    }
+    disconnect(): void {
+      // See unobserve.
+    }
+  }
+
+  beforeEach(() => {
+    canvas = { images: [], fills: 0 };
+    bitmaps = [];
+    vi.stubGlobal("ResizeObserver", SizedResizeObserver);
+    vi.stubGlobal("requestAnimationFrame", () => 0);
+    vi.stubGlobal("cancelAnimationFrame", () => undefined);
+    vi.stubGlobal(
+      "createImageBitmap",
+      vi.fn(async (blob: Blob) => {
+        if (blob.type === BROKEN_MIME) {
+          return Promise.reject(new DOMException("undecodable", "InvalidStateError"));
+        }
+        const bitmap = { width: 100, height: 50, close: vi.fn() };
+        bitmaps.push(bitmap);
+        return Promise.resolve(bitmap);
+      }),
+    );
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      fillStyle: "#000",
+      globalAlpha: 1,
+      fillRect: () => {
+        canvas.fills++;
+      },
+      drawImage: (image: unknown) => {
+        canvas.images.push(image);
+      },
+      setTransform: () => undefined,
+      save: () => undefined,
+      restore: () => undefined,
+      translate: () => undefined,
+      scale: () => undefined,
+    } as unknown as RenderingContext);
+  });
+
+  const LIST: SkinListDto = {
+    skins: [skinEntry("Alpha4K", [4]), skinEntry("Pilot", [4, 7]), skinEntry("Zeta", [7])],
+    current: "Pilot",
+    maniaSpeed: null,
+    maniaSpeedBpmScale: false,
+  };
+
+  function picker(): HTMLSelectElement {
+    return screen.getByRole("combobox", { name: "Skin" });
+  }
+
+  async function pickerReady(): Promise<HTMLSelectElement> {
+    await waitFor(() => {
+      expect(picker()).toBeEnabled();
+    });
+    return picker();
+  }
+
+  it("lists the skins with a block for the keymode first, the rest marked defaults, and starts on the cfg skin", async () => {
+    const calls = renderScreen(undefined, { skinList: () => LIST });
+    await roundLoaded();
+    const select = await pickerReady();
+    expect([...select.options].map((o) => o.text)).toEqual([
+      "None (procedural)",
+      "Pilot",
+      "Zeta",
+      "Alpha4K (defaults)",
+    ]);
+    expect(select).toHaveValue("Pilot");
+    await waitFor(() => {
+      expect(argsOf(calls, "skin_get")).toEqual([{ folder: "Pilot", keymode: 7 }]);
+    });
+    await waitFor(() => {
+      expect(canvas.images).toContain(bitmaps[0]);
+    });
+  });
+
+  it("starts on None when the cfg names no listed skin, and draws procedurally", async () => {
+    const calls = renderScreen(undefined, { skinList: () => ({ ...LIST, current: null }) });
+    await roundLoaded();
+    expect(await pickerReady()).toHaveValue("");
+    await waitFor(() => {
+      expect(canvas.fills).toBeGreaterThan(0);
+    });
+    expect(argsOf(calls, "skin_get")).toEqual([]);
+    expect(canvas.images).toEqual([]);
+  });
+
+  it("lets a stored choice win over the cfg skin", async () => {
+    localStorage.setItem(LABEL_PREFS.skinKey, JSON.stringify({ folder: "Zeta" }));
+    const calls = renderScreen(undefined, { skinList: () => LIST });
+    await roundLoaded();
+    expect(await pickerReady()).toHaveValue("Zeta");
+    await waitFor(() => {
+      expect(argsOf(calls, "skin_get")).toEqual([{ folder: "Zeta", keymode: 7 }]);
+    });
+  });
+
+  it("keeps a stored None over the cfg skin", async () => {
+    localStorage.setItem(LABEL_PREFS.skinKey, JSON.stringify({ folder: null }));
+    const calls = renderScreen(undefined, { skinList: () => LIST });
+    await roundLoaded();
+    expect(await pickerReady()).toHaveValue("");
+    expect(argsOf(calls, "skin_get")).toEqual([]);
+  });
+
+  it("switches to None: stored, the skin's bitmaps closed, and the playfield drawn with no image", async () => {
+    renderScreen(undefined, { skinList: () => LIST });
+    await roundLoaded();
+    await waitFor(() => {
+      expect(canvas.images.length).toBeGreaterThan(0);
+    });
+    await userEvent.selectOptions(await pickerReady(), "");
+    expect(localStorage.getItem(LABEL_PREFS.skinKey)).toBe(JSON.stringify({ folder: null }));
+    expect(bitmaps[0]?.close).toHaveBeenCalledTimes(1);
+    canvas.images.length = 0;
+    canvas.fills = 0;
+    fireEvent.change(screen.getByRole("slider", { name: "Zoom" }), { target: { value: "1.25" } });
+    await waitFor(() => {
+      expect(canvas.fills).toBeGreaterThan(0);
+    });
+    expect(canvas.images).toEqual([]);
+  });
+
+  it("closes the skin's bitmaps when the screen unmounts", async () => {
+    renderScreen(undefined, { skinList: () => LIST });
+    await roundLoaded();
+    await waitFor(() => {
+      expect(bitmaps).toHaveLength(1);
+    });
+    cleanup();
+    expect(bitmaps[0]?.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("draws an image the skin could not decode procedurally and says so", async () => {
+    renderScreen(undefined, {
+      skinList: () => LIST,
+      skinGet: (args) => skinDto(String(args["folder"]), Number(args["keymode"]), BROKEN_MIME),
+    });
+    await roundLoaded();
+    expect(await screen.findByText(/could not be decoded/)).toHaveTextContent("note.3");
+    await waitFor(() => {
+      expect(canvas.fills).toBeGreaterThan(0);
+    });
+    expect(canvas.images).toEqual([]);
+  });
+
+  it("fetches a skin once per folder, keymode and ini mtime across rounds, and again on Reload", async () => {
+    let mtime = "1";
+    const calls = renderScreen(undefined, {
+      skinList: () => ({ ...LIST, skins: [skinEntry("Pilot", [7], mtime)] }),
+    });
+    await roundLoaded();
+    await waitFor(() => {
+      expect(argsOf(calls, "skin_get")).toHaveLength(1);
+    });
+    await userEvent.type(answerBox(), "s{Enter}");
+    await roundLoaded("Beta Song");
+    expect(argsOf(calls, "skin_get")).toHaveLength(1);
+
+    mtime = "2";
+    await userEvent.click(screen.getByRole("button", { name: "Reload skin" }));
+    await waitFor(() => {
+      expect(argsOf(calls, "skin_get")).toHaveLength(2);
+    });
+    expect(argsOf(calls, "skin_list")).toHaveLength(2);
+
+    await userEvent.click(screen.getByRole("button", { name: "Reload skin" }));
+    await waitFor(() => {
+      expect(argsOf(calls, "skin_get")).toHaveLength(3);
+    });
+    expect(argsOf(calls, "skin_list")).toHaveLength(3);
+  });
+
+  it("defaults the osu! speed to the cfg ManiaSpeed until one is stored", async () => {
+    renderScreen(undefined, { skinList: () => ({ ...LIST, maniaSpeed: 30 }) });
+    await roundLoaded();
+    await waitFor(() => {
+      expect(screen.getByRole("spinbutton", { name: "osu! speed" })).toHaveValue(30);
+    });
+    await userEvent.keyboard("{F4}");
+    expect(screen.getByRole("spinbutton", { name: "osu! speed" })).toHaveValue(31);
+    expect(localStorage.getItem(LABEL_PREFS.osuSpeedKey)).toBe("31");
+  });
+
+  it("keeps a stored osu! speed over the cfg ManiaSpeed", async () => {
+    localStorage.setItem(LABEL_PREFS.osuSpeedKey, "12");
+    const calls = renderScreen(undefined, { skinList: () => ({ ...LIST, maniaSpeed: 30 }) });
+    await roundLoaded();
+    await waitFor(() => {
+      expect(argsOf(calls, "skin_list")).toHaveLength(1);
+    });
+    await pickerReady();
+    expect(screen.getByRole("spinbutton", { name: "osu! speed" })).toHaveValue(12);
+  });
+
+  it("notes that BPM-scaled speed is not reproduced when the cfg enables it", async () => {
+    renderScreen(undefined, { skinList: () => ({ ...LIST, maniaSpeedBpmScale: true }) });
+    await roundLoaded();
+    expect(await screen.findByText(/BPM/)).toBeInTheDocument();
   });
 });

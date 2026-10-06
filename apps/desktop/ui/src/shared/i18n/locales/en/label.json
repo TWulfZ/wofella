@@ -28,6 +28,14 @@
       "zoom": "Zoom",
       "zoomValue": "×{{value}}"
     },
+    "skin": {
+      "label": "Skin",
+      "none": "None (procedural)",
+      "defaults": "{{folder}} (defaults)",
+      "reload": "Reload skin",
+      "decodeFailed": "Some skin images could not be decoded and are drawn plainly: {{slots}}",
+      "bpmScaleIgnored": "osu! scales your speed with the BPM; here the speed stays fixed, since that scaling is not reproduced."
+    },
     "audio": {
       "decodeFailed": "This chart's audio could not be decoded, so the window plays without sound."
     },

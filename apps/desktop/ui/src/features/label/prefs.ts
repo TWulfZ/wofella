@@ -24,6 +24,8 @@ export const LABEL_PREFS = {
   pxPerMsKey: "wolluf.label.pxPerMs",
   fitKey: "wolluf.label.fit",
   zoomKey: "wolluf.label.zoom",
+  /** JSON so a skin folder literally named like a sentinel cannot be mistaken for "None". */
+  skinKey: "wolluf.label.skin",
   /** Before scroll modes it held a px/ms number or "fit". */
   legacyScrollKey: "wolluf.label.scroll",
   minOffsetMs: -100,
@@ -83,6 +85,39 @@ export function readScrollPrefs(defaults: ScrollDefaults): ScrollPrefs {
     pxPerMs: clamp(pxPerMs, LABEL_PREFS.minPxPerMs, LABEL_PREFS.maxPxPerMs),
     fit: read(LABEL_PREFS.fitKey) === "true",
   };
+}
+
+/** False until the player picks a speed here; until then the cfg ManiaSpeed default applies. */
+export function hasStoredOsuSpeed(): boolean {
+  return parseNumber(read(LABEL_PREFS.osuSpeedKey)) !== null;
+}
+
+/** `folder: null` is the procedural look; no stored choice follows the cfg's active skin. */
+export interface SkinChoice {
+  folder: string | null;
+}
+
+export function readSkinChoice(): SkinChoice | undefined {
+  const raw = read(LABEL_PREFS.skinKey);
+  if (raw === null) {
+    return undefined;
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed === "object" && parsed !== null && "folder" in parsed) {
+      const { folder } = parsed;
+      if (folder === null || typeof folder === "string") {
+        return { folder };
+      }
+    }
+  } catch {
+    // Unreadable: treated as never chosen.
+  }
+  return undefined;
+}
+
+export function writeSkinChoice(choice: SkinChoice): void {
+  write(LABEL_PREFS.skinKey, JSON.stringify({ folder: choice.folder }));
 }
 
 export function writeScrollKind(kind: ScrollKind): void {

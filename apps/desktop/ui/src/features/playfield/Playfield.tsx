@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/shared/lib/utils";
 import type { Clock } from "./audioClock";
-import { DEFAULT_PLAYFIELD_THEME, draw } from "./draw";
+import { DEFAULT_PLAYFIELD_THEME, draw, drawSkinned } from "./draw";
 import { fitPxPerMs, project } from "./project";
+import { skinLayout } from "./skinLayout";
+import type { LoadedSkin } from "./skinModel";
 import {
   DEFAULT_STAGE_PARAMS,
   judgeYFromHitPosition,
@@ -24,6 +26,8 @@ export interface PlayfieldProps {
   columnWidths?: readonly number[];
   zoom?: number;
   rate?: number;
+  /** Null or absent draws procedurally; the skin's slots that did not load fall back one by one. */
+  skin?: LoadedSkin | null;
   className?: string;
 }
 
@@ -34,6 +38,7 @@ export function Playfield(props: PlayfieldProps) {
     columnWidths,
     zoom = DEFAULT_STAGE_PARAMS.defaultZoom,
     rate = 1,
+    skin = null,
   } = props;
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -57,10 +62,13 @@ export function Playfield(props: PlayfieldProps) {
   }, []);
 
   const { height } = size;
-  const stageWidth = stageWidthPx(columnWidths ?? uniformColumnWidths(chartWindow.layout.columns.length), height, zoom);
+  const layout = useMemo(() => (skin === null || height <= 0 ? null : skinLayout(skin, height, zoom)), [skin, height, zoom]);
+  const stageWidth =
+    layout?.width ??
+    stageWidthPx(columnWidths ?? uniformColumnWidths(chartWindow.layout.columns.length), height, zoom);
   const width = Math.min(stageWidth, size.width);
   const left = (size.width - width) / 2;
-  const judgeY = judgeYFromHitPosition(hitPosition, height);
+  const judgeY = layout?.judgeY ?? judgeYFromHitPosition(hitPosition, height);
   const pxPerMs = scroll === "fit" ? fitPxPerMs(chartWindow, height, judgeY) : scrollPxPerMs(scroll, height, rate);
 
   useEffect(() => {
@@ -79,7 +87,12 @@ export function Playfield(props: PlayfieldProps) {
 
     const view = { width, height, judgeY };
     const render = (nowMs: number): void => {
-      draw(ctx, project(chartWindow, { ...view, nowMs, pxPerMs }), DEFAULT_PLAYFIELD_THEME, view);
+      const projection = project(chartWindow, { ...view, nowMs, pxPerMs });
+      if (skin === null || layout === null) {
+        draw(ctx, projection, DEFAULT_PLAYFIELD_THEME, view);
+      } else {
+        drawSkinned(ctx, projection, layout, skin, DEFAULT_PLAYFIELD_THEME, view);
+      }
     };
     // Paused at the chosen speed, so pressing play does not rescale what was just read.
     const renderStatic = (): void => {
@@ -107,7 +120,7 @@ export function Playfield(props: PlayfieldProps) {
     return () => {
       cancelAnimationFrame(frame);
     };
-  }, [chartWindow, clock, pxPerMs, judgeY, width, height]);
+  }, [chartWindow, clock, pxPerMs, judgeY, width, height, skin, layout]);
 
   return (
     <div ref={containerRef} className={cn("relative overflow-hidden", className)}>

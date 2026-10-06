@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  hasStoredOsuSpeed,
   LABEL_PREFS,
+  readSkinChoice,
   readOffsetMs,
   readScrollPrefs,
   readZoom,
@@ -11,6 +13,7 @@ import {
   writeOsuSpeed,
   writePxPerMs,
   writeScrollKind,
+  writeSkinChoice,
   writeZoom,
 } from "./prefs";
 
@@ -125,6 +128,49 @@ describe("unavailable storage", () => {
       writePxPerMs(1);
       writeFit(true);
       writeZoom(1.5);
+    }).not.toThrow();
+  });
+});
+
+describe("osu! speed choice", () => {
+  it("counts as chosen only once a usable speed is stored", () => {
+    expect(hasStoredOsuSpeed()).toBe(false);
+    localStorage.setItem(LABEL_PREFS.osuSpeedKey, "soon");
+    expect(hasStoredOsuSpeed()).toBe(false);
+    writeOsuSpeed(27);
+    expect(hasStoredOsuSpeed()).toBe(true);
+  });
+});
+
+describe("skin choice", () => {
+  it("is unset until written, and round-trips a folder or None", () => {
+    expect(readSkinChoice()).toBeUndefined();
+    writeSkinChoice({ folder: "none" });
+    expect(readSkinChoice()).toEqual({ folder: "none" });
+    writeSkinChoice({ folder: null });
+    expect(readSkinChoice()).toEqual({ folder: null });
+  });
+
+  it("reads garbage as unset", () => {
+    for (const raw of ["Pilot Skin", "{}", '{"folder":3}', "null"]) {
+      localStorage.setItem(LABEL_PREFS.skinKey, raw);
+      expect(readSkinChoice(), raw).toBeUndefined();
+    }
+  });
+
+  it("survives a storage that throws", () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+    });
+    expect(readSkinChoice()).toBeUndefined();
+    expect(hasStoredOsuSpeed()).toBe(false);
+    expect(() => {
+      writeSkinChoice({ folder: "A" });
     }).not.toThrow();
   });
 });

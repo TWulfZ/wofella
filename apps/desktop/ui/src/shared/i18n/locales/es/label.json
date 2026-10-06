@@ -28,6 +28,14 @@
       "zoom": "Zoom",
       "zoomValue": "×{{value}}"
     },
+    "skin": {
+      "label": "Skin",
+      "none": "Ninguna (procedural)",
+      "defaults": "{{folder}} (por defecto)",
+      "reload": "Recargar skin",
+      "decodeFailed": "Algunas imágenes de la skin no se pudieron decodificar y se dibujan sin skin: {{slots}}",
+      "bpmScaleIgnored": "osu! escala tu velocidad con el BPM; aquí la velocidad es fija, porque ese escalado no se reproduce."
+    },
     "audio": {
       "decodeFailed": "No se pudo decodificar el audio de este mapa, así que la ventana se reproduce sin sonido."
     },

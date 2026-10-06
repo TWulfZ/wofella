@@ -63,7 +63,7 @@ Rejected:
 - [x] T5 — `codec/skin_ini.rs` pure parser. Route: delegated (writer). Tier: medium. Commit: `feat(source-osu): parse skin.ini mania sections as lazer does`
 - [x] T6 — `source-osu/src/skins.rs` read-only resolution (lookup chain, IHDR and magic, caps), `corpus_skins`. Route: delegated (writer + one correction). Tier: **high** (verifier). Commit: `feat(source-osu): resolve skin images read-only with lazer's lookup`
 - [x] T7 — app skins slice plus `skin_list` (with current, cfg speed defaults, ini mtime) and `skin_get` commands, errors, bindings. Route: delegated (writer) + parent fixes. Tier: **high** (verifier). Commit: `feat(desktop): serve osu! skins and cfg speed defaults over IPC`
-- [ ] T8 — UI skin loader (ImageBitmap cache, tall-body crop) and picker defaulting to cfg `Skin`. Route: delegated (writer). Tier: medium. Commit: —
+- [x] T8 — UI skin loader (ImageBitmap cache, tall-body crop) and picker defaulting to cfg `Skin`; cfg `ManiaSpeed` default. Route: delegated (writer) + parent fixes. Tier: medium. Commit: `feat(ui): pick an osu! skin and default speed in the label screen`
 - [x] T9 — Skin renderer (`skinLayout.ts`, `draw.ts`): columns, lines, hint, notes, LN Stretch/RepeatBottom, flipped tail, keys, stage, per-slot fallback. Route: delegated (writer). Tier: medium. Commit: `feat(ui): render the playfield with an osu! legacy mania skin`
 - [ ] T10 — Close: full gates, corpus run (osu! closed), the pilot's side-by-side check, remove this document. Tier: high. Commit: —
 
@@ -103,6 +103,18 @@ Rejected:
   - **RED:** missing modules and `spans` → GREEN, 98 playfield tests.
   - **Parent:** a non-positive `widthForNoteHeightScale` hid every note (RED `expected +0 to be close to 35.16`) → now falls back to the narrowest column as lazer does. UI vitest 326 passed; tsc and lint clean.
   - **Unverified approximations, to be checked side by side:** key height ×k (not lazer's ×k/1.6), body tiling, zoom not moving the judgement line.
+- 2026-10-06 T8:
+  - **RED:** loadSkin 8/8, useLoadedSkin 5/5, Playfield width, prefs 4, LabelScreen skins 11/11 → GREEN.
+  - **Review:** no confirmed defects. Two of the seven suggestions were applied by the parent:
+    - the stale entry is cleared in the cleanup, so a returning DTO object cannot surface closed bitmaps;
+    - `imageOrientation: "none"` (RED via mutation: 1 failed) so bitmaps match the header sizes.
+  - **Deferred** (recorded, not done):
+    - cancelling superseded loads;
+    - crop to the visible length instead of 4096 px (affects Stretch bodies);
+    - an early F3/F4 before the skin list arrives overrides the cfg speed;
+    - server diagnostics not shown;
+    - extra exports.
+  - **Gates:** UI vitest 42 files / 357 passed; tsc, lint, build ok.
 
 ## Next step
-T8: UI skin loader (`skinList`/`skinGet` → ImageBitmaps, cache keyed by folder+keymode+iniMtime, `.close()` on change), picker defaulting to `current`, osu! speed default from `maniaSpeed`, HitPosition and column widths from the skin into the Playfield; then T10. Research material: `<scratchpad>/skins-research/{PLAN,REPORTS}.md` and the lazer sources under `<scratchpad>/skins-research/lazer-legacy-mania/src/`.
+T10: CI installer for the pilot; side-by-side with stable (active skin, a Stretch skin with a tall body, F3/F4 direction); full gate block; remove this document. Research material: `<scratchpad>/skins-research/{PLAN,REPORTS}.md` and the lazer sources under `<scratchpad>/skins-research/lazer-legacy-mania/src/`.
