@@ -35,7 +35,7 @@ function RootLayout() {
         <div className="mx-auto flex h-full w-full max-w-5xl items-center gap-6 px-6">
           <div className="flex shrink-0 items-center gap-2.5">
             <BrandMark className="size-8" />
-            <span className="font-display text-lg font-bold tracking-tight">{t("common.appName")}</span>
+            <span className="font-display text-lg font-extrabold tracking-tight italic">{t("common.appName")}</span>
           </div>
           <nav aria-label={t("common.nav.label")} className="flex h-full shrink-0 items-center gap-1">
             {NAV.map(({ to, labelKey, icon: Icon }) => (

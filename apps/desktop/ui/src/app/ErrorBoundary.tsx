@@ -68,7 +68,7 @@ export function RootErrorView(props: ErrorComponentProps) {
       <header className="bg-header osu-triangles h-14 border-b">
         <div className="mx-auto flex h-full w-full max-w-5xl items-center gap-2.5 px-6">
           <BrandMark className="size-8" />
-          <span className="font-display text-lg font-bold tracking-tight">{t("common.appName")}</span>
+          <span className="font-display text-lg font-extrabold tracking-tight italic">{t("common.appName")}</span>
         </div>
       </header>
       <main className="flex flex-1 flex-col justify-center">
