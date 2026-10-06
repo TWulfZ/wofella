@@ -150,7 +150,11 @@ Read-only scan of `<install>/Skins` on 2026-10-06 with a Python scanner (`python
 - One reference in the active skin points to a subfolder where the file does not exist, while the file sits in the skin root. lazer would then use the default element; stable's behaviour is **unverified**.
 - Folder names start with `-` followed by spaces, contain `#`, non-ASCII letters, `!`, `'`, `;`, `+` and commas, and two differ only by a ` (1)` suffix. The cfg `Skin` value is the exact folder name; its `#` is not a comment.
 
-## Open questions for the pilot's side-by-side check
+## Pilot check (2026-10-06, Windows portable build)
+The pilot reported the Label screen working correctly on Windows: section audio in sync, percy skins drawing their tail gap, skins loading and scrolling smoothly. WSLg was choppy for audio and slow to draw because it has no GPU (`webkit://gpu`: no hardware acceleration), so Windows is the reference platform. No pixel-level comparison against stable was made, so the items below stay open.
+
+## Open questions for a side-by-side check
+- Percy lead-in scale: natural aspect (31.7 stable px for the pilot's 138×40000 body) against lazer's 32800-unit stretch (about 48.7 px).
 - Key image height (lazer: no 1.6 factor).
 - RepeatBottom tiling against lazer's stretch hack.
 - Stable's fallback for a skin without `Keys: 7` and for an explicit path that does not exist.
