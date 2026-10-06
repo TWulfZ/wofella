@@ -403,9 +403,9 @@ mod tests {
     }
 
     #[test]
-    fn chordbracket_beats_light_chordstream() {
+    fn chordtrill_beats_light_chordstream() {
         let chart = chart![step = 100; "x.x....", ".x.x...", "..x.x..", "...x.x."];
-        let s = only(&run_loose(&chart), "regular.stream.chordbracket");
+        let s = only(&run_loose(&chart), "regular.stream.chordtrill");
         assert!(tagged(&s, "regular.stream.chordstream_light"), "{s:?}");
     }
 

@@ -3,7 +3,7 @@
 # A stage whose golden hash changes must bump its VERSION in the same commit.
 
 [stages."chart_label"]
-version = 3
+version = 4
 golden = "e572e79871f8111a594d1daac78f154f0d349e46e3bc889fd7e07b4661640379"
 
 [stages."chart_parse"]
@@ -11,5 +11,5 @@ version = 1
 golden = "ba3334e1f848735b9f7cdbfd9837aaa4c5557fb0a8c128ad56da83a6988e1c59"
 
 [stages."patterns"]
-version = 4
-golden = "74c199191b7c8e05a661b3b3764791003f53d87c2ce12b8510c2fd9fda971110"
+version = 5
+golden = "4455da31eae4720bf7f051bbf06f336f2027584e0aff8963e067b30f279ba081"

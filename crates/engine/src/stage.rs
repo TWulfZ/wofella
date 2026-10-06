@@ -77,7 +77,7 @@ mod tests {
             .collect();
         assert_eq!(
             ids,
-            [("chart_label", 3), ("chart_parse", 1), ("patterns", 4)]
+            [("chart_label", 4), ("chart_parse", 1), ("patterns", 5)]
         );
     }
 

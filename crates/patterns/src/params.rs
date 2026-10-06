@@ -128,7 +128,7 @@ pub struct StreamParams {
     pub split_trill_min_rows: u32,
     pub bracket_min_rows: u32,
     /// Interlude `Chordstream_7K.BRACKETS`: 3 jackless, non-roll chord rows.
-    pub chordbracket_min_rows: u32,
+    pub chordtrill_min_rows: u32,
 }
 
 impl Default for StreamParams {
@@ -147,7 +147,7 @@ impl Default for StreamParams {
             jumptrill_min_rows: 4,
             split_trill_min_rows: 3,
             bracket_min_rows: 4,
-            chordbracket_min_rows: 3,
+            chordtrill_min_rows: 3,
         }
     }
 }
@@ -334,7 +334,7 @@ impl Default for SegmentParams {
                 id("regular.stream.jumptrill"),
                 id("regular.stream.bracket"),
                 id("regular.stream.trill"),
-                id("regular.stream.chordbracket"),
+                id("regular.stream.chordtrill"),
                 id("regular.stream.roll"),
                 id("regular.jack.anchor"),
                 // Below the shapes a staggered section may contain, above the generic streams
@@ -387,7 +387,7 @@ mod tests {
 
     // Frozen on first computation: any change to a default or to the params layout moves every
     // pattern vkey, so it must be deliberate.
-    const DEFAULT_HASH: &str = "9e58b685d887e34d1ae451ebb2560098b475209c4ed5c2cf68ea431ac671607e";
+    const DEFAULT_HASH: &str = "c3ab1d900b3c6ea61a62914925a8d61f91cedc38e4690023f45bd69daa691d40";
 
     #[test]
     fn default_params_hash_is_frozen() {

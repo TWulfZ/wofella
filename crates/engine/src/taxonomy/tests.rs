@@ -97,14 +97,14 @@ fn taxonomy_vocabulary_decisions() {
         assert!(by_id(k7(), gone).is_none(), "{gone}");
     }
     let axis = |id: &str| by_id(k7(), id).unwrap().axis.as_str();
-    assert_eq!(axis("regular.stream.chordbracket"), "7k.regular.stream");
+    assert_eq!(axis("regular.stream.chordtrill"), "7k.regular.stream");
     assert_eq!(axis("ln.inverse.gap"), "7k.ln.inverse");
     assert_eq!(axis("ln.release.timing"), "7k.ln.release");
     let desc = |id: &str| by_id(k7(), id).unwrap().description;
     assert!(desc("regular.jack.minijack").contains("exactly two"));
     assert!(desc("regular.jack.longjack").contains("three or more"));
     assert!(desc("regular.stream.bracket").contains("two or more trills"));
-    for id in ["regular.stream.jumptrill", "regular.stream.chordbracket"] {
+    for id in ["regular.stream.jumptrill", "regular.stream.chordtrill"] {
         assert!(desc(id).contains("more than four"), "{id}");
     }
 }

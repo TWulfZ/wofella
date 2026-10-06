@@ -31,7 +31,7 @@ pub static K7: [(PatternId, AxisId); 26] = [
     pair("regular.stream.jumptrill", STREAM),
     pair("regular.stream.split_trill", STREAM),
     pair("regular.stream.bracket", STREAM),
-    pair("regular.stream.chordbracket", STREAM),
+    pair("regular.stream.chordtrill", STREAM),
     pair("ln.general.density", "7k.ln.general"),
     pair("ln.general.chord", "7k.ln.general"),
     pair("ln.tech.hybrid", "7k.ln.tech"),

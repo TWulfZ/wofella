@@ -20,7 +20,7 @@ regular.stream.trill
 regular.stream.jumptrill
 regular.stream.split_trill
 regular.stream.bracket
-regular.stream.chordbracket
+regular.stream.chordtrill
 ln.general.density
 ln.general.chord
 ln.tech.hybrid

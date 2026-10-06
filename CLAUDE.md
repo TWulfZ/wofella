@@ -29,7 +29,7 @@ Every change request runs through the **`wolluf-odd` skill** (Organic Driven Dev
 - Never commit real beatmaps, audio, replays or the user's DBs. Fixtures are synthetic or minimized and anonymized.
 
 ## Domain facts that are easy to get wrong
-- The 7K Regular axes are **jack, tech, speed, stream**. Stamina is derived. The LN axes are general, tech, inverse, release. Pattern ids and definitions (minijack = 2, longjack = 3+, bracket vs chordbracket, thumb) are in ADR 0017.
+- The 7K Regular axes are **jack, tech, speed, stream**. Stamina is derived. The LN axes are general, tech, inverse, release. Pattern ids and definitions (minijack = 2, longjack = 3+, bracket vs chordtrill, thumb) are in ADR 0017; community terms win over coined ones (its 2026-10-06 amendment).
 - This stable build (osu!.db 20260924) saves **failed plays** to scores.db and `Data/r` (fails appear from 2026-04 on). The `Data/r` naming is `<beatmap md5>-<FILETIME>.osr`. The `.osg` layout, invariants and verdicts are in `docs/research/04-osg-format.md` (ADR 0012, Accepted).
 - The cfg `Username` can be garbage (`TWulfZasdasdasd d jSS||`), so identity matches by normalized prefix: only the session user (aliases equal to, or a prefix of, the newest cfg login, normalized length ≥ 4) is auto-selected; every other alias is listed unticked, with no suggestion (architecture §5.6, ADR 0005).
 - Replay time must accumulate **all** frames, including lead-in; osrparse is wrong here. Rate-mod windows are `floor(base × rate)` in map time. Under ScoreV2, LN heads and tails are judged separately. LN judging is approximate, so tag it with a confidence.

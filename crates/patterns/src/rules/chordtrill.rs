@@ -1,6 +1,6 @@
-//! `regular.stream.chordbracket`: a 2–3-note chord shape moving across columns without jacking
+//! `regular.stream.chordtrill`: a 2–3-note chord shape moving across columns without jacking
 //! (ADR 0017). Adapts Interlude prelude `Chordstream_7K.BRACKETS` (MIT, see NOTICE: 3 rows,
-//! no roll, no jack, but chords of 3+): a run of at least `chordbracket_min_rows` stream-fast
+//! no roll, no jack, but chords of 3+): a run of at least `chordtrill_min_rows` stream-fast
 //! press rows of 2–3 notes where each row shares no column with the previous one and is not an
 //! Interlude roll (it interleaves with the previous row rather than sitting on one side of it),
 //! and no row repeats the row two before it, which would be a jumptrill.
@@ -16,11 +16,11 @@ use crate::view::ChartView;
 const SHAPE_MIN_NOTES: u32 = 2;
 const SHAPE_MAX_NOTES: u32 = 3;
 
-pub(super) const ID: PatternId = PatternId::from_static("regular.stream.chordbracket");
+pub(super) const ID: PatternId = PatternId::from_static("regular.stream.chordtrill");
 
-pub struct Chordbracket;
+pub struct Chordtrill;
 
-impl PatternRule for Chordbracket {
+impl PatternRule for Chordtrill {
     fn id(&self) -> PatternId {
         ID
     }
@@ -33,7 +33,7 @@ impl PatternRule for Chordbracket {
         true
     }
 
-    /// Strength: `saturating(rows, chordbracket_min_rows)`.
+    /// Strength: `saturating(rows, chordtrill_min_rows)`.
     fn detect(&self, view: &ChartView<'_>, params: &PatternParams) -> Vec<Candidate> {
         let p = &params.stream;
         let rows = view.rows();
@@ -62,14 +62,14 @@ impl PatternRule for Chordbracket {
             .iter()
             .filter_map(|run| {
                 let span = rows_of(rows, run);
-                if u32::try_from(span.len()).map_or(true, |n| n < p.chordbracket_min_rows) {
+                if u32::try_from(span.len()).map_or(true, |n| n < p.chordtrill_min_rows) {
                     return None;
                 }
                 span_candidate(
                     ID,
                     view.keymode(),
                     &span,
-                    saturating(span.len(), p.chordbracket_min_rows),
+                    saturating(span.len(), p.chordtrill_min_rows),
                 )
             })
             .collect();
@@ -86,29 +86,29 @@ mod tests {
     use crate::rules::testkit::{cand, detect};
 
     #[test]
-    fn a_two_note_shape_moving_without_jacks_is_a_chordbracket() {
+    fn a_two_note_shape_moving_without_jacks_is_a_chordtrill() {
         let chart = chart![step = 100; "x.x....", ".x.x...", "..x.x..", "...x.x."];
         assert_eq!(
-            detect(&Chordbracket, &chart),
+            detect(&Chordtrill, &chart),
             [cand(ID, 0, 300, &[0, 1, 2, 3, 4, 5], 666)]
         );
     }
 
     #[test]
-    fn jumptrills_and_chord_rolls_are_not_chordbrackets() {
+    fn jumptrills_and_chord_rolls_are_not_chordtrills() {
         let jumptrill = chart![step = 100; "x.x....", ".x.x...", "x.x....", ".x.x..."];
-        assert!(detect(&Chordbracket, &jumptrill).is_empty());
+        assert!(detect(&Chordtrill, &jumptrill).is_empty());
         let roll = chart![step = 100; "xx.....", "..xx...", "....xx."];
-        assert!(detect(&Chordbracket, &roll).is_empty());
+        assert!(detect(&Chordtrill, &roll).is_empty());
     }
 
     #[test]
     fn near_misses() {
         let short = chart![step = 100; "x.x....", ".x.x..."];
-        assert!(detect(&Chordbracket, &short).is_empty());
+        assert!(detect(&Chordtrill, &short).is_empty());
         let big = chart![step = 100; "x.x.x.x", ".x.x.x.", "x.x.x.x"];
-        assert!(detect(&Chordbracket, &big).is_empty());
+        assert!(detect(&Chordtrill, &big).is_empty());
         let jacked = chart![step = 100; "x.x....", "..xx...", ".x..x.."];
-        assert!(detect(&Chordbracket, &jacked).is_empty());
+        assert!(detect(&Chordtrill, &jacked).is_empty());
     }
 }
