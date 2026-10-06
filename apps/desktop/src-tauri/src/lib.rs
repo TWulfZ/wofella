@@ -66,6 +66,8 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::chart::chart_audio,
             commands::skin::skin_list,
             commands::skin::skin_get,
+            commands::label::label_export,
+            commands::app::app_open_exports_dir::<tauri::Wry>,
         ])
 }
 

@@ -101,6 +101,11 @@
       "goldTotal": "Gold set: {{count}}",
       "seed": "Semilla {{seed}}"
     },
+    "export": {
+      "button": "Exportar etiquetas",
+      "done_one": "Exportada {{count}} etiqueta a {{file}}",
+      "done_other": "Exportadas {{count}} etiquetas a {{file}}"
+    },
     "done": {
       "exhausted": "No quedan ventanas por etiquetar.",
       "quit": "Sesión terminada.",

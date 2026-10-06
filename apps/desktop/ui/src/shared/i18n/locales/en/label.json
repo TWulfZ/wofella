@@ -101,6 +101,11 @@
       "goldTotal": "Gold set: {{count}}",
       "seed": "Seed {{seed}}"
     },
+    "export": {
+      "button": "Export labels",
+      "done_one": "Exported {{count}} label to {{file}}",
+      "done_other": "Exported {{count}} labels to {{file}}"
+    },
     "done": {
       "exhausted": "No window left to label.",
       "quit": "Session ended.",

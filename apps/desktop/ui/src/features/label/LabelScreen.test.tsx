@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   AnchorDto,
   ChartWindowDto,
@@ -14,6 +14,7 @@ import type {
   SkinListDto,
 } from "@/ipc/bindings";
 import { type CommandHandlers, type MockCall, mockCommands, mockIpcError } from "@/ipc/mocks";
+import { i18n } from "@/shared/i18n";
 import { renderWithRouter } from "@/shared/testing/renderWithRouter";
 import { LabelScreen, type LabelScreenProps } from "./LabelScreen";
 import { LABEL_PREFS } from "./prefs";
@@ -1088,5 +1089,58 @@ describe("LabelScreen skins", () => {
     renderScreen(undefined, { skinList: () => ({ ...LIST, maniaSpeedBpmScale: true }) });
     await roundLoaded();
     expect(await screen.findByText(/BPM/)).toBeInTheDocument();
+  });
+});
+
+describe("LabelScreen export", () => {
+  const EXPORTED = { path: "C:\\Users\\me\\AppData\\Local\\wolluf\\data\\exports\\gold-7k-20260928T231356Z.jsonl", rows: 37 };
+
+  afterEach(async () => {
+    await i18n.changeLanguage("en");
+  });
+
+  it("exports the gold set, opens the exports folder and names the file", async () => {
+    const calls = renderScreen(undefined, { labelExport: () => EXPORTED, appOpenExportsDir: () => null });
+    await roundLoaded();
+
+    await userEvent.click(screen.getByRole("button", { name: "Export labels" }));
+
+    expect(await screen.findByText("Exported 37 labels to gold-7k-20260928T231356Z.jsonl")).toHaveAttribute(
+      "role",
+      "status",
+    );
+    expect(calls.filter((c) => c.cmd === "label_export" || c.cmd === "app_open_exports_dir")).toEqual([
+      { cmd: "label_export", args: { keymode: 7 } },
+      { cmd: "app_open_exports_dir", args: {} },
+    ]);
+
+    await i18n.changeLanguage("es");
+    expect(await screen.findByRole("button", { name: "Exportar etiquetas" })).toBeInTheDocument();
+    expect(screen.getByText("Exportadas 37 etiquetas a gold-7k-20260928T231356Z.jsonl")).toBeInTheDocument();
+  });
+
+  it("is disabled while the export runs", async () => {
+    renderScreen(undefined, { labelExport: () => never(), appOpenExportsDir: () => null });
+    await roundLoaded();
+
+    await userEvent.click(screen.getByRole("button", { name: "Export labels" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Export labels" })).toBeDisabled();
+    });
+  });
+
+  it("shows a failed export as an error and does not open the folder", async () => {
+    const calls = renderScreen(undefined, {
+      labelExport: () => mockIpcError("INTERNAL"),
+      appOpenExportsDir: () => null,
+    });
+    await roundLoaded();
+
+    await userEvent.click(screen.getByRole("button", { name: "Export labels" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Unexpected internal error");
+    expect(argsOf(calls, "app_open_exports_dir")).toEqual([]);
+    expect(screen.getByRole("button", { name: "Export labels" })).toBeEnabled();
   });
 });

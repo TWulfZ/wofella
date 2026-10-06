@@ -53,6 +53,9 @@ export const commands = {
 	skinList: () => typedError<SkinListDto, IpcError>(__TAURI_INVOKE("skin_list")),
 	/**  One skin's `[Mania]` block and images for `keymode`; the webview sends only the folder name. */
 	skinGet: (folder: string, keymode: number) => typedError<SkinDto, IpcError>(__TAURI_INVOKE("skin_get", { folder, keymode })),
+	/**  Into `<data dir>/exports/`, which the opener scope already covers (no save dialog). */
+	labelExport: (keymode: number) => typedError<LabelExportDto, IpcError>(__TAURI_INVOKE("label_export", { keymode })),
+	appOpenExportsDir: () => typedError<null, IpcError>(__TAURI_INVOKE("app_open_exports_dir")),
 };
 
 /** Events */
@@ -299,6 +302,11 @@ export type KeymodeCountDto = {
 export type LabelEventDto = {
 	/**  The feedback event's ULID; undo takes it back. */
 	id: string,
+};
+
+export type LabelExportDto = {
+	path: string,
+	rows: number,
 };
 
 /**  Over the self profile's labels that are not undone. Lists are sorted by key. */

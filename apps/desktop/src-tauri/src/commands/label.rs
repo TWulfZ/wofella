@@ -1,7 +1,7 @@
 use wolluf_app::errors::IpcError;
 use wolluf_app::features::labeling::dto::{
-    AnchorDto, LabelEventDto, LabelStatsDto, LabelSubmitDto, LabelWindowDto, PatternDefDto,
-    SampleRequestDto, WindowOpDto,
+    AnchorDto, LabelEventDto, LabelExportDto, LabelStatsDto, LabelSubmitDto, LabelWindowDto,
+    PatternDefDto, SampleRequestDto, WindowOpDto,
 };
 
 use super::Ctx;
@@ -69,4 +69,15 @@ pub async fn label_undo(ctx: Ctx<'_>, event_id: String) -> Result<(), IpcError> 
 #[tracing::instrument(skip_all)]
 pub async fn label_stats(ctx: Ctx<'_>) -> Result<LabelStatsDto, IpcError> {
     ctx.labeling().stats().await.map_err(to_ipc)
+}
+
+/// Into `<data dir>/exports/`, which the opener scope already covers (no save dialog).
+#[tauri::command]
+#[specta::specta]
+#[tracing::instrument(skip_all)]
+pub async fn label_export(ctx: Ctx<'_>, keymode: u8) -> Result<LabelExportDto, IpcError> {
+    ctx.labeling()
+        .export_to_data_dir(keymode)
+        .await
+        .map_err(to_ipc)
 }

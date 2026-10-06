@@ -38,6 +38,7 @@ const CACHE_DB: &str = "cache.db";
 const VAULT_DIR: &str = "vault";
 const BACKUPS_DIR: &str = "backups";
 const LOGS_DIR: &str = "logs";
+const EXPORTS_DIR: &str = "exports";
 const LOCK_FILE: &str = "wolluf.lock";
 
 /// Spec 003: a bus slower than 256 events means the receiver lags; the desktop bridge then
@@ -73,6 +74,10 @@ impl AppPaths {
 
     pub fn logs_dir(&self) -> PathBuf {
         self.data_dir.join(LOGS_DIR)
+    }
+
+    pub fn exports_dir(&self) -> PathBuf {
+        self.data_dir.join(EXPORTS_DIR)
     }
 
     pub fn user_db(&self) -> PathBuf {

@@ -383,6 +383,41 @@ impl<'a> LabelingService<'a> {
     /// install: only `app::export` may write there (D9).
     pub async fn export_to(&self, path: PathBuf) -> Result<LabelExportDto, AppError> {
         let text = self.export_jsonl().await?;
+        self.write_export(path, text).await
+    }
+
+    /// The shell's export: `<data dir>/exports/gold-<k>k-<UTC stamp>.jsonl`, the CLI format
+    /// restricted to `keymode`, because the file name promises it. An empty gold set still
+    /// writes an (empty) file, so the shell always has something to show; a second export in
+    /// the same second replaces the first.
+    pub async fn export_to_data_dir(&self, keymode: u8) -> Result<LabelExportDto, AppError> {
+        let wanted = labelled_profile(keymode)?.keymode;
+        let labels = match self.self_profile().await? {
+            Some(me) => self.labels(me).await?,
+            None => Vec::new(),
+        };
+        let text = export_lines(labels.into_iter().filter(|l| l.keymode == wanted).collect())?;
+        let name = format!(
+            "gold-{keymode}k-{}.jsonl",
+            compact_utc(self.ctx.clock().now())
+        );
+        self.write_export(self.ctx.paths().exports_dir().join(name), text)
+            .await
+    }
+
+    /// Created on demand, so the shell can open it before the first export.
+    pub async fn exports_dir(&self) -> Result<PathBuf, AppError> {
+        let dir = self.ctx.paths().exports_dir();
+        tokio::task::spawn_blocking(move || {
+            std::fs::create_dir_all(&dir)
+                .map_err(|e| AppError::internal(format!("create {}: {e}", dir.display())))?;
+            Ok(dir)
+        })
+        .await
+        .map_err(blocking_join_error)?
+    }
+
+    async fn write_export(&self, path: PathBuf, text: String) -> Result<LabelExportDto, AppError> {
         let roots: Vec<PathBuf> = self
             .ctx
             .installs()
@@ -584,6 +619,18 @@ fn export_lines(mut labels: Vec<GoldLabel>) -> Result<String, AppError> {
         out.push('\n');
     }
     Ok(out)
+}
+
+/// `yyyymmddThhmmssZ`, the backup file stamp (spec 003), cut from the RFC 3339 form because
+/// the store keeps its compact formatter crate-private.
+fn compact_utc(t: UnixUs) -> String {
+    let rfc = format_rfc3339_ms(t);
+    let mut out: String = rfc[..19]
+        .chars()
+        .filter(|c| *c != '-' && *c != ':')
+        .collect();
+    out.push('Z');
+    out
 }
 
 fn patterns_of(l: &GoldLabel) -> &[PatternId] {

@@ -36,11 +36,16 @@ Rejected:
 - A tag `v0.1.0-alpha.1` builds and creates a pre-release with `wolluf.exe` and the installer; a tag not matching the version fails → first tag run (the pilot approves the tag).
 
 ## Tasks
-- [ ] T1 — Label export to the data dir + open folder (app, commands, UI button). Route: delegated (writer). Tier: medium. Commit: —
-- [ ] T2 — Release workflow on `v*` tags (version check, build, portable + installer, pre-release). Route: inline. Tier: medium. Commit: —
+- [x] T1 — Label export to the data dir + open folder (app, commands, UI button). Route: delegated (writer). Tier: medium. Commit: `feat(desktop): export gold labels from the label screen`
+- [x] T2 — Release workflow on `v*` tags (version check, build, portable + installer, pre-release). Route: inline. Tier: medium. Commit: `ci: publish tagged windows builds as github releases`
 - [ ] T3 — Close: docs (CLAUDE.md release steps, README download), full gates, remove this document; then the pilot approves pushing the first tag. Tier: passive. Commit: —
 
 ## Progress
+- 2026-10-06 T2: no runnable RED for a tag-only workflow. Checks: YAML parses; the tag check accepts `v0.1.0`/`v0.1.0-alpha.1` and rejects `v0.2.0`/`v0.1.00`. The real proof is the first tag run (pending the pilot's approval).
+- 2026-10-06 T1:
+  - **RED:** app tests failed to compile; `Command label_export not found`; 3 UI tests had no button → GREEN.
+  - **Decisions:** the export is filtered to the requested keymode (the name says `7k`); an empty gold set writes an empty file; a failed folder open hides the success notice (minor, noted).
+  - **Parent:** bindings regenerated. Gates: nextest workspace 956 passed; clippy, fmt, check-layers, stage-lock ok; UI tsc, lint, vitest 43 files / 399 passed, build ok.
 
 ## Next step
 T1 writer and T2 inline in parallel.

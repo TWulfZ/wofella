@@ -510,7 +510,7 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
     setDraft((d) => togglePattern(d, pattern));
   };
 
-  const footer = <SessionFooter counts={state.counts} goldTotal={stats.data?.total ?? null} seed={state.seed} />;
+  const footer = <SessionFooter keymode={keymode} counts={state.counts} goldTotal={stats.data?.total ?? null} seed={state.seed} />;
 
   if (state.done) {
     return (

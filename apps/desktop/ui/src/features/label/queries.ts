@@ -152,3 +152,14 @@ export function useLabelMutations(keymode: number) {
     undo: useMutation({ mutationFn: (eventId: string) => call(commands.labelUndo(eventId)), onSuccess: refreshStats }),
   };
 }
+
+/** Writes the gold set into the data dir's exports folder and opens it; a "Save as" dialog would need a new capability. */
+export function useLabelExport(keymode: number) {
+  return useMutation({
+    mutationFn: async () => {
+      const exported = await call(commands.labelExport(keymode));
+      await call(commands.appOpenExportsDir());
+      return exported;
+    },
+  });
+}
