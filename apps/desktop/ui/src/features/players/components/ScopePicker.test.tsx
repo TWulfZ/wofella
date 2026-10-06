@@ -16,6 +16,14 @@ describe("ScopePicker", () => {
     expect(calls.find((c) => c.cmd === "players_list_profiles")?.args).toEqual({ keymode: 7 });
   });
 
+  it("exposes the full active label as a tooltip, since the picker truncates it", async () => {
+    renderControls("/");
+    const picker = await screen.findByRole("combobox", { name: "Viewing" });
+    await waitFor(() => {
+      expect(picker).toHaveAttribute("title", "Me");
+    });
+  });
+
   it("writes the chosen entry into the URL", async () => {
     const { router } = renderControls("/");
     await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Viewing" }), "all");

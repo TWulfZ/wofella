@@ -13,10 +13,12 @@ export function ScopePicker() {
     return null;
   }
   return (
-    <div className="flex items-center gap-2 text-sm">
+    <div className="flex min-w-0 items-center gap-2 text-sm">
       <select
         aria-label={t("players.scope.label")}
-        className="border-input bg-surface-raised text-foreground hover:border-primary/60 focus-visible:ring-ring h-9 cursor-pointer rounded-md border px-3 text-sm transition-colors focus-visible:ring-2 focus-visible:outline-none"
+        // A native select is as wide as its longest option; capped so the header fits the 1024px minimum window.
+        title={active === undefined ? undefined : entryLabel(active, t)}
+        className="border-input bg-surface-raised text-foreground hover:border-primary/60 focus-visible:ring-ring h-9 max-w-64 min-w-0 cursor-pointer truncate rounded-md border px-3 text-sm transition-colors focus-visible:ring-2 focus-visible:outline-none"
         value={active === undefined ? "" : entryScopeParam(active)}
         onChange={(e) => {
           const next = entries.find((entry) => entryScopeParam(entry) === e.target.value);

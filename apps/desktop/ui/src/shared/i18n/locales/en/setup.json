@@ -24,6 +24,12 @@
     },
     "error": {
       "lazer_not_supported": "“{{path}}” is an osu!lazer install. wolluf reads osu! stable only."
+    },
+    "valid": "Ready to use",
+    "steps": {
+      "label": "Setup steps",
+      "install": "osu! folder",
+      "identity": "Identity"
     }
   }
 }

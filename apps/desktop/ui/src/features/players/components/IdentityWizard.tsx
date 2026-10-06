@@ -1,14 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { Check, Inbox, LoaderCircle, UsersRound } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { openJobTray, useRunningJobKinds } from "@/features/jobs";
-import { setupKeys, setupStatusQuery } from "@/features/setup";
+import { SetupSteps, setupKeys, setupStatusQuery } from "@/features/setup";
 import { commands } from "@/ipc/bindings";
 import { call } from "@/ipc/client";
 import { useErrorText } from "@/ipc/errorText";
 import { Button } from "@/shared/ui/button";
+import { Card, CardContent } from "@/shared/ui/card";
+import { PageHeader } from "@/shared/ui/page-header";
 import { buildDecisions } from "../decisions";
 import { aliasesQuery, playersKeys } from "../queries";
 import type { AliasTableMode } from "./AliasRow";
@@ -99,67 +102,93 @@ export function IdentityWizard({ mode }: IdentityWizardProps) {
   const intro = mode === "wizard" ? t("players.wizard.intro") : t("players.settings.intro");
   const noAutoMatch = rows.length > 0 && rows.every((r) => r.autoMatch === null);
 
+  const actionsLabel = mode === "wizard" ? t("players.wizard.actions") : t("players.settings.actions");
+
   return (
-    <div className="flex flex-col gap-4 p-6">
-      <h1 className="text-2xl font-semibold">{title}</h1>
-      <p className="text-muted-foreground max-w-3xl">{intro}</p>
+    <>
+      <PageHeader
+        icon={UsersRound}
+        title={title}
+        description={intro}
+        actions={mode === "wizard" ? <SetupSteps current="identity" /> : undefined}
+      />
+      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 px-6 py-6">
+        {aliases.isPending && (
+          <div aria-busy="true" aria-label={t("common.loading")} className="flex flex-col gap-2">
+            {Array.from({ length: SKELETON_ROWS }, (_, i) => (
+              <div key={i} className="bg-muted h-10 rounded-lg motion-safe:animate-pulse" />
+            ))}
+          </div>
+        )}
 
-      {aliases.isPending && (
-        <div aria-busy="true" aria-label={t("common.loading")} className="flex flex-col gap-2">
-          {Array.from({ length: SKELETON_ROWS }, (_, i) => (
-            <div key={i} className="bg-muted h-8 animate-pulse rounded" />
-          ))}
-        </div>
-      )}
+        {aliases.isError && (
+          <div className="flex flex-col items-start gap-2">
+            <p role="alert" className="text-destructive">
+              {errorText(aliases.error)}
+            </p>
+            <Button variant="outline" onClick={() => void aliases.refetch()}>
+              {t("common.retry")}
+            </Button>
+          </div>
+        )}
 
-      {aliases.isError && (
-        <div className="flex flex-col items-start gap-2">
-          <p role="alert" className="text-destructive">
-            {errorText(aliases.error)}
+        {syncing && (
+          <p className="bg-osu-blue/10 ring-osu-blue/30 flex items-center gap-2 rounded-lg px-4 py-3 text-sm ring-1">
+            <LoaderCircle className="text-osu-blue size-4 shrink-0 motion-safe:animate-spin" aria-hidden="true" />
+            {t("players.wizard.syncing")}
           </p>
-          <Button variant="outline" onClick={() => void aliases.refetch()}>
-            {t("common.retry")}
-          </Button>
-        </div>
-      )}
+        )}
 
-      {syncing && <p className="text-sm">{t("players.wizard.syncing")}</p>}
+        {aliases.isSuccess && rows.length === 0 && !syncing && (
+          <Card>
+            <CardContent className="flex flex-col items-center gap-3 py-6 text-center">
+              <Inbox className="text-muted-foreground size-8" aria-hidden="true" />
+              <p>{t("players.wizard.empty")}</p>
+              <SyncNowButton />
+            </CardContent>
+          </Card>
+        )}
 
-      {aliases.isSuccess && rows.length === 0 && !syncing && (
-        <div className="flex flex-col items-start gap-2">
-          <p>{t("players.wizard.empty")}</p>
-          <SyncNowButton />
-        </div>
-      )}
+        {rows.length > 0 && (
+          <>
+            {aliases.data?.cfgUsernameAvailable === false && (
+              <p className="text-muted-foreground text-sm">{t("players.wizard.cfgMissing")}</p>
+            )}
+            {noAutoMatch && edited === null && <p className="font-medium">{t("players.wizard.noMatch")}</p>}
+            <Card className="gap-0 py-0">
+              <AliasTable rows={rows} ticked={ticked} mode={mode} onToggle={toggle} onToggleAll={toggleAll} />
+            </Card>
+          </>
+        )}
+      </div>
 
       {rows.length > 0 && (
-        <>
-          {aliases.data?.cfgUsernameAvailable === false && (
-            <p className="text-muted-foreground text-sm">{t("players.wizard.cfgMissing")}</p>
-          )}
-          {noAutoMatch && edited === null && <p className="font-medium">{t("players.wizard.noMatch")}</p>}
-          <AliasTable rows={rows} ticked={ticked} mode={mode} onToggle={toggle} onToggleAll={toggleAll} />
-          {decide.isError && (
-            <p role="alert" className="text-destructive text-sm">
-              {errorText(decide.error)}
-            </p>
-          )}
-          <div>
+        <section aria-label={actionsLabel} className="bg-header/90 sticky bottom-0 z-10 border-t backdrop-blur">
+          {/* Actions sit on the left: the floating job tray owns the bottom-right corner. */}
+          <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-4 px-6 py-3">
             <Button
+              size="lg"
               disabled={syncing || decide.isPending}
               onClick={() => {
                 decide.mutate();
               }}
             >
+              <Check aria-hidden="true" />
               {decide.isPending
                 ? t("players.wizard.submitting")
                 : mode === "wizard"
                   ? t("players.wizard.confirm")
                   : t("players.settings.save")}
             </Button>
+            <span className="text-muted-foreground tabular text-sm">{t("players.selected", { count: ticked.size })}</span>
+            {decide.isError && (
+              <p role="alert" className="text-destructive text-sm">
+                {errorText(decide.error)}
+              </p>
+            )}
           </div>
-        </>
+        </section>
       )}
-    </div>
+    </>
   );
 }

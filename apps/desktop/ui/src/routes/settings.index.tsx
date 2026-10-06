@@ -48,7 +48,7 @@ function SettingsPage() {
                   {SUPPORTED_LANGUAGES.map((lng) => (
                     <label
                       key={lng}
-                      className="bg-muted text-muted-foreground hover:text-foreground has-[:checked]:bg-primary has-[:checked]:text-primary-foreground has-[:focus-visible]:ring-ring cursor-pointer rounded-md px-3 py-1.5 text-sm transition-colors has-[:focus-visible]:ring-2"
+                      className="bg-muted text-muted-foreground hover:text-foreground has-[:checked]:bg-primary has-[:checked]:text-primary-foreground has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-surface-raised cursor-pointer rounded-md px-3 py-1.5 text-sm transition-colors has-[:focus-visible]:ring-2"
                     >
                       <input
                         type="radio"

@@ -1,19 +1,10 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import {
-  CircleCheck,
-  CircleSlash,
-  CircleX,
-  FolderOpen,
-  History,
-  House,
-  LoaderCircle,
-  type LucideIcon,
-  RefreshCw,
-} from "lucide-react";
+import { FolderOpen, History, House, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { JobStatusIcon } from "@/features/jobs";
 import { setupStatusQuery } from "@/features/setup";
-import type { JobDto, JobStatusDto, SyncSummaryDto } from "@/ipc/bindings";
+import type { JobDto, SyncSummaryDto } from "@/ipc/bindings";
 import { formatDateTime, formatNumber } from "@/shared/format";
 import { Badge } from "@/shared/ui/badge";
 import { buttonVariants } from "@/shared/ui/button";
@@ -24,14 +15,6 @@ export const Route = createFileRoute("/")({
   loader: ({ context }) => context.queryClient.query(setupStatusQuery()),
   component: HomePage,
 });
-
-const STATUS_ICON: Record<JobStatusDto, { icon: LucideIcon; className: string }> = {
-  ok: { icon: CircleCheck, className: "text-success" },
-  failed: { icon: CircleX, className: "text-destructive" },
-  cancelled: { icon: CircleSlash, className: "text-muted-foreground" },
-  queued: { icon: LoaderCircle, className: "text-osu-blue" },
-  running: { icon: LoaderCircle, className: "text-osu-blue" },
-};
 
 const SYNC_STATS: readonly { key: "playsNew" | "playsExisting" | "replaysLinked"; className: string }[] = [
   { key: "playsNew", className: "text-osu-pink" },
@@ -66,12 +49,11 @@ function LastSync({ job }: { job: JobDto | null }) {
     );
   }
   const when = job.ended ?? job.started;
-  const { icon: StatusIcon, className } = STATUS_ICON[job.status];
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="outline" className="h-6 gap-1.5 px-2.5">
-          <StatusIcon className={className} aria-hidden="true" />
+          <JobStatusIcon status={job.status} />
           {t(`common.home.jobStatus.${job.status}`)}
         </Badge>
         {when !== null && <span className="text-muted-foreground text-sm">{formatDateTime(when, i18n.language)}</span>}

@@ -23,7 +23,7 @@ export function MergeCompareToggle() {
           key={mode}
           size="sm"
           variant="ghost"
-          className="text-muted-foreground hover:text-foreground focus-visible:ring-ring aria-pressed:bg-primary aria-pressed:text-primary-foreground aria-pressed:hover:bg-primary/90 cursor-pointer rounded-sm transition-colors focus-visible:ring-2 focus-visible:outline-none"
+          className="text-muted-foreground hover:text-foreground focus-visible:ring-ring aria-pressed:bg-primary aria-pressed:text-primary-foreground aria-pressed:hover:bg-primary/90 cursor-pointer rounded-sm transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised focus-visible:outline-none"
           aria-pressed={mergeMode === mode}
           onClick={() => {
             setSearch({ merge: mode });

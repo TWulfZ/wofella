@@ -36,6 +36,7 @@
     --color-chart-1: var(--chart-1);
     --color-ring: var(--ring);
     --color-input: var(--input);
+    --color-control-border: var(--control-border);
     --color-border: var(--border);
     --color-destructive: var(--destructive);
     --color-accent-foreground: var(--accent-foreground);
@@ -59,6 +60,14 @@
     --radius-2xl: calc(var(--radius) * 1.8);
     --radius-3xl: calc(var(--radius) * 2.2);
     --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+@theme {
+    --animate-progress-slide: progress-slide 1.4s ease-in-out infinite;
+    @keyframes progress-slide {
+        from { transform: translateX(-100%); }
+        to { transform: translateX(300%); }
+    }
 }
 
 /* osu!-web language: every surface is the brand hue at low saturation, so greys read warm-pink, not neutral. */
@@ -93,6 +102,8 @@
     --warning: var(--osu-yellow);
     --border: hsl(var(--hue) 10% 24%);
     --input: hsl(var(--hue) 10% 28%);
+    /* Checkbox/radio outlines: --input is only ~1.6:1 on cards; L50 keeps >=3:1 (WCAG 1.4.11) even on hovered rows. */
+    --control-border: hsl(var(--hue) 10% 50%);
     --ring: var(--osu-pink);
     --chart-1: var(--osu-pink);
     --chart-2: var(--osu-blue);
@@ -125,7 +136,7 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring;
     }
   body {
     @apply bg-background text-foreground antialiased;

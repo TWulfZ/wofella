@@ -9,13 +9,15 @@
       "syncNow": "Sincronizar ahora",
       "syncing": "Importando tus jugadas… La lista se actualiza cuando termine la importación.",
       "confirm": "Confirmar",
-      "submitting": "Guardando…"
+      "submitting": "Guardando…",
+      "actions": "Confirma tus nombres"
     },
     "settings": {
       "title": "Identidad",
       "intro": "Elige qué nombres son tuyos. Tus decisiones siempre ganan a la coincidencia automática.",
       "save": "Guardar",
-      "saved": "Guardado"
+      "saved": "Guardado",
+      "actions": "Guarda tus nombres"
     },
     "table": {
       "selectAll": "Seleccionar todo",
@@ -64,6 +66,8 @@
     "banner": {
       "allPlayers": "Todos los jugadores: mezcla, no es una persona",
       "other": "Viendo {{label}}: no es tu perfil. Nada de aquí afecta a tu habilidad."
-    }
+    },
+    "selected_one": "{{count}} nombre seleccionado",
+    "selected_other": "{{count}} nombres seleccionados"
   }
 }

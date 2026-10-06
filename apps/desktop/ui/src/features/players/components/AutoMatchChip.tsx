@@ -1,3 +1,4 @@
+import { Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { AutoMatchDto } from "@/ipc/bindings";
 import { Badge } from "@/shared/ui/badge";
@@ -8,5 +9,10 @@ export function AutoMatchChip({ autoMatch }: { autoMatch: AutoMatchDto | null })
   if (autoMatch === null) {
     return null;
   }
-  return <Badge variant="secondary">{t(`players.autoMatch.${autoMatch.source}`)}</Badge>;
+  return (
+    <Badge>
+      <Sparkles aria-hidden="true" />
+      {t(`players.autoMatch.${autoMatch.source}`)}
+    </Badge>
+  );
 }
