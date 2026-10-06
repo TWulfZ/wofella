@@ -195,6 +195,86 @@ mod commands_smoke {
         assert_eq!(err["code"], json!("INVALID_INPUT"), "{err}");
     }
 
+    /// Signature plus an IHDR chunk: a synthetic header, never a real skin image.
+    fn png(width: u32, height: u32) -> Vec<u8> {
+        let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
+        out.extend_from_slice(&13u32.to_be_bytes());
+        out.extend_from_slice(b"IHDR");
+        out.extend_from_slice(&width.to_be_bytes());
+        out.extend_from_slice(&height.to_be_bytes());
+        out.extend_from_slice(&[8, 6, 0, 0, 0]);
+        out.extend_from_slice(&[0; 4]);
+        out
+    }
+
+    #[test]
+    fn skin_commands_serve_the_cfg_skin() {
+        let h = synced();
+        // Only a test temp dir is written.
+        let root = h.dir.path().join("osu!");
+        let skin = root.join("Skins").join("Test #1");
+        std::fs::create_dir_all(&skin).unwrap();
+        std::fs::write(
+            skin.join("Skin.ini"),
+            "[General]\r\nName: Test\r\nVersion: latest\r\n[Mania]\r\nKeys: 7\r\nHitPosition: 428\r\n",
+        )
+        .unwrap();
+        std::fs::write(skin.join("mania-key1.PNG"), png(40, 100)).unwrap();
+        std::fs::write(
+            root.join("osu!.fixture.cfg"),
+            format!("Username = {FIXTURE_PLAYER}\nSkin = Test #1\nManiaSpeed = 30\n"),
+        )
+        .unwrap();
+
+        let mut list = h.invoke("skin_list", json!({})).unwrap();
+        let mtime = list["skins"][0]
+            .as_object_mut()
+            .and_then(|skin| skin.remove("iniMtime"));
+        assert!(mtime.as_ref().is_some_and(|m| m.is_string()), "{mtime:?}");
+        assert_eq!(
+            list,
+            json!({
+                "skins": [{ "folder": "Test #1", "name": "Test", "keymodes": [7] }],
+                "current": "Test #1",
+                "maniaSpeed": 30,
+                "maniaSpeedBpmScale": null,
+            })
+        );
+
+        let got = h
+            .invoke("skin_get", json!({ "folder": "Test #1", "keymode": 7 }))
+            .unwrap();
+        assert_eq!(got["version"], json!(2.7), "{got}");
+        assert_eq!(got["config"]["hitPosition"], json!(428.0));
+        assert_eq!(got["config"]["noteBodyStyle"], json!("repeat_bottom"));
+        let key0 = got["images"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|i| i["slot"] == json!("key.0"))
+            .unwrap_or_else(|| panic!("key.0 unresolved: {got}"));
+        let file = &got["files"][key0["file"].as_u64().unwrap() as usize];
+        assert_eq!(file["mime"], json!("image/png"));
+        assert_eq!((&file["width"], &file["height"]), (&json!(40), &json!(100)));
+        assert!(
+            file["base64"].as_str().unwrap().starts_with("iVBORw0KGgo"),
+            "{file}"
+        );
+
+        let err = h
+            .invoke(
+                "skin_get",
+                json!({ "folder": "../Skins/Test #1", "keymode": 7 }),
+            )
+            .unwrap_err();
+        assert_eq!(err["code"], json!("NOT_FOUND"), "{err}");
+        assert_eq!(err["messageKey"], json!("error.skin_unavailable"));
+        let err = h
+            .invoke("skin_get", json!({ "folder": "Test #1", "keymode": 0 }))
+            .unwrap_err();
+        assert_eq!(err["code"], json!("INVALID_INPUT"), "{err}");
+    }
+
     #[test]
     fn label_submit_then_undo_round_trips() {
         let h = synced();

@@ -126,6 +126,9 @@ pub struct SkinEntry {
     pub has_ini: bool,
     pub name: Option<String>,
     pub keys: Vec<u8>,
+    /// Nanoseconds since the Unix epoch, as text (no 64-bit ints over IPC, ADR 0009): the UI's
+    /// skin cache key, so an edited `skin.ini` reloads (ADR 0019).
+    pub ini_mtime: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -223,8 +226,15 @@ fn describe(dir: &Path, folder: String, params: &SkinsParams) -> SkinEntry {
         .as_deref()
         .and_then(|p| read_capped(p, params.max_ini_bytes).ok())
         .map(|bytes| parse_skin_ini_with(&bytes, &params.ini));
+    let ini_mtime = ini_path
+        .as_deref()
+        .and_then(|p| fs::metadata(p).ok())
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos().to_string());
     SkinEntry {
         folder,
+        ini_mtime,
         has_ini: ini_path.is_some(),
         name: ini.as_ref().and_then(|i| i.name.clone()),
         keys: ini

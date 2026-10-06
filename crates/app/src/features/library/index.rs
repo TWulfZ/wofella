@@ -20,10 +20,10 @@ use wolluf_store::repo::cache::{
     CatalogChart, ChartLabel, ChartParsed, Derivation, DerivationStatus, SegmentRow, catalog_chart,
     chart_label as label_repo, chart_parsed, derivation, segment as segment_repo,
 };
-use wolluf_store::repo::ledger::{GameInstall, SnapshotKind, game_install, play, source_snapshot};
+use wolluf_store::repo::ledger::play;
 use wolluf_store::{Conn, DbHandle, StoreError};
 
-use crate::context::{blocking_join_error, songs_dir};
+use crate::context::{blocking_join_error, catalog_install, songs_dir};
 use crate::errors::AppError;
 use crate::jobs::dto::{IndexLibrarySummaryDto, JobKindDto, JobStageDto, JobSummaryDto};
 use crate::jobs::{ItemError, ItemResult, Job, JobCtx, JobFuture, JobSummary, panic_text};
@@ -120,24 +120,6 @@ pub(super) fn segment_row(s: Segment) -> SegmentRow {
         purity: s.purity,
         strength: s.strength,
     }
-}
-
-/// The install whose osu!.db the catalog reflects: catalog paths are relative to its Songs
-/// dir. `None` while there is no catalog; `NOT_FOUND` when no install's latest osu!.db built it.
-pub(super) fn catalog_install(
-    user: &DbHandle,
-    cache: &DbHandle,
-) -> Result<Option<GameInstall>, AppError> {
-    let Some(snapshot) = cache.read(catalog_chart::snapshot_id)? else {
-        return Ok(None);
-    };
-    for install in user.read(game_install::list)? {
-        let latest = user.read(|c| source_snapshot::latest(c, install.id, SnapshotKind::OsuDb))?;
-        if latest.is_some_and(|s| s.id == snapshot) {
-            return Ok(Some(install));
-        }
-    }
-    Err(AppError::not_found().with_arg("snapshotId", snapshot.0.to_string()))
 }
 
 /// osu!.db builds the catalog path as `<folder>/<file>`.

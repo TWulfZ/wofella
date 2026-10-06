@@ -44,8 +44,8 @@ Constraints that already hold:
 
   Its deliberate deviations from lazer are listed in its module doc. Lengths stay in stable's 480-high units; scaling is the renderer's job.
 - **Commands.** Two typed commands return `Result<T, IpcError>` (ADR 0009):
-  - `skin_list` returns the skin folders with the key counts each defines and the skin.ini mtime (a string, per ADR 0009's 64-bit rule), plus `current`, the cfg `Skin` value when that folder exists.
-  - `skin_get(name, keys)` returns the resolved `[Mania]` block for that key count, with lazer's all-defaults block when the skin has none (research 06). It also returns every resolved image once (deduplicated by file) as `{ id, mime, base64, scale, w, h }`, per-slot references to those ids, and per-slot diagnostics.
+  - `skin_list` returns the skin folders with the key counts each defines and the skin.ini mtime (a string, per ADR 0009's 64-bit rule), plus `current`, the cfg `Skin` value when that folder exists, and the cfg `ManiaSpeed` / `ManiaSpeedBPMScale` used as the Label screen's defaults.
+  - `skin_get(folder, keymode)` returns the resolved `[Mania]` block for that key count, with lazer's all-defaults block when the skin has none (research 06). It also returns every resolved image once (deduplicated by file) in `files[]` as `{ mime, scale, width, height, base64 }`, per-slot references `{ slot, file }` indexing that list, and per-slot diagnostics `{ code, slot }`. The version crosses as `f64` so 2.7 stays 2.7. The byte caps apply to raw bytes; base64 adds a third on the wire.
 - **Image resolution follows lazer** (research 06, "Image resolution"):
   - the slot's `skin.ini` value, or the default name (7K: `1 2 1 S 1 2 1`);
   - any `@2x` in the name is stripped;

@@ -62,9 +62,9 @@ Rejected:
 - [x] T4 — ADR 0019 (skin assets over IPC), `docs/research/06-mania-skin-and-scroll.md`, NOTICE. Route: delegated (docs writer) + parent amendment. Tier: passive. Commit: `docs: record skin assets over IPC and mania skin research`
 - [x] T5 — `codec/skin_ini.rs` pure parser. Route: delegated (writer). Tier: medium. Commit: `feat(source-osu): parse skin.ini mania sections as lazer does`
 - [x] T6 — `source-osu/src/skins.rs` read-only resolution (lookup chain, IHDR and magic, caps), `corpus_skins`. Route: delegated (writer + one correction). Tier: **high** (verifier). Commit: `feat(source-osu): resolve skin images read-only with lazer's lookup`
-- [ ] T7 — app skins slice plus `skin_list` (with current) and `skin_get` commands, errors, bindings. Route: delegated (writer). Tier: **high**. Commit: —
+- [x] T7 — app skins slice plus `skin_list` (with current, cfg speed defaults, ini mtime) and `skin_get` commands, errors, bindings. Route: delegated (writer) + parent fixes. Tier: **high** (verifier). Commit: `feat(desktop): serve osu! skins and cfg speed defaults over IPC`
 - [ ] T8 — UI skin loader (ImageBitmap cache, tall-body crop) and picker defaulting to cfg `Skin`. Route: delegated (writer). Tier: medium. Commit: —
-- [ ] T9 — Skin renderer (`skinLayout.ts`, `draw.ts`): columns, lines, hint, notes, LN Stretch/RepeatBottom, flipped tail, keys, stage, per-slot fallback. Route: delegated (writer). Tier: medium. Commit: —
+- [x] T9 — Skin renderer (`skinLayout.ts`, `draw.ts`): columns, lines, hint, notes, LN Stretch/RepeatBottom, flipped tail, keys, stage, per-slot fallback. Route: delegated (writer). Tier: medium. Commit: `feat(ui): render the playfield with an osu! legacy mania skin`
 - [ ] T10 — Close: full gates, corpus run (osu! closed), the pilot's side-by-side check, remove this document. Tier: high. Commit: —
 
 ## Progress
@@ -90,6 +90,19 @@ Rejected:
     - `skin.ini` found past a truncated listing.
   - **Corpus `corpus_skins`** (osu! closed): 27 skins, 25 with 7K. Active skin: 47 slots, 17 files, 344,763 bytes, no diagnostics.
   - **Parent:** source-osu 179 passed; clippy, fmt, check-layers clean; no write calls in `skins.rs`.
+- 2026-10-06 T7:
+  - **RED:** 6 of 7 app tests failed against the stub; smoke and i18n tests failed → GREEN.
+  - **Verifier:** constraints hold — folder-only input, allowlisted cfg only, current only when listed, caps before base64, chart_audio unchanged after the base64 move.
+  - **Confirmed and fixed by the parent:**
+    - stale bindings (regenerated);
+    - missing `skin.ini` mtime cache key (RED `no field ini_mtime` → added as an epoch-ns string through `SkinEntry` and the DTO);
+    - image-specific copy for an oversized `skin.ini` (now a generic "skin too large", en and es).
+  - **Also by the parent:** a Password-sentinel guard on the serialized list, and the ADR updated to the real command and field names.
+  - **Gates:** nextest source-osu+app+desktop 396 passed; clippy, fmt, check-layers clean.
+- 2026-10-06 T9:
+  - **RED:** missing modules and `spans` → GREEN, 98 playfield tests.
+  - **Parent:** a non-positive `widthForNoteHeightScale` hid every note (RED `expected +0 to be close to 35.16`) → now falls back to the narrowest column as lazer does. UI vitest 326 passed; tsc and lint clean.
+  - **Unverified approximations, to be checked side by side:** key height ×k (not lazer's ×k/1.6), body tiling, zoom not moving the judgement line.
 
 ## Next step
-T7 (app skins slice + `skin_list`/`skin_get` + cfg defaults over IPC, high) then T8 + T9 (UI loader and renderer). Research material: `<scratchpad>/skins-research/{PLAN,REPORTS}.md` and the lazer sources under `<scratchpad>/skins-research/lazer-legacy-mania/src/`.
+T8: UI skin loader (`skinList`/`skinGet` → ImageBitmaps, cache keyed by folder+keymode+iniMtime, `.close()` on change), picker defaulting to `current`, osu! speed default from `maniaSpeed`, HitPosition and column widths from the skin into the Playfield; then T10. Research material: `<scratchpad>/skins-research/{PLAN,REPORTS}.md` and the lazer sources under `<scratchpad>/skins-research/lazer-legacy-mania/src/`.

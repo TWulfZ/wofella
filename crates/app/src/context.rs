@@ -8,9 +8,13 @@ use tokio::runtime::{Handle, Runtime};
 use tokio::sync::broadcast;
 use wolluf_core::{Clock, Game};
 use wolluf_source_osu::cfg_files::{list_user_cfgs, read_user_cfg};
+use wolluf_source_osu::codec::cfg::UserCfg;
 use wolluf_source_osu::install::Platform;
 use wolluf_source_osu::paths::{is_drvfs_path, resolve_songs_dir};
-use wolluf_store::repo::ledger::{GameInstall, InstallRow, game_install, install};
+use wolluf_store::repo::cache::catalog_chart;
+use wolluf_store::repo::ledger::{
+    GameInstall, InstallRow, SnapshotKind, game_install, install, source_snapshot,
+};
 use wolluf_store::{DbHandle, InstanceLock, Vault, open_cache_db, open_user_db};
 
 use crate::errors::{AppError, keys};
@@ -20,6 +24,7 @@ use crate::features::library::LibraryService;
 use crate::features::players::PlayersService;
 use crate::features::plays::PlaysService;
 use crate::features::setup::SetupService;
+use crate::features::skins::SkinsService;
 use crate::jobs::{JobRunner, JobService};
 
 pub use wolluf_store::repo::ledger::InstallId;
@@ -166,13 +171,18 @@ impl Drop for RuntimeHolder {
     }
 }
 
-/// The newest cfg decides `BeatmapDirectory` (002 R-d); anything unreadable means `Songs`.
-pub(crate) fn songs_dir(root: &Path) -> PathBuf {
-    let beatmap_directory = list_user_cfgs(root)
+/// The newest cfg is the one stable last wrote (002 R-d); `None` when none is readable.
+pub(crate) fn newest_user_cfg(root: &Path) -> Option<UserCfg> {
+    list_user_cfgs(root)
         .ok()
         .and_then(|cfgs| cfgs.into_iter().next())
         .and_then(|cfg| read_user_cfg(&cfg.path).ok())
-        .and_then(|(cfg, _)| cfg.beatmap_directory);
+        .map(|(cfg, _)| cfg)
+}
+
+/// The newest cfg decides `BeatmapDirectory` (002 R-d); anything unreadable means `Songs`.
+pub(crate) fn songs_dir(root: &Path) -> PathBuf {
+    let beatmap_directory = newest_user_cfg(root).and_then(|cfg| cfg.beatmap_directory);
     let platform = if cfg!(windows) {
         Platform::Windows
     } else if is_drvfs_path(root) {
@@ -181,6 +191,24 @@ pub(crate) fn songs_dir(root: &Path) -> PathBuf {
         Platform::Linux
     };
     resolve_songs_dir(root, beatmap_directory.as_deref(), platform)
+}
+
+/// The install whose osu!.db the catalog reflects: catalog paths are relative to its Songs
+/// dir. `None` while there is no catalog; `NOT_FOUND` when no install's latest osu!.db built it.
+pub(crate) fn catalog_install(
+    user: &DbHandle,
+    cache: &DbHandle,
+) -> Result<Option<GameInstall>, AppError> {
+    let Some(snapshot) = cache.read(catalog_chart::snapshot_id)? else {
+        return Ok(None);
+    };
+    for install in user.read(game_install::list)? {
+        let latest = user.read(|c| source_snapshot::latest(c, install.id, SnapshotKind::OsuDb))?;
+        if latest.is_some_and(|s| s.id == snapshot) {
+            return Ok(Some(install));
+        }
+    }
+    Err(AppError::not_found().with_arg("snapshotId", snapshot.0.to_string()))
 }
 
 pub(crate) fn blocking_join_error(e: tokio::task::JoinError) -> AppError {
@@ -333,6 +361,10 @@ impl AppContext {
 
     pub fn players(&self) -> PlayersService<'_> {
         PlayersService::new(self)
+    }
+
+    pub fn skins(&self) -> SkinsService<'_> {
+        SkinsService::new(self)
     }
 
     /// Reads the system environment (and `reg.exe` on WSL) at each call; shells that need a

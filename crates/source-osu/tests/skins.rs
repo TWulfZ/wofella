@@ -645,6 +645,11 @@ fn skins_list_reads_names_and_key_counts() {
     assert!(list[0].has_ini);
     assert!(list[0].keys.is_empty());
     assert!(!list[1].has_ini, "a directory named skin.ini is not an ini");
+    assert!(
+        list[0].ini_mtime.is_some(),
+        "the UI keys its skin cache on it (ADR 0019)"
+    );
+    assert_eq!(list[1].ini_mtime, None);
     assert_eq!(list[2].keys, [4, 7]);
     assert_eq!(list[2].name.as_deref(), Some("R"));
     assert!(!list[3].has_ini);

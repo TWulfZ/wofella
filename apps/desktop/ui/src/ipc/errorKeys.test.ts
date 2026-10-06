@@ -18,6 +18,8 @@ const EMITTED_ERROR_KEYS = [
   "error.data_dir_inside_osu",
   "error.chart_audio_unavailable",
   "error.chart_audio_too_large",
+  "error.skin_unavailable",
+  "error.skin_too_large",
 ];
 
 describe("error.json", () => {
