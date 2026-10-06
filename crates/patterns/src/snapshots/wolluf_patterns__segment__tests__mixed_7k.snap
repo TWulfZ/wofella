@@ -74,6 +74,6 @@ expression: text
 
 segments:
        0..3000     regular.stream.jumpstream      7k.regular.stream  cols=1111110 purity=1000 strength=500 secondary=[regular.tech.thumb]
-    3100..3800     regular.jack.chordjack         7k.regular.jack    cols=1111111 purity=1000 strength=636 secondary=[ln.general.density, regular.jack.longjack, regular.jack.minijack, regular.speed.burst, regular.tech.thumb]
+    3100..3800     regular.jack.chordjack         7k.regular.jack    cols=1111111 purity=1000 strength=636 secondary=[ln.general.density, regular.jack.longjack, regular.jack.minijack, regular.tech.thumb]
     4200..7200     ln.inverse.gap                 7k.ln.inverse      cols=1111111 purity=1000 strength=800 secondary=[ln.general.chord, ln.general.density, regular.tech.thumb]
-    7500..9600     ln.tech.hybrid                 7k.ln.tech         cols=0111101 purity=1000 strength=1000 secondary=[ln.general.density, regular.speed.burst, regular.stream.jumpstream, regular.tech.thumb]
+    7500..9600     ln.tech.hybrid                 7k.ln.tech         cols=0111101 purity=1000 strength=1000 secondary=[ln.general.density, regular.stream.jumpstream, regular.tech.thumb]

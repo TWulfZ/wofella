@@ -240,7 +240,7 @@ fn patterns_fixtures() -> Vec<(&'static str, Option<Chart>, Vec<&'static str>)> 
 }
 
 /// A single-note stream alternating 1/4 and 1/3 gaps of a 400 ms beat, then, after a break, a
-/// delay stream of 1/16 + 3/16 staggers: the DSL draws no red lines, so this one goes through
+/// delay stream of 1/16 + 3/16 staggers and a slow stream with a 1/8 burst: the DSL draws no red lines, so this one goes through
 /// the decoder.
 fn off_grid() -> Option<Chart> {
     let mut text = OsuText::mania(7).timing_line("0,400,4,1,0,100,1,0");
@@ -252,9 +252,15 @@ fn off_grid() -> Option<Chart> {
     }
     t += 2_000;
     let staggered = [4, 6, 5, 3, 1];
-    for i in 0..24 {
+    for i in 0..48 {
         text = text.tap(staggered[i % staggered.len()], TimeUs::from_ms(t));
         t += if i % 2 == 0 { 25 } else { 75 };
+    }
+    t += 2_000;
+    let burst = [0, 1, 2, 3, 4, 5, 6];
+    for i in 0..20 {
+        text = text.tap(burst[i % burst.len()], TimeUs::from_ms(t));
+        t += if (8..12).contains(&i) { 50 } else { 400 };
     }
     parse_chart(text.build().as_bytes()).ok().map(|p| p.chart)
 }

@@ -136,9 +136,19 @@ mod tests {
 
     #[test]
     fn near_misses() {
-        // One fast row makes a 2-row run; 13 make a 14-row run, which is a stream, not a burst.
-        assert!(detect(&Burst, &burst_chart(1)).is_empty());
+        // Two fast rows make a 3-row run, an ornament; 13 make a 14-row run, which is a stream,
+        // not a burst.
+        assert!(detect(&Burst, &burst_chart(2)).is_empty());
         assert!(detect(&Burst, &burst_chart(13)).is_empty());
         assert_eq!(detect(&Burst, &burst_chart(11)).len(), 1);
+    }
+
+    #[test]
+    fn sextuplets_in_a_quarter_stream_are_not_a_burst() {
+        // 1.5x the surrounding pace: a rhythm change, not a burst.
+        let mut gaps = vec![150; 12];
+        gaps.extend([100; 6]);
+        gaps.extend([150; 12]);
+        assert!(detect(&Burst, &seq(&gaps, &[0, 2, 4, 6], None)).is_empty());
     }
 }

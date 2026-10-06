@@ -178,10 +178,10 @@ pub struct SpeedParams {
 impl Default for SpeedParams {
     fn default() -> Self {
         Self {
-            burst_min_rows: 3,
+            burst_min_rows: 4,
             burst_max_rows: 12,
             burst_context_us: 4_000_000,
-            burst_min_density_ratio_permille: 1_500,
+            burst_min_density_ratio_permille: 2_000,
             delay_window_rows: 16,
             delay_window_max_gap_us: 1_000_000,
             delay_max_gap_us: 55_000,
@@ -387,7 +387,7 @@ mod tests {
 
     // Frozen on first computation: any change to a default or to the params layout moves every
     // pattern vkey, so it must be deliberate.
-    const DEFAULT_HASH: &str = "8945a0338c13ead0c7007f37a86e9e63c46e2fdce47aaa72cdb06fa990819e43";
+    const DEFAULT_HASH: &str = "9e58b685d887e34d1ae451ebb2560098b475209c4ed5c2cf68ea431ac671607e";
 
     #[test]
     fn default_params_hash_is_frozen() {

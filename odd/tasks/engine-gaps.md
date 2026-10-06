@@ -36,7 +36,7 @@ Rejected: adopting mania-hub's chart-level detectors as the runtime (they are ch
 - [x] T1 — Baseline: record `library hints` / `library patterns` on a copy of the pilot data dir. Route: inline. Tier: passive. Commit: none (measurement only; numbers below)
 - [x] T2 — `regular.speed.delay`: ADR 0017 amendment, taxonomy id + key `d`, rule + params, priority, `delay` name hint, golden fixture, NOTICE. Route: inline (one non-trivial file, rest mechanical). Tier: medium. Commit: `feat(patterns): add regular.speed.delay for off-grid staggered flow`
 - [x] T3 — Tech primary: `regular.tech.irregular` competes for rows (priority after delay, before the generic streams). Route: inline. Tier: medium. Commit: `feat(patterns): let irregular timing own segments on the tech axis`
-- [ ] T4 — Burst retune (and trill only if evidence appears), driven by measurement. Route: inline. Tier: medium. Commit: —
+- [x] T4 — Burst retune: 2× local pace and 4+ rows; priority unchanged. Route: inline. Tier: medium. Commit: `fix(patterns): stop burst firing on ornaments and 1.5x rhythm changes`
 - [ ] T5 — Close: VERSION bump, stage-lock, full gates, corpus `corpus_patterns`, before/after table in `docs/research/`, remove this document. Tier: medium. Commit: —
 
 ## Progress
@@ -45,6 +45,12 @@ Rejected: adopting mania-hub's chart-level detectors as the runtime (they are ch
 - 2026-10-05 T2: mutation RED (`delay_min_divisor` 8 + floor −10 ms → 2 of 5 delay tests fail) → GREEN. `cargo nextest run --workspace`: 861 passed. clippy: clean. fmt: clean. `cargo xtask stage-lock --check`: ok (patterns v2, chart_label v3). Pilot copy: delay hint lift 6.02 (47 charts, 25.2% vs 4.2%), speed axis lift 0.57 → 1.30.
 - 2026-10-05 T3: RED `delay_and_irregular_beat_the_single_stream_they_read_as` fails with irregular back in `tag_only` → GREEN. `cargo nextest run --workspace`: 862 passed. clippy, fmt, `stage-lock --check` (patterns v3): ok. Pilot copy: tech axis lift – → 1.82 (53 charts, 4.2% vs 2.3%), irregular 9,220 segments / 25,113 s; no other lift fell (delay 6.02 → 6.25, ln.tech 1.83 → 1.60 is the only drop, within noise of 15 charts). Tag-time reporting dropped: tech is measurable without it.
 - 2026-10-05 Accepted change: the hint report keeps counting primaries only.
+- 2026-10-05 T4 sweep on the pilot copy (axis lift speed / tech / jack / stream; burst lift; burst seconds):
+  - T3 state (1.5×, 3 rows): 1.31 / 1.82 / 2.67 / 1.62; 0.70; 167,971 s.
+  - 2.0×, 3 rows: 2.14 / 1.75 / 2.46 / 1.50; 0.79; 47,567 s.
+  - 2.0×, 3 rows, burst below irregular: 2.10 / 1.53 / 2.50 / 1.51; 0.79; 39,447 s (bracket 4.80 → 4.41, delay 6.94 → 6.21). Rejected.
+  - **2.0×, 4 rows (kept)**: 2.49 / 1.61 / 2.42 / 1.48; 1.10; 28,747 s. Delay 6.53, bracket 4.39.
+- 2026-10-05 T4: RED `burst::tests::near_misses` (3-row run) fails on the old defaults → GREEN. The off-grid golden fixture gained a 1/8 burst and a 48-row delay stream (the old 24-row one only showed up as a tag of a spurious burst). `cargo nextest run --workspace`: 863 passed. clippy, fmt, `stage-lock --check` (patterns v4): ok.
 
 ## Next step
-T4: burst retune. Try `burst_min_density_ratio_permille` 2000 and/or moving burst below the stream shapes, re-index the scratch copy (`wolluf --data-dir <scratch>/dd library index`), compare burst count/seconds and speed lift.
+T5: corpus `corpus_patterns` with osu! closed, `docs/research/` before/after table, full gate block, remove this document.
