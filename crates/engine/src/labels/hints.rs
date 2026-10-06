@@ -135,11 +135,11 @@ pub static HINT_KEYWORDS: [HintKeyword; 28] = [
          hint disagree, which the agreement report shows",
     ),
     kw(
-        "chordbracket",
-        &["chordbracket", "chord bracket"],
-        pattern("regular.stream.chordbracket"),
+        "chordtrill",
+        &["chordtrill", "chord trill"],
+        pattern("regular.stream.chordtrill"),
         Anywhere,
-        "ADR 0017 leaf (Interlude's brackets)",
+        "ADR 0017 leaf; `Chord//Bracket` packs name two skills, so no `chord bracket` phrase",
     ),
     kw(
         "jumptrill",

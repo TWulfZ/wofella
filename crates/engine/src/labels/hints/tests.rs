@@ -49,16 +49,8 @@ fn hints_leaf_words_map_to_patterns() {
         ("Chord Jack 1.1x", "regular.jack.chordjack", "chord jack"),
         ("Anchors", "regular.jack.anchor", "anchors"),
         ("Bracket", "regular.stream.bracket", "bracket"),
-        (
-            "Chord Bracket",
-            "regular.stream.chordbracket",
-            "chord bracket",
-        ),
-        (
-            "Chordbrackets",
-            "regular.stream.chordbracket",
-            "chordbrackets",
-        ),
+        ("Chord Trill", "regular.stream.chordtrill", "chord trill"),
+        ("Chordtrills", "regular.stream.chordtrill", "chordtrills"),
         ("Jumptrill", "regular.stream.jumptrill", "jumptrill"),
         ("Jump-Trill", "regular.stream.jumptrill", "jump trill"),
         ("Split Trill", "regular.stream.split_trill", "split trill"),
@@ -133,6 +125,11 @@ fn hints_longest_phrase_wins_and_consumes_its_words() {
     assert_eq!(
         named(SONG, "Split Trill"),
         pairs(&[("regular.stream.split_trill", "split trill")])
+    );
+    // A skill pair (kasumi99's `Chord//Bracket`), not a chord-trill shape.
+    assert_eq!(
+        named(SONG, "Chord//Bracket"),
+        pairs(&[("regular.stream.bracket", "bracket")])
     );
     assert_eq!(
         named(SONG, "Dense Chordstream"),
@@ -377,7 +374,7 @@ fn hints_keyword_table_covers_the_requested_leaves() {
         "regular.jack.chordjack",
         "regular.jack.anchor",
         "regular.stream.bracket",
-        "regular.stream.chordbracket",
+        "regular.stream.chordtrill",
         "regular.stream.jumptrill",
         "regular.stream.split_trill",
         "regular.stream.trill",

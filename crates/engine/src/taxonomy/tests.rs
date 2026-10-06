@@ -97,16 +97,17 @@ fn taxonomy_vocabulary_decisions() {
         assert!(by_id(k7(), gone).is_none(), "{gone}");
     }
     let axis = |id: &str| by_id(k7(), id).unwrap().axis.as_str();
-    assert_eq!(axis("regular.stream.chordbracket"), "7k.regular.stream");
+    assert_eq!(axis("regular.stream.chordtrill"), "7k.regular.stream");
     assert_eq!(axis("ln.inverse.gap"), "7k.ln.inverse");
     assert_eq!(axis("ln.release.timing"), "7k.ln.release");
     let desc = |id: &str| by_id(k7(), id).unwrap().description;
     assert!(desc("regular.jack.minijack").contains("exactly two"));
     assert!(desc("regular.jack.longjack").contains("three or more"));
     assert!(desc("regular.stream.bracket").contains("two or more trills"));
-    for id in ["regular.stream.jumptrill", "regular.stream.chordbracket"] {
-        assert!(desc(id).contains("more than four"), "{id}");
-    }
+    assert!(desc("regular.stream.trill").contains("single notes"));
+    assert!(desc("regular.stream.jumptrill").contains("each chord in one hand"));
+    assert!(desc("regular.stream.split_trill").contains("each chord spread over both hands"));
+    assert!(desc("regular.stream.chordtrill").contains("jumptrills and split trills"));
 }
 
 /// The patterns crate cannot depend on engine (D1), so it repeats the pattern → axis mapping.

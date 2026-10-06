@@ -189,6 +189,8 @@ fn patterns_fixtures() -> Vec<(&'static str, Option<Chart>, Vec<&'static str>)> 
         24,
     );
     section(&mut streams, &["xx.....", "..xx..."], 24);
+    section(&mut streams, &["xxx....", "....xxx"], 24);
+    section(&mut streams, &["x.x.x.x", ".x.x.x."], 24);
     section(&mut streams, &["x.x....", ".x....."], 24);
 
     let mut ln: Vec<&'static str> = Vec::new();
@@ -547,7 +549,7 @@ mod tests {
             "fixture k7_mixed layout k7.313_right_thumb\n",
             "fixture k7_mixed layout k7.313_left_thumb\n",
             "fixture k7_thumb_trill layout k7.313_right_thumb\nsegment 0 0 2300000 cols=24 regular.stream.trill ",
-            "fixture k7_thumb_trill layout k7.313_left_thumb\nsegment 0 0 2300000 cols=24 regular.stream.split_trill ",
+            "fixture k7_thumb_trill layout k7.313_left_thumb\nsegment 0 0 2300000 cols=24 regular.stream.trill ",
             " regular.stream.jumpstream 7k.regular.stream ",
             " ln.inverse.gap 7k.ln.inverse ",
             " purity=",

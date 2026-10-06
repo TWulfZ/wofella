@@ -124,11 +124,12 @@ pub struct StreamParams {
     pub trill_min_rows: u32,
     /// Interlude `Chordstream_4K.JUMPTRILL`: 4 two-note rows.
     pub jumptrill_min_rows: u32,
-    /// Interlude `Chordstream_4K.SPLITTRILL`: 3 two-note rows.
+    /// 4 rows like `trill` and `jumptrill`; Interlude's 3 (`Chordstream_4K.SPLITTRILL`) reads
+    /// every split-chord stair turnaround (`a b a`) as a split trill.
     pub split_trill_min_rows: u32,
     pub bracket_min_rows: u32,
     /// Interlude `Chordstream_7K.BRACKETS`: 3 jackless, non-roll chord rows.
-    pub chordbracket_min_rows: u32,
+    pub chordtrill_min_rows: u32,
 }
 
 impl Default for StreamParams {
@@ -145,9 +146,9 @@ impl Default for StreamParams {
             roll_min_rows: 3,
             trill_min_rows: 4,
             jumptrill_min_rows: 4,
-            split_trill_min_rows: 3,
+            split_trill_min_rows: 4,
             bracket_min_rows: 4,
-            chordbracket_min_rows: 3,
+            chordtrill_min_rows: 3,
         }
     }
 }
@@ -328,13 +329,13 @@ impl Default for SegmentParams {
                 id("regular.jack.chordjack"),
                 // Speed over the stream shape it interrupts, below the jack section it may be.
                 id("regular.speed.burst"),
+                // Whole-row chord alternations (split trill, jumptrill) outrank a bracket even
+                // when one hand's part of them is a bracket shape: `[1357][246]` is a split trill.
                 id("regular.stream.split_trill"),
-                // A whole-row chord alternation reads as a jumptrill even when one hand's part
-                // of it is a bracket shape.
                 id("regular.stream.jumptrill"),
                 id("regular.stream.bracket"),
                 id("regular.stream.trill"),
-                id("regular.stream.chordbracket"),
+                id("regular.stream.chordtrill"),
                 id("regular.stream.roll"),
                 id("regular.jack.anchor"),
                 // Below the shapes a staggered section may contain, above the generic streams
@@ -387,7 +388,7 @@ mod tests {
 
     // Frozen on first computation: any change to a default or to the params layout moves every
     // pattern vkey, so it must be deliberate.
-    const DEFAULT_HASH: &str = "9e58b685d887e34d1ae451ebb2560098b475209c4ed5c2cf68ea431ac671607e";
+    const DEFAULT_HASH: &str = "1cf2351928960e91b024a85384175a343bef86d328a4c453bdd627978a329732";
 
     #[test]
     fn default_params_hash_is_frozen() {

@@ -1,7 +1,7 @@
 //! `regular.stream.roll`: rolls and stairs. At least `roll_min_rows` consecutive moves in the
 //! same direction (Interlude prelude `Stream_4K.ROLL` / `CHORD_ROLL`, MIT, see NOTICE), each move
 //! stream-fast and an Interlude roll (the new row lies wholly on one side of the previous one).
-//! Single-note stairs and chord rolls both qualify; interleaved chord shapes are chordbrackets.
+//! Single-note stairs and chord rolls both qualify; interleaved chord shapes are chordtrills.
 
 use wolluf_core::{Keymode, PatternId};
 

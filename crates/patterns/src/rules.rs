@@ -3,10 +3,10 @@
 mod anchor;
 mod bracket;
 mod burst;
-mod chordbracket;
 mod chordjack;
 mod chordstream_dense;
 mod chordstream_light;
+mod chordtrill;
 mod common;
 mod delay;
 mod hand_imbalance;
@@ -32,10 +32,10 @@ mod trill;
 pub use anchor::Anchor;
 pub use bracket::Bracket;
 pub use burst::Burst;
-pub use chordbracket::Chordbracket;
 pub use chordjack::Chordjack;
 pub use chordstream_dense::ChordstreamDense;
 pub use chordstream_light::ChordstreamLight;
+pub use chordtrill::Chordtrill;
 pub use delay::Delay;
 pub use hand_imbalance::HandImbalance;
 pub use handstream::Handstream;
@@ -76,7 +76,7 @@ pub fn all() -> &'static [&'static dyn PatternRule] {
         &Jumptrill,
         &SplitTrill,
         &Bracket,
-        &Chordbracket,
+        &Chordtrill,
         &Irregular,
         &HandImbalance,
         &Thumb,
@@ -251,7 +251,7 @@ mod tests {
                 "regular.stream.jumptrill",
                 "regular.stream.split_trill",
                 "regular.stream.bracket",
-                "regular.stream.chordbracket",
+                "regular.stream.chordtrill",
                 "regular.tech.irregular",
                 "regular.tech.hand_imbalance",
                 "regular.tech.thumb",
@@ -472,9 +472,9 @@ mod props {
             let params = PatternParams::default();
             let a = ChartView::new(&chart, &layout, &params).unwrap();
             let b = ChartView::new(&mirror_chart, &layout, &params).unwrap();
-            let agnostic: [&dyn PatternRule; 22] = [
+            let agnostic: [&dyn PatternRule; 21] = [
                 &Minijack, &Chordjack, &Longjack, &Anchor, &Single, &Jumpstream, &Handstream,
-                &ChordstreamLight, &ChordstreamDense, &Roll, &Trill, &Jumptrill, &Chordbracket,
+                &ChordstreamLight, &ChordstreamDense, &Roll, &Trill, &Chordtrill,
                 &Irregular, &Burst, &LnDensity, &LnChord, &LnHybrid, &LnShield, &LnInverse,
                 &LnRelease, &Delay,
             ];
