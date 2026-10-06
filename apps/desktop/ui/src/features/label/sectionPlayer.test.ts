@@ -4,10 +4,8 @@ import { SectionPlayer, type SectionPlayerDeps } from "./sectionPlayer";
 
 class FakeSource implements AudioBufferSourceNodeLike {
   buffer: AudioBufferLike | null = null;
-  loop = false;
-  loopStart = 0;
-  loopEnd = 0;
-  started = 0;
+  onended: ((ev: Event) => unknown) | null = null;
+  starts: { when: number | undefined; offset: number | undefined; duration: number | undefined }[] = [];
   stopped = 0;
   connect(): void {
     // Routing is not observed.
@@ -15,13 +13,19 @@ class FakeSource implements AudioBufferSourceNodeLike {
   disconnect(): void {
     // Routing is not observed.
   }
-  start(): void {
-    this.started++;
+  start(when?: number, offset?: number, duration?: number): void {
+    this.starts.push({ when, offset, duration });
   }
   stop(): void {
     this.stopped++;
   }
 }
+
+const FAKE_GAIN = {
+  gain: { setValueAtTime: () => undefined, linearRampToValueAtTime: () => undefined },
+  connect: () => undefined,
+  disconnect: () => undefined,
+};
 
 interface FakeContext extends AudioContextLike {
   currentTime: number;
@@ -41,6 +45,9 @@ function fakeContext(): FakeContext {
       const source = new FakeSource();
       ctx.sources.push(source);
       return source;
+    },
+    createGain() {
+      return FAKE_GAIN;
     },
     async resume() {
       return Promise.resolve();
@@ -77,6 +84,7 @@ function harness(overrides: Partial<SectionPlayerDeps> = {}) {
         decodes.push({ base64, resolve, reject });
       }),
     now: () => now.ms,
+    splice: SPLICE,
     ...overrides,
   });
   return { player, contexts, decodes, now };
@@ -85,6 +93,7 @@ function harness(overrides: Partial<SectionPlayerDeps> = {}) {
 const LOOP = { startMs: 1000, endMs: 3000 };
 const DATA = { kind: "data", base64: "SUQz" } as const;
 const BUFFER = { duration: 120 };
+const SPLICE = { fadeMs: 30, gapMs: 150 };
 
 async function settle(): Promise<void> {
   await Promise.resolve();
@@ -122,9 +131,10 @@ describe("SectionPlayer", () => {
     const { clock, loading } = player.getSnapshot();
     expect(loading).toBe(false);
     expect(clock?.playing).toBe(true);
-    const source = ctx.sources.at(-1);
-    expect(source?.loopStart).toBe(1);
-    expect(source?.loopEnd).toBe(3);
+    expect(ctx.sources.map((s) => s.starts)).toEqual([
+      [{ when: 0, offset: 1, duration: 2 }],
+      [{ when: 2.15, offset: 1, duration: 2 }],
+    ]);
   });
 
   it("keeps the decoded buffer across a reshape of the same chart and restarts the loop playing", async () => {
@@ -142,7 +152,7 @@ describe("SectionPlayer", () => {
     expect(second).not.toBe(first);
     expect(first?.playing).toBe(false);
     expect(second?.playing).toBe(true);
-    expect(ctx.sources.at(-1)?.loopStart).toBe(2);
+    expect(ctx.sources.at(-2)?.starts[0]?.offset).toBe(2);
   });
 
   it("decodes a new chart and ignores a decode that finishes after the chart changed", async () => {
@@ -181,6 +191,17 @@ describe("SectionPlayer", () => {
     expect(clock?.playing).toBe(true);
     now.ms = 250;
     expect(clock?.nowMs()).toBe(1250);
+  });
+
+  it("gives the silent clock the same splice gap as the audio", () => {
+    const { player, now } = harness();
+    player.setSection("a", { kind: "missing" }, LOOP);
+    player.play();
+    const { clock } = player.getSnapshot();
+    now.ms = 2050;
+    expect(clock?.nowMs()).toBe(1000);
+    now.ms = 2250;
+    expect(clock?.nowMs()).toBe(1100);
   });
 
   it("falls back to the silent clock when decoding fails", async () => {

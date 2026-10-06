@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import type { QueryClient } from "@tanstack/react-query";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -16,6 +17,7 @@ import { type CommandHandlers, type MockCall, mockCommands, mockIpcError } from 
 import { renderWithRouter } from "@/shared/testing/renderWithRouter";
 import { LabelScreen, type LabelScreenProps } from "./LabelScreen";
 import { LABEL_PREFS } from "./prefs";
+import { skinKeys } from "./queries";
 
 const TAXONOMY: PatternDefDto[] = [
   { id: "regular.jack.minijack", axis: "7k.regular.jack", key: "mj", description: "exactly two notes in one column" },
@@ -120,9 +122,7 @@ class FakeAudioContext {
     FakeAudioContext.sources.push(node);
     return {
       buffer: null,
-      loop: false,
-      loopStart: 0,
-      loopEnd: 0,
+      onended: null,
       connect: () => undefined,
       disconnect: () => undefined,
       start: () => {
@@ -131,6 +131,13 @@ class FakeAudioContext {
       stop: () => {
         node.stops++;
       },
+    };
+  }
+  createGain() {
+    return {
+      gain: { setValueAtTime: () => undefined, linearRampToValueAtTime: () => undefined },
+      connect: () => undefined,
+      disconnect: () => undefined,
     };
   }
   async resume() {
@@ -182,6 +189,17 @@ function argsOf(calls: MockCall[], cmd: string): Record<string, unknown>[] {
   return calls.filter((c) => c.cmd === cmd).map((c) => c.args);
 }
 
+let queryClient: QueryClient | undefined;
+
+/** Lets queued IPC replies, query updates and effects run, so a test can assert that nothing more was fetched. */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 5; i++) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+}
+
 function renderScreen(
   windows: (LabelWindowDto | null)[] = [WINDOW_A, WINDOW_B],
   extra: CommandHandlers = {},
@@ -210,7 +228,7 @@ function renderScreen(
     },
     ...extra,
   });
-  renderWithRouter(<LabelScreen keymode={7} seed="42" {...props} />, { path: "/label" });
+  ({ queryClient } = renderWithRouter(<LabelScreen keymode={7} seed="42" {...props} />, { path: "/label" }));
   return calls;
 }
 
@@ -233,7 +251,8 @@ function pressed(name: string): string | null {
 async function playingSource(): Promise<FakeSourceNode> {
   await userEvent.click(await screen.findByRole("button", { name: "Play" }));
   await waitFor(() => {
-    expect(FakeAudioContext.sources.map((s) => s.started)).toEqual([1]);
+    // The playing iteration and the next one, scheduled ahead.
+    expect(FakeAudioContext.sources.map((s) => s.started)).toEqual([1, 1]);
   });
   const [source] = FakeAudioContext.sources;
   if (source === undefined) {
@@ -593,6 +612,7 @@ describe("LabelScreen", () => {
 
     expect(await screen.findByText("Session ended.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New session" })).toBeInTheDocument();
+    expect(FakeAudioContext.sources.map((s) => s.stops)).toEqual([1, 1]);
     expect(source.stops).toBe(1);
     expect(FakeAudioContext.closed).toBe(1);
   });
@@ -907,6 +927,11 @@ describe("LabelScreen skins", () => {
     let mtime = "1";
     const calls = renderScreen(undefined, {
       skinList: () => ({ ...LIST, skins: [skinEntry("Pilot", [7], mtime)] }),
+      // Slow enough that the list's new mtime renders while Reload's own skin fetch is still in flight.
+      skinGet: async (args) => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return skinDto(String(args["folder"]), Number(args["keymode"]));
+      },
     });
     await roundLoaded();
     await waitFor(() => {
@@ -919,8 +944,10 @@ describe("LabelScreen skins", () => {
     mtime = "2";
     await userEvent.click(screen.getByRole("button", { name: "Reload skin" }));
     await waitFor(() => {
-      expect(argsOf(calls, "skin_get")).toHaveLength(2);
+      expect(screen.getByRole("button", { name: "Reload skin" })).toBeEnabled();
     });
+    await settle();
+    expect(argsOf(calls, "skin_get")).toHaveLength(2);
     expect(argsOf(calls, "skin_list")).toHaveLength(2);
 
     await userEvent.click(screen.getByRole("button", { name: "Reload skin" }));
@@ -928,6 +955,111 @@ describe("LabelScreen skins", () => {
       expect(argsOf(calls, "skin_get")).toHaveLength(3);
     });
     expect(argsOf(calls, "skin_list")).toHaveLength(3);
+  });
+
+  it("fetches the stored skin before the skin list answers, and keeps it when the list confirms it", async () => {
+    localStorage.setItem(LABEL_PREFS.skinKey, JSON.stringify({ folder: "Zeta" }));
+    let answerList: (list: SkinListDto) => void = () => undefined;
+    const pendingList = new Promise<SkinListDto>((resolve) => {
+      answerList = resolve;
+    });
+    const calls = renderScreen(undefined, { skinList: () => pendingList });
+    await roundLoaded();
+    await waitFor(() => {
+      expect(argsOf(calls, "skin_get")).toEqual([{ folder: "Zeta", keymode: 7 }]);
+    });
+    expect(argsOf(calls, "skin_list")).toHaveLength(1);
+    await waitFor(() => {
+      expect(canvas.images).toContain(bitmaps[0]);
+    });
+
+    answerList(LIST);
+    expect(await pickerReady()).toHaveValue("Zeta");
+    await settle();
+    expect(argsOf(calls, "skin_get")).toHaveLength(1);
+    expect(bitmaps[0]?.close).not.toHaveBeenCalled();
+  });
+
+  it("falls back silently to the cfg skin when a stored skin is gone, with no error before the list answers", async () => {
+    localStorage.setItem(LABEL_PREFS.skinKey, JSON.stringify({ folder: "OldSkin" }));
+    let answerList: (list: SkinListDto) => void = () => undefined;
+    const pendingList = new Promise<SkinListDto>((resolve) => {
+      answerList = resolve;
+    });
+    const missing = "This skin was not found in the osu! Skins folder.";
+    const seen: string[] = [];
+    const observer = new MutationObserver(() => {
+      seen.push(...[...document.querySelectorAll('[role="status"]')].map((el) => el.textContent));
+    });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    const calls = renderScreen(undefined, {
+      skinList: () => pendingList,
+      skinGet: (args) =>
+        args["folder"] === "OldSkin"
+          ? mockIpcError("NOT_FOUND", {}, { messageKey: "error.skin_unavailable" })
+          : skinDto(String(args["folder"]), Number(args["keymode"])),
+    });
+    try {
+      await roundLoaded();
+      await waitFor(() => {
+        expect(argsOf(calls, "skin_get")).toEqual([{ folder: "OldSkin", keymode: 7 }]);
+      });
+      await settle();
+      expect(screen.queryByText(missing)).not.toBeInTheDocument();
+
+      answerList(LIST);
+      expect(await pickerReady()).toHaveValue("Pilot");
+      await waitFor(() => {
+        expect(canvas.images).toContain(bitmaps[0]);
+      });
+      expect(argsOf(calls, "skin_get")).toEqual([
+        { folder: "OldSkin", keymode: 7 },
+        { folder: "Pilot", keymode: 7 },
+      ]);
+      await settle();
+      expect(seen).not.toContain(missing);
+      expect(screen.queryByText(missing)).not.toBeInTheDocument();
+    } finally {
+      observer.disconnect();
+    }
+  });
+
+  it("fetches the cfg skin as soon as the list names it when nothing is stored", async () => {
+    const calls = renderScreen(undefined, { skinList: () => LIST });
+    await waitFor(() => {
+      expect(argsOf(calls, "skin_get")).toEqual([{ folder: "Pilot", keymode: 7 }]);
+    });
+    await settle();
+    expect(argsOf(calls, "skin_get")).toHaveLength(1);
+  });
+
+  it("refetches the skin exactly once when a later list reports a new ini mtime", async () => {
+    let mtime = "1";
+    const calls = renderScreen(undefined, {
+      skinList: () => ({ ...LIST, skins: [skinEntry("Pilot", [7], mtime)] }),
+    });
+    await roundLoaded();
+    await waitFor(() => {
+      expect(bitmaps).toHaveLength(1);
+    });
+
+    mtime = "2";
+    await act(async () => {
+      await queryClient?.invalidateQueries({ queryKey: skinKeys.list() });
+    });
+    await waitFor(() => {
+      expect(argsOf(calls, "skin_get")).toHaveLength(2);
+    });
+    await settle();
+    expect(argsOf(calls, "skin_get")).toHaveLength(2);
+    expect(argsOf(calls, "skin_list")).toHaveLength(2);
+
+    await act(async () => {
+      await queryClient?.invalidateQueries({ queryKey: skinKeys.list() });
+    });
+    await settle();
+    expect(argsOf(calls, "skin_list")).toHaveLength(3);
+    expect(argsOf(calls, "skin_get")).toHaveLength(2);
   });
 
   it("defaults the osu! speed to the cfg ManiaSpeed until one is stored", async () => {

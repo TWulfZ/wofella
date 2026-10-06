@@ -12,20 +12,19 @@ export function skinOptions(list: SkinListDto | undefined, keymode: number): Ski
   return [...options.filter((o) => o.hasKeymode), ...options.filter((o) => !o.hasKeymode)];
 }
 
-/** A stored choice wins; one naming a skin that is gone falls back to the cfg's active skin. */
-export function selectedSkin(list: SkinListDto | undefined, choice: SkinChoice | undefined): SkinEntryDto | null {
+/**
+ * The folder to fetch: a stored choice wins and needs no list, so its skin loads while the slow listing runs; one
+ * naming a skin that is gone falls back to the cfg's active skin once the list arrives.
+ */
+export function selectedSkinFolder(list: SkinListDto | undefined, choice: SkinChoice | undefined): string | null {
   if (list === undefined) {
-    return null;
+    return choice?.folder ?? null;
   }
-  const find = (folder: string): SkinEntryDto | null => list.skins.find((s) => s.folder === folder) ?? null;
+  const listed = (folder: string): boolean => list.skins.some((s) => s.folder === folder);
   if (choice !== undefined) {
-    if (choice.folder === null) {
-      return null;
-    }
-    const chosen = find(choice.folder);
-    if (chosen !== null) {
-      return chosen;
+    if (choice.folder === null || listed(choice.folder)) {
+      return choice.folder;
     }
   }
-  return list.current === null ? null : find(list.current);
+  return list.current !== null && listed(list.current) ? list.current : null;
 }

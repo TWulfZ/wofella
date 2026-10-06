@@ -115,6 +115,25 @@ Rejected:
     - server diagnostics not shown;
     - extra exports.
   - **Gates:** UI vitest 42 files / 357 passed; tsc, lint, build ok.
+- 2026-10-06 Pilot feedback on WSL (`cargo tauri dev`): the audio cuts and overlaps, percy skins render wrong, and skins lag. A diagnosis workflow (probes in the scratchpad) found:
+  - **Audio:**
+    - resume replayed `outputLatency` of audio (confirmed: 2.8 s vs 3.0 s);
+    - the loop jumped with no fade every ~5 s;
+    - a stall longer than one period could overlap passes;
+    - no packages are missing.
+  - **Percy:** the 4096-px crop kept the bottom rows, and repeat bodies were head-anchored. The pilot's 138×40000 body has 95 transparent rows plus a cap at the top.
+  - **Lag:** drawing measured 2.6–3.1 ms/frame in the pilot's WebKitGTK. WSLg has no GPU; the first paint waited on the skin list; StrictMode decoded the skin twice.
+  - **PixiJS:** not adopted. WebGL would be llvmpipe on WSLg and gains nothing at about 40 sprites; revisit with an ADR if a Windows profile exceeds 8 ms/frame.
+- 2026-10-06 Fix tasks, each with RED observed:
+  - resume from the scheduled position;
+  - one-shot passes with 30 ms fades and a 150 ms gap; stall-safe scheduling (RED `13.45 ≥ 13.875`);
+  - `NoteBodyStyle: 1` → RepeatBottom, as lazer's TryParse does;
+  - crop keeps the top rows (`sourceHeight` kept); repeat bodies tail-anchored; strips are drawn once, never re-tiled; Stretch proportional when cropped;
+  - tails pre-flipped once; sub-0.5 px images skipped;
+  - one cached background layer (two more layers were dropped after review);
+  - the skin is fetched before the list answers, the mtime refetches once, and StrictMode decodes once;
+  - a deleted stored skin no longer flashes an error.
+  - Review: 1 confirmed defect (fixed). Gates: UI 43 files / 396 passed; tsc, lint, build ok; nextest source-osu+app 376 passed; clippy and fmt clean.
 
 ## Next step
-T10: CI installer for the pilot; side-by-side with stable (active skin, a Stretch skin with a tall body, F3/F4 direction); full gate block; remove this document. Research material: `<scratchpad>/skins-research/{PLAN,REPORTS}.md` and the lazer sources under `<scratchpad>/skins-research/lazer-legacy-mania/src/`.
+T10: pilot retries on WSL (audio, percy skins `(TWulfZ Edit)` and `xSoiFan's Osage Skin Percy`, lag) and on the Windows portable/installer; side-by-side with stable (LN cut gap: natural aspect vs lazer's 32800 stretch; F3/F4 direction); push the portable-exe CI commit once `gh auth refresh -s workflow` is done; full gate block; remove this document. Research material: `<scratchpad>/skins-research/{PLAN,REPORTS}.md` and the lazer sources under `<scratchpad>/skins-research/lazer-legacy-mania/src/`.

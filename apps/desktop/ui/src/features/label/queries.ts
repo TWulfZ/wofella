@@ -1,10 +1,12 @@
-import { queryOptions, skipToken, useMutation, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, skipToken, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import {
   commands,
   type AnchorDto,
   type LabelSubmitDto,
   type SampleRequestDto,
-  type SkinEntryDto,
+  type SkinDto,
+  type SkinListDto,
   type WindowOpDto,
 } from "@/ipc/bindings";
 import { call } from "@/ipc/client";
@@ -28,7 +30,7 @@ export const SKIN_QUERY_PARAMS = {
 export const skinKeys = {
   all: qk("skins"),
   list: () => qk("skins", "list"),
-  get: (folder: string, keymode: number, iniMtime: string | null) => qk("skins", "get", folder, keymode, iniMtime),
+  get: (folder: string, keymode: number) => qk("skins", "get", folder, keymode),
 };
 
 export function skinListQuery() {
@@ -39,15 +41,63 @@ export function skinListQuery() {
   });
 }
 
-export function skinGetQuery(entry: SkinEntryDto | null, keymode: number) {
+export interface SkinFile {
+  dto: SkinDto;
+  /**
+   * The listed skin.ini mtime when the fetch started; undefined when the list had not answered yet, since listing every
+   * skin folder is slow and the first paint does not wait for it.
+   */
+  iniMtime: string | null | undefined;
+}
+
+/** The listed skin.ini mtime of a folder; undefined while the list is unknown or does not name the folder. */
+export function listedIniMtime(list: SkinListDto | undefined, folder: string): string | null | undefined {
+  return list?.skins.find((s) => s.folder === folder)?.iniMtime;
+}
+
+export function skinGetQuery(folder: string | null, keymode: number) {
   return queryOptions({
-    // The ini mtime is in the key so an edited skin.ini is a new entry rather than a stale hit (ADR 0019).
-    queryKey: skinKeys.get(entry?.folder ?? "", keymode, entry?.iniMtime ?? null),
-    queryFn: entry === null ? skipToken : () => call(commands.skinGet(entry.folder, keymode)),
+    // Keyed without the ini mtime so the first paint need not wait for the list; useSkinFile refetches on a change.
+    queryKey: skinKeys.get(folder ?? "", keymode),
+    queryFn:
+      folder === null
+        ? skipToken
+        : async ({ client }): Promise<SkinFile> => {
+            const iniMtime = listedIniMtime(client.getQueryData(skinKeys.list()), folder);
+            return { dto: await call(commands.skinGet(folder, keymode)), iniMtime };
+          },
     staleTime: Infinity,
     // Only the skin on screen is kept: its base64 is MBs and its decoded form lives with the screen.
     gcTime: 0,
   });
+}
+
+/**
+ * One skin_get per (folder, keymode, ini mtime) as ADR 0019 asks, without putting the mtime in the key: a fetch that
+ * beat the list adopts the list's mtime, and a later different mtime refetches once.
+ */
+export function useSkinFile(folder: string | null, keymode: number, list: SkinListDto | undefined) {
+  const queryClient = useQueryClient();
+  const query = useQuery(skinGetQuery(folder, keymode));
+  const listed = folder === null ? undefined : listedIniMtime(list, folder);
+  const fetchedWith = query.data?.iniMtime;
+  const hasData = query.data !== undefined;
+  const { refetch } = query;
+  useEffect(() => {
+    if (folder === null || !hasData || listed === undefined || fetchedWith === listed) {
+      return;
+    }
+    if (fetchedWith === undefined) {
+      // A skin.ini edited between the two concurrent reads is missed until Reload; the window is one IPC round trip.
+      queryClient.setQueryData<SkinFile>(skinKeys.get(folder, keymode), (prev) =>
+        prev === undefined ? prev : { ...prev, iniMtime: listed },
+      );
+      return;
+    }
+    // Joins a fetch already in flight (Reload's) instead of cancelling it and asking the disk twice.
+    void refetch({ cancelRefetch: false });
+  }, [queryClient, folder, keymode, listed, fetchedWith, hasData, refetch]);
+  return query;
 }
 
 export function labelTaxonomyQuery(keymode: number) {

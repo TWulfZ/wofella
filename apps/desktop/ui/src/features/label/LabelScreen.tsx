@@ -46,13 +46,13 @@ import {
   chartWindowQuery,
   labelStatsQuery,
   labelTaxonomyQuery,
-  skinGetQuery,
   skinListQuery,
   useLabelMutations,
+  useSkinFile,
 } from "./queries";
-import { type AudioInput, type ClosableAudioContext, SectionPlayer } from "./sectionPlayer";
+import { type AudioInput, type ClosableAudioContext, type LoopSpliceParams, SectionPlayer } from "./sectionPlayer";
 import { type FlagToggle, initialSession, sampleExclusion, sessionReducer, submitFlags, undoTarget } from "./session";
-import { selectedSkin, skinOptions } from "./skins";
+import { selectedSkinFolder, skinOptions } from "./skins";
 import type { Anchor, LabelWindow, ThumbSide } from "./types";
 
 export interface LabelScreenParams {
@@ -63,6 +63,7 @@ export interface LabelScreenParams {
   defaultPxPerMs: number;
   /** osu! speed until one is chosen, when neither the caller nor the cfg (ManiaSpeed) gives one. */
   defaultOsuSpeed: number;
+  loopSplice: LoopSpliceParams;
 }
 
 export const LABEL_SCREEN_PARAMS: LabelScreenParams = {
@@ -70,6 +71,7 @@ export const LABEL_SCREEN_PARAMS: LabelScreenParams = {
   postrollMs: 250,
   defaultPxPerMs: 1,
   defaultOsuSpeed: 20,
+  loopSplice: { fadeMs: 30, gapMs: 150 },
 };
 
 // osu!mania's in-game bindings: F3 slower, F4 faster.
@@ -143,8 +145,8 @@ interface Feedback {
   text: string;
 }
 
-function useSectionPlayer(createContext: () => ClosableAudioContext): SectionPlayer {
-  const [player] = useState(() => new SectionPlayer({ createContext }));
+function useSectionPlayer(createContext: () => ClosableAudioContext, splice: LoopSpliceParams): SectionPlayer {
+  const [player] = useState(() => new SectionPlayer({ createContext, splice }));
   useEffect(
     () => () => {
       player.release();
@@ -211,7 +213,7 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
     );
   }, [state, keymode, sampleAttempt, sampleWindow]);
 
-  const player = useSectionPlayer(createAudioContext);
+  const player = useSectionPlayer(createAudioContext, params.loopSplice);
   const playback = useSyncExternalStore(player.subscribe, player.getSnapshot);
   const md5 = anchor?.md5 ?? null;
   const audioKind: AudioInput["kind"] = audio.isSuccess ? "data" : audio.isError ? "missing" : "pending";
@@ -240,20 +242,17 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
   }, [player, offsetMs]);
   const skinList = useQuery(skinListQuery());
   const [skinChoice, setSkinChoice] = useState(readSkinChoice);
-  const skinEntry = selectedSkin(skinList.data, skinChoice);
-  const skinFile = useQuery(skinGetQuery(skinEntry, keymode));
-  const loadedSkin = useLoadedSkin(skinFile.data ?? null);
+  const skinFolder = selectedSkinFolder(skinList.data, skinChoice);
+  const skinFile = useSkinFile(skinFolder, keymode, skinList.data);
+  const loadedSkin = useLoadedSkin(skinFile.data?.dto ?? null);
   const [skinReloading, setSkinReloading] = useState(false);
   const reloadSkin = async (): Promise<void> => {
     setSkinReloading(true);
     try {
       const { data } = await skinList.refetch();
-      const next = selectedSkin(data, skinChoice);
-      // A changed ini mtime is a new query key that fetches on its own; the same key must be refetched by hand.
-      const sameKey =
-        next !== null && skinEntry !== null && next.folder === skinEntry.folder && next.iniMtime === skinEntry.iniMtime;
-      if (sameKey) {
-        await skinFile.refetch();
+      // Joins the refetch useSkinFile starts for a changed mtime, so Reload asks the disk once either way.
+      if (skinFolder !== null && selectedSkinFolder(data, skinChoice) === skinFolder) {
+        await skinFile.refetch({ cancelRefetch: false });
       }
     } finally {
       setSkinReloading(false);
@@ -529,7 +528,12 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
   const rangeText = anchor === null ? "" : `${formatClock(anchor.t0Ms)}–${formatClock(anchor.t1Ms)}`;
   const durationText =
     anchor === null ? "" : t("label.window.duration", { seconds: ((anchor.t1Ms - anchor.t0Ms) / MS_PER_SECOND).toFixed(1) });
-  const skinError = skinList.isError ? skinList.error : skinFile.isError ? skinFile.error : null;
+  // Before the list answers the folder is an unconfirmed stored choice; one that is gone falls back silently.
+  const skinError = skinList.isError
+    ? skinList.error
+    : skinFile.isError && skinList.data !== undefined
+      ? skinFile.error
+      : null;
   const skinNotices = [
     ...(skinError === null ? [] : [errorText(skinError)]),
     ...(loadedSkin.failedSlots.length === 0
@@ -602,7 +606,7 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
             />
             <SkinPicker
               options={skinOptions(skinList.data, keymode)}
-              folder={skinEntry?.folder ?? null}
+              folder={skinFolder}
               ready={skinList.data !== undefined}
               reloading={skinReloading}
               onChange={(folder) => {
