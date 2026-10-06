@@ -14,10 +14,12 @@ use wolluf_app::features::players::names::SessionMatchKind;
 use wolluf_app::features::players::selection::{AutoMatch, MatchSource};
 use wolluf_app::jobs::JobStatusDto;
 use wolluf_core::{AliasId, Keymode};
+use wolluf_source_osu::cfg_files::{list_user_cfgs, read_user_cfg};
 
-/// The pilot's session user, a normalized prefix of the cfg login (spec 004 pilot outcome).
+/// The pilot's session user: equal to the cfg login, or a normalized prefix of it while the login is
+/// garbage (spec 004 pilot outcome). The live cfg decides which.
 const SESSION_ALIAS: &[u8] = b"TWulfZ";
-/// The garbage cfg login itself; when it appears as an alias it matches as `equal`.
+/// The garbage login the pilot once had; auto-matched only while the cfg still holds it.
 const CFG_LOGIN_ALIAS: &[u8] = b"TWulfZasdasdasd d jSS||";
 /// Spec 004 AC15: listed, never suggested.
 const UNSELECTED_ALIASES: [&[u8]; 8] = [
@@ -66,20 +68,32 @@ async fn players_corpus_selection() {
         );
     }
 
+    let cfgs = list_user_cfgs(&root).unwrap();
+    let newest = cfgs.first().expect("no osu!.<account>.cfg in the corpus");
+    let login = read_user_cfg(&newest.path).unwrap().0.username;
+    let garbage_login = login.as_deref().map(str::as_bytes) == Some(CFG_LOGIN_ALIAS);
+
     let session = row(&list.rows, SESSION_ALIAS);
     assert!(session.selected);
+    let expected_kind = if login.as_deref().map(str::as_bytes) == Some(SESSION_ALIAS) {
+        SessionMatchKind::Equal
+    } else {
+        SessionMatchKind::Prefix
+    };
     assert_eq!(
         session.auto_match,
         Some(AutoMatch {
             source: MatchSource::CfgUsername,
-            kind: SessionMatchKind::Prefix,
+            kind: expected_kind,
         })
     );
-    if let Some(login) = list.rows.iter().find(|r| r.raw_name == CFG_LOGIN_ALIAS) {
-        assert!(login.selected);
+    if let Some(old_login) = list.rows.iter().find(|r| r.raw_name == CFG_LOGIN_ALIAS) {
+        assert_eq!(old_login.selected, garbage_login, "{old_login:?}");
+        let expected = garbage_login.then_some(SessionMatchKind::Equal);
         assert_eq!(
-            login.auto_match.map(|m| m.kind),
-            Some(SessionMatchKind::Equal)
+            old_login.auto_match.map(|m| m.kind),
+            expected,
+            "{old_login:?}"
         );
     }
     for name in UNSELECTED_ALIASES {
@@ -93,7 +107,7 @@ async fn players_corpus_selection() {
         .filter(|r| r.auto_match.is_some())
         .inspect(|r| {
             assert!(
-                r.raw_name == SESSION_ALIAS || r.raw_name == CFG_LOGIN_ALIAS,
+                r.raw_name == SESSION_ALIAS || (garbage_login && r.raw_name == CFG_LOGIN_ALIAS),
                 "only the session user may be auto-matched: {r:?}"
             );
             assert!(r.selected && r.in_self_profile, "{r:?}");
