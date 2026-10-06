@@ -14,7 +14,7 @@ use wolluf_patterns::PatternsError;
 
 use super::chart_parse::{parse_chart, summarize};
 use crate::error::EngineError;
-use crate::labels::{LabelInput, extract_labels};
+use crate::labels::LabelInput;
 use crate::rows_blob::{decode_rows, encode_rows};
 
 /// Ratios are pinned to 1e-6: finer bits would make the golden depend on float formatting.
@@ -63,7 +63,7 @@ fn chart_label_dump() -> String {
             creator,
             set_id: *set_id,
         };
-        for l in extract_labels(&input) {
+        for l in super::chart_label::run(&input) {
             let _ = writeln!(
                 dump,
                 "label {}|{}|{:?}|{}|{:?}|{}",
@@ -438,6 +438,26 @@ const LABEL_FIXTURES: &[(&str, &str, &str, Option<i32>)] = &[
     ("Gamma Practice Pack", "Gamma (Jack) 1", "Someone", None),
     ("Some Artist - Song", "Delete Upon download", "x", None),
     ("Some Artist - Song", "Hard", "x", None),
+    // Name hints: leaf vs axis, longest phrase, pack context, blocked phrase, rate variant.
+    (
+        "100 Various - Jack & Speed Pack",
+        "LN Tech Minijacks",
+        "x",
+        None,
+    ),
+    (
+        "100 Artist - Speed of Light",
+        "Dense Chordstream 1.1x (220bpm)",
+        "x",
+        None,
+    ),
+    ("100 Artist - Song", "Tech N9ne Split Trill", "x", None),
+    (
+        "1888009 Various Artists - KomeijiDove 7K LN Inverse Practice",
+        "~ 5th ~ Song",
+        "KomeijiDove",
+        None,
+    ),
 ];
 
 #[cfg(test)]
@@ -468,6 +488,17 @@ mod tests {
             labels.contains("label komeijidove_practice|jinjin_dan|"),
             "{labels}"
         );
+        for expected in [
+            "label name_hint|hint_pattern|None|regular.jack.minijack|Some(\"minijacks\")|false\n",
+            "label name_hint|hint_axis|None|7k.ln.tech|Some(\"ln tech\")|false\n",
+            "label name_hint|hint_pattern|None|regular.stream.chordstream_dense|Some(\"dense chordstream\")|true\n",
+            "label name_hint|hint_axis|None|7k.ln.inverse|Some(\"ln_inverse\")|false\n",
+        ] {
+            assert!(
+                labels.contains(expected),
+                "missing {expected:?} in\n{labels}"
+            );
+        }
     }
 
     #[test]

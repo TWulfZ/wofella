@@ -750,6 +750,8 @@ fn level_family_of_every_source() {
     }
     assert_eq!(level_family(source::BMS_5YNT3CK), Some(LevelFamily::Bms));
     assert_eq!(level_family(source::O2JAM), Some(LevelFamily::O2jam));
+    // Hints carry no level, so they never place a chart on a ladder.
+    assert_eq!(level_family(source::NAME_HINT), None);
     assert_eq!(level_family("nope"), None);
     let ids: Vec<&str> = LevelFamily::ALL.iter().map(|f| f.as_str()).collect();
     assert_eq!(ids, ["dan", "bms", "o2jam"]);

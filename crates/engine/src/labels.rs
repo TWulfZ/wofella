@@ -6,6 +6,7 @@
 //! (scale, level_text)), and the audit's free-text notes are not carried; the one note that
 //! matters downstream is [`ChartLabel::is_suspect_o2jam_level`].
 
+pub mod hints;
 mod scan;
 
 use scan::{
@@ -62,6 +63,8 @@ pub mod source {
     pub const BMS_5YNT3CK: &str = "bms_5ynt3ck";
     pub const O2JAM: &str = "o2jam";
     pub const OTHER_DAN_PRACTICE: &str = "other_dan_practice";
+    /// Weak evidence from names (`hints`), not a level: never a gold label.
+    pub const NAME_HINT: &str = "name_hint";
 }
 
 /// How a source's levels compare: dan ordinals share one ladder across sources, while BMS and
@@ -112,6 +115,9 @@ pub mod scale {
     /// Followed by the lowercased O2Jam difficulty char (`o2jam_h`): scale ids are persisted `StableId`s,
     /// lowercase by convention, unlike `labels.py` (`o2jam_H`).
     pub const O2JAM_PREFIX: &str = "o2jam_";
+    /// `name_hint` rows; `level_text` holds the pattern or axis id.
+    pub const HINT_PATTERN: &str = "hint_pattern";
+    pub const HINT_AXIS: &str = "hint_axis";
 }
 
 pub mod skill {
