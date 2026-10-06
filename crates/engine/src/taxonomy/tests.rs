@@ -104,9 +104,10 @@ fn taxonomy_vocabulary_decisions() {
     assert!(desc("regular.jack.minijack").contains("exactly two"));
     assert!(desc("regular.jack.longjack").contains("three or more"));
     assert!(desc("regular.stream.bracket").contains("two or more trills"));
-    for id in ["regular.stream.jumptrill", "regular.stream.chordtrill"] {
-        assert!(desc(id).contains("more than four"), "{id}");
-    }
+    assert!(desc("regular.stream.trill").contains("single notes"));
+    assert!(desc("regular.stream.jumptrill").contains("each chord in one hand"));
+    assert!(desc("regular.stream.split_trill").contains("each chord spread over both hands"));
+    assert!(desc("regular.stream.chordtrill").contains("jumptrills and split trills"));
 }
 
 /// The patterns crate cannot depend on engine (D1), so it repeats the pattern → axis mapping.

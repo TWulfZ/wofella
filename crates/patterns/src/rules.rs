@@ -472,9 +472,9 @@ mod props {
             let params = PatternParams::default();
             let a = ChartView::new(&chart, &layout, &params).unwrap();
             let b = ChartView::new(&mirror_chart, &layout, &params).unwrap();
-            let agnostic: [&dyn PatternRule; 22] = [
+            let agnostic: [&dyn PatternRule; 21] = [
                 &Minijack, &Chordjack, &Longjack, &Anchor, &Single, &Jumpstream, &Handstream,
-                &ChordstreamLight, &ChordstreamDense, &Roll, &Trill, &Jumptrill, &Chordtrill,
+                &ChordstreamLight, &ChordstreamDense, &Roll, &Trill, &Chordtrill,
                 &Irregular, &Burst, &LnDensity, &LnChord, &LnHybrid, &LnShield, &LnInverse,
                 &LnRelease, &Delay,
             ];

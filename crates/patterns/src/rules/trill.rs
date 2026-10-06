@@ -56,7 +56,7 @@ mod tests {
     use wolluf_chart::chart;
 
     use super::*;
-    use crate::rules::testkit::{cand, detect};
+    use crate::rules::testkit::{cand, detect, detect_with, layout};
 
     #[test]
     fn two_columns_alternating_are_a_trill() {
@@ -65,6 +65,18 @@ mod tests {
         let long =
             chart![step = 100; "..x...x", "......x", "..x....", "......x", "..x....", "......x"];
         assert_eq!(detect(&Trill, &long), [cand(ID, 100, 500, &[2, 6], 625)]);
+    }
+
+    #[test]
+    fn single_notes_across_the_hands_are_a_trill_under_either_thumb() {
+        let chart = chart![step = 100; "...x...", "....x..", "...x...", "....x.."];
+        for id in ["k7.313_right_thumb", "k7.313_left_thumb"] {
+            assert_eq!(
+                detect_with(&Trill, &chart, &layout(id)),
+                [cand(ID, 0, 300, &[3, 4], 500)],
+                "{id}"
+            );
+        }
     }
 
     #[test]

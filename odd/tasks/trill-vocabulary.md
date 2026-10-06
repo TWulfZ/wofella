@@ -21,7 +21,7 @@ Stream-fast and disjoint-from-previous as today (`common::alternations`, `stream
 - `jumptrill`: two chords (2+ notes) alternating, each chord wholly within one hand, the two chords on different hands.
 - `split_trill`: two chords alternating, each chord with notes on both the left and the right hand.
 - `chordtrill` (key `ct`): a run of stream-fast chord rows (2+ notes, no upper limit), each disjoint from the previous row, where each row either repeats the row two before (strict alternation) or interleaves with the previous row (not an Interlude roll). Jumptrills and split trills are chordtrills too; they outrank it, so it stays as their secondary tag.
-- Priority (unchanged slots): … burst, split_trill, jumptrill, bracket, trill, chordtrill, roll … A whole-row both-hand alternation such as `[1357][246]` is a split trill even though each hand's part is a bracket.
+- Priority (unchanged slots): … burst, split_trill, jumptrill, bracket, trill, chordtrill, roll … A whole-row both-hand alternation such as `[1357][246]` is a split trill even though each hand's part is a bracket. A chordtrill in which one hand plays a bracket (e.g. `xxxx.../....xxx` under the right-thumb layout) is a bracket.
 
 ## Constraints
 - Ids are stable strings; this rename is a recorded one-time exception (ADR 0017 amendment).
@@ -33,16 +33,21 @@ Stream-fast and disjoint-from-previous as today (`common::alternations`, `stream
 ## Acceptance criteria
 - Taxonomy lists `regular.stream.chordtrill` (key `ct`) and no `chordbracket` → `taxonomy_k7_ids` snapshot.
 - `Chord//Bracket` no longer hints a chord trill; "Chordtrill" / "Chord Trill" do → `hints_leaf_words_map_to_patterns`.
-- `xxx..../....xxx` is a jumptrill, `x.x.x.x/.x.x.x.` a split trill, `xxxx.../....xxx` a chordtrill, single-note 3/4 under either thumb preset a trill → rule unit tests and segment precedence tests.
+- `xxx..../....xxx` is a jumptrill, `x.x.x.x/.x.x.x.` a split trill, `xxxx.../....xxx` a chordtrill when no hand plays a bracket (3 rows, or `k7.both_thumbs`), single-note 3/4 under either thumb preset a trill → rule unit tests and segment precedence tests.
 - Golden covers every id, stage-lock check passes → `patterns_golden_covers_every_pattern_id`, `cargo xtask stage-lock --check`.
 
 ## Tasks
 - [x] T1 — Rename `chordbracket` → `chordtrill` (id, key `ct`, rule, param, priority, axes, taxonomy, hint phrases, stage versions, lock), behaviour unchanged except hints; ADR 0017 amendment (community-term principle, the rename, the exception); CLAUDE.md line. Acceptance: literal-id tests and snapshots name chordtrill; `Chord//Bracket` hints bracket only. Route: inline (mechanical rename). Tier: medium. Commit: feat(patterns): rename chordbracket to the community term chordtrill
-- [ ] T2 — Redefine trill / jumptrill / split_trill / chordtrill by hands per the definitions above, with tests, segment precedence tests and golden fixtures; ADR amendment definitions; taxonomy descriptions; stage VERSION bump. Acceptance: the four shapes in Acceptance resolve as stated. Route: delegated (writer: 2+ non-trivial files in `crates/patterns` + engine golden). Tier: medium. Commit: —
+- [x] T2 — Redefine trill / jumptrill / split_trill / chordtrill by hands per the definitions above, with tests, segment precedence tests and golden fixtures; ADR amendment definitions; taxonomy descriptions; stage VERSION bump. Acceptance: the four shapes in Acceptance resolve as stated. Route: delegated (writer: 2+ non-trivial files in `crates/patterns` + engine golden). Tier: medium. Commit: feat(patterns): split chord trills by hands as the osu! wiki does
 - [ ] T3 — Close: full gate block, `corpus_patterns` harness, `wolluf library hints` before/after on a copy of the data dir, numbers into research 05, remove this document. Route: inline. Tier: medium. Commit: —
 
 ## Progress
 - 2026-10-06 T1: RED `taxonomy_vocabulary_decisions` (no `regular.stream.chordtrill`) and `hints_leaf_words_map_to_patterns` failed → GREEN after the rename; frozen params hash and both vkeys re-frozen, patterns VERSION 4→5, chart_label 3→4, lock regenerated. `cargo fmt --all --check`: ok. `cargo clippy --workspace --all-targets -- -D warnings`: ok. `cargo nextest run --workspace`: 950 passed, 19 skipped. `cargo xtask stage-lock --check`: ok. Pre-existing failures: none.
 
+- 2026-10-06 T2 (writer): RED 13 failing tests in `cargo nextest run -p wolluf-patterns` (chordtrill/jumptrill/split_trill rule tests and 6 segment tests) → GREEN. Chordtrill = union of strict chord alternations and the moving-shape scan, merged; jumptrill and split_trill read `RowFeat.hands`; jumptrill left the hand-agnostic list.
+- 2026-10-06 Accepted change: `split_trill_min_rows` 3 → 4 — the golden showed split-chord stair turnarounds (`a b a`) read as split trills; params hash and patterns vkey re-frozen.
+- 2026-10-06 Accepted change: bracket stays above chordtrill — measured on a copy of the data dir (18,334 parsed 7K charts): chordtrill above bracket cut bracket from 129,675 s to 13,470 s and its hint lift on 200 "bracket" charts from 4.58 to 1.90; kept order gives bracket 4.58, jumptrill 634.9 on 9 hinted charts (66.7% vs 0.1% base; was ~0%). Recorded in the ADR amendment.
+- 2026-10-06 T2 gates: `cargo fmt --all --check`: ok. `cargo clippy --workspace --all-targets -- -D warnings`: ok. `cargo nextest run --workspace`: 958 passed, 19 skipped. `cargo xtask stage-lock --check`: ok. Spot check of the writer: `cargo nextest run -p wolluf-patterns -p wolluf-engine`: 262 passed.
+
 ## Next step
-T2: delegate the trill-family redefinition to one writer in `crates/patterns` + `crates/engine/src/stage/golden.rs`, `taxonomy.rs` descriptions; RED first with the four shapes in Acceptance.
+T3: full gate block (incl. UI and bindings drift), `corpus_patterns` harness with osu! closed, v5 hint-lift rows into research 05 (numbers in Progress; hints output in the scratchpad `hints-b.txt`), then `git rm` this document.

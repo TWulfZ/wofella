@@ -127,19 +127,19 @@ static K7: [PatternDef; 26] = [
         "regular.stream.trill",
         STREAM,
         "t",
-        "two columns alternating",
+        "two columns alternating, single notes, in one hand or across both",
     ),
     def(
         "regular.stream.jumptrill",
         STREAM,
         "jt",
-        "two chords alternating, including alternating chords of more than four notes",
+        "two chords alternating, each chord in one hand, the hands taking turns",
     ),
     def(
         "regular.stream.split_trill",
         STREAM,
         "spt",
-        "trill split across both hands",
+        "two chords alternating, each chord spread over both hands",
     ),
     def(
         "regular.stream.bracket",
@@ -153,8 +153,8 @@ static K7: [PatternDef; 26] = [
         "regular.stream.chordtrill",
         STREAM,
         "ct",
-        "a two- or three-note chord shape moving across columns without jacking; alternating \
-         chords of more than four notes are a jumptrill",
+        "chords alternating or moving across columns without jacking; jumptrills and split \
+         trills are its one-hand and two-hand kinds",
     ),
     def(
         "ln.general.density",

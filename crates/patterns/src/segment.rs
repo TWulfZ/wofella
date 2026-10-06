@@ -372,23 +372,50 @@ mod tests {
     }
 
     #[test]
-    fn split_trill_beats_trill() {
+    fn a_single_note_trill_across_the_hands_is_a_trill_under_either_thumb() {
         let chart = chart![step = 100; "...x...", "....x..", "...x...", "....x.."];
-        let s = only(
-            &run(&chart, &layout("k7.313_left_thumb"), &loose()),
-            "regular.stream.split_trill",
-        );
-        assert!(tagged(&s, "regular.stream.trill"), "{s:?}");
-        assert_eq!(s.axis.as_str(), "7k.regular.stream");
-        assert_eq!((s.t0, s.t1), (ms(0), ms(300)));
+        for id in ["k7.313_right_thumb", "k7.313_left_thumb"] {
+            let s = only(&run(&chart, &layout(id), &loose()), "regular.stream.trill");
+            assert!(!tagged(&s, "regular.stream.split_trill"), "{id} {s:?}");
+            assert_eq!(s.axis.as_str(), "7k.regular.stream");
+            assert_eq!((s.t0, s.t1), (ms(0), ms(300)));
+        }
     }
 
     #[test]
-    fn split_trill_beats_jumptrill_and_light_chordstream() {
-        let chart = chart![step = 100; "xxx....", "....xxx", "xxx....", "....xxx"];
+    fn split_trill_beats_bracket_and_chordtrill() {
+        let chart = chart![step = 100; "x.x.x.x", ".x.x.x.", "x.x.x.x", ".x.x.x."];
         let s = only(&run_loose(&chart), "regular.stream.split_trill");
-        assert!(tagged(&s, "regular.stream.jumptrill"), "{s:?}");
-        assert!(tagged(&s, "regular.stream.chordstream_light"), "{s:?}");
+        assert!(tagged(&s, "regular.stream.bracket"), "{s:?}");
+        assert!(tagged(&s, "regular.stream.chordtrill"), "{s:?}");
+        assert!(!tagged(&s, "regular.stream.jumptrill"), "{s:?}");
+    }
+
+    #[test]
+    fn a_mixed_chord_alternation_is_a_chordtrill() {
+        let short = chart![step = 100; "xxxx...", "....xxx", "xxxx..."];
+        let s = only(&run_loose(&short), "regular.stream.chordtrill");
+        assert!(!tagged(&s, "regular.stream.jumptrill"), "{s:?}");
+        assert!(!tagged(&s, "regular.stream.split_trill"), "{s:?}");
+        let chart = chart![step = 100; "xxxx...", "....xxx", "xxxx...", "....xxx"];
+        let s = only(
+            &run(&chart, &layout("k7.both_thumbs"), &loose()),
+            "regular.stream.chordtrill",
+        );
+        assert!(!tagged(&s, "regular.stream.jumptrill"), "{s:?}");
+        assert!(!tagged(&s, "regular.stream.split_trill"), "{s:?}");
+        // From four rows the right hand's 4 / 567 alternation is itself a bracket, which
+        // outranks a chordtrill; with the thumb shared, no hand holds both sides.
+        let s = only(&run_loose(&chart), "regular.stream.bracket");
+        assert!(tagged(&s, "regular.stream.chordtrill"), "{s:?}");
+    }
+
+    #[test]
+    fn a_one_hand_chord_alternation_is_a_bracket() {
+        let chart = chart![step = 100; "...xx..", ".....xx", "...xx..", ".....xx"];
+        let s = only(&run_loose(&chart), "regular.stream.bracket");
+        assert!(tagged(&s, "regular.stream.chordtrill"), "{s:?}");
+        assert!(!tagged(&s, "regular.stream.jumptrill"), "{s:?}");
     }
 
     #[test]
@@ -421,11 +448,12 @@ mod tests {
     }
 
     #[test]
-    fn jumptrill_beats_chordstreams() {
-        let light = chart![step = 100; "xx.....", "..xx...", "xx.....", "..xx..."];
+    fn jumptrill_beats_chordtrill_and_chordstreams() {
+        let light = chart![step = 100; "xxx....", "....xxx", "xxx....", "....xxx"];
         let s = only(&run_loose(&light), "regular.stream.jumptrill");
+        assert!(tagged(&s, "regular.stream.chordtrill"), "{s:?}");
         assert!(tagged(&s, "regular.stream.chordstream_light"), "{s:?}");
-        let dense = chart![step = 100; "xxxx...", "....xxx", "xxxx...", "....xxx"];
+        let dense = chart![step = 100; "xxx....", "...xxxx", "xxx....", "...xxxx"];
         let s = only(&run_loose(&dense), "regular.stream.jumptrill");
         assert!(tagged(&s, "regular.stream.chordstream_dense"), "{s:?}");
     }
@@ -593,7 +621,7 @@ mod tests {
     #[test]
     fn long_runs_split_at_row_boundaries() {
         let rows: Vec<&str> = (0..200)
-            .map(|i| if i % 2 == 0 { "xx....." } else { "..xx..." })
+            .map(|i| if i % 2 == 0 { "xxx...." } else { "....xxx" })
             .collect();
         let chart = chart_from_rows(0, 100, &rows).unwrap();
         let params = PatternParams::default();

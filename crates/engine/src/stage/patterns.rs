@@ -173,7 +173,7 @@ mod tests {
         // Frozen: a change re-keys every stored segment.
         assert_eq!(
             key.to_string(),
-            "2ddffa3bef45b60abf51080431eb4857a5fb5d230ee21dddd4361997eeb4297f"
+            "b8a75b477685471dff72ab8e65f4a83d913bdb8486b4826d7e9b4b91d940efd5"
         );
     }
 
