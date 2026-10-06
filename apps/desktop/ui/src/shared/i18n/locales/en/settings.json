@@ -1,6 +1,7 @@
 {
   "settings": {
     "title": "Settings",
+    "subtitle": "Language, folders and identity",
     "language": "Language",
     "languages": {
       "en": "English",

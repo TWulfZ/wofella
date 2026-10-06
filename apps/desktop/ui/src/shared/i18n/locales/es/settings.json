@@ -1,6 +1,7 @@
 {
   "settings": {
     "title": "Ajustes",
+    "subtitle": "Idioma, carpetas e identidad",
     "language": "Idioma",
     "languages": {
       "en": "English",

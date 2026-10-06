@@ -16,7 +16,7 @@ export function ScopePicker() {
     <div className="flex items-center gap-2 text-sm">
       <select
         aria-label={t("players.scope.label")}
-        className="bg-background rounded-md border px-2 py-1"
+        className="border-input bg-surface-raised text-foreground hover:border-primary/60 focus-visible:ring-ring h-9 cursor-pointer rounded-md border px-3 text-sm transition-colors focus-visible:ring-2 focus-visible:outline-none"
         value={active === undefined ? "" : entryScopeParam(active)}
         onChange={(e) => {
           const next = entries.find((entry) => entryScopeParam(entry) === e.target.value);

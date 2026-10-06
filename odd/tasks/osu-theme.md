@@ -26,11 +26,12 @@ The F0 shell ships shadcn's neutral defaults; osu! players expect the dark osu!-
 
 ## Tasks
 - [x] T1 — osu! dark tokens (hue 333 surfaces, pink primary, blue/lime/yellow/purple accents), Exo 2 display font, class-based dark variant, triangles backdrop. Acceptance: UI gate green, build ok. Route: inline. Tier: medium. Commit: `feat(ui): add dark osu!-style theme tokens and Exo 2`
-- [ ] T2 — Shell header (mania brand mark, osu!-web tab nav), `PageHeader`, home stat tiles, settings restyle. Acceptance: UI gate green, screenshots. Route: delegated: writer touches 2+ non-trivial files. Tier: medium. Commit: —
+- [x] T2 — Shell header (mania brand mark, osu!-web tab nav), `PageHeader`, home stat tiles, settings restyle. Acceptance: UI gate green, screenshots. Route: delegated: writer touches 2+ non-trivial files. Tier: medium. Commit: `feat(ui): restyle shell, home and settings in osu!-web style`
 - [ ] T3 — Setup screen, identity wizard, job tray, not-self banner and primitive polish; feature close. Acceptance: full UI gate green, screenshots. Route: delegated: writer touches 2+ non-trivial files. Tier: medium. Commit: —
 
 ## Progress
 - 2026-10-06 T1: CSS-only, no meaningful RED (stated exception). `tsc --noEmit && lint && test`: 126 passed; `build`: ok. Screenshots (Playwright + mocked `__TAURI_INTERNALS__`, scratch harness) show dark tokens under a light OS scheme.
+- 2026-10-06 T2: RED 5 failed (`Unable to find an element with the text: Your osu!mania training hub`, `New plays`, `Ya conocidas`, `Language, folders and identity`, `Idioma, carpetas e identidad`) → GREEN. Spot check `tsc && lint && test`: 131 passed. Screenshots: home, settings.
 
 ## Next step
-T2: shell header with brand mark and tab nav, `PageHeader`, home stat tiles, settings.
+T3: setup screen, identity wizard, job tray, not-self banner, primitives; then feature close.
