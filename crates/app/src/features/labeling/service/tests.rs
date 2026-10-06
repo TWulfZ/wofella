@@ -72,7 +72,7 @@ async fn taxonomy_lists_the_keymode_patterns() {
     let (f, _) = library().await;
     let svc = f.ctx.labeling();
     let k7 = svc.taxonomy(7).unwrap();
-    assert_eq!(k7.len(), 25);
+    assert_eq!(k7.len(), 26);
     let minijack = k7.iter().find(|p| p.id == "regular.jack.minijack").unwrap();
     assert_eq!(
         (minijack.axis.as_str(), minijack.key.as_str()),

@@ -8,6 +8,7 @@ mod chordjack;
 mod chordstream_dense;
 mod chordstream_light;
 mod common;
+mod delay;
 mod hand_imbalance;
 mod handstream;
 mod irregular;
@@ -35,6 +36,7 @@ pub use chordbracket::Chordbracket;
 pub use chordjack::Chordjack;
 pub use chordstream_dense::ChordstreamDense;
 pub use chordstream_light::ChordstreamLight;
+pub use delay::Delay;
 pub use hand_imbalance::HandImbalance;
 pub use handstream::Handstream;
 pub use irregular::Irregular;
@@ -85,6 +87,7 @@ pub fn all() -> &'static [&'static dyn PatternRule] {
         &LnShield,
         &LnInverse,
         &LnRelease,
+        &Delay,
     ]
 }
 
@@ -259,6 +262,7 @@ mod tests {
                 "ln.tech.shield",
                 "ln.inverse.gap",
                 "ln.release.timing",
+                "regular.speed.delay",
             ]
         );
         assert!(all().iter().all(|r| r.version() >= 1));
@@ -468,11 +472,11 @@ mod props {
             let params = PatternParams::default();
             let a = ChartView::new(&chart, &layout, &params).unwrap();
             let b = ChartView::new(&mirror_chart, &layout, &params).unwrap();
-            let agnostic: [&dyn PatternRule; 21] = [
+            let agnostic: [&dyn PatternRule; 22] = [
                 &Minijack, &Chordjack, &Longjack, &Anchor, &Single, &Jumpstream, &Handstream,
                 &ChordstreamLight, &ChordstreamDense, &Roll, &Trill, &Jumptrill, &Chordbracket,
                 &Irregular, &Burst, &LnDensity, &LnChord, &LnHybrid, &LnShield, &LnInverse,
-                &LnRelease,
+                &LnRelease, &Delay,
             ];
             for rule in agnostic {
                 let mut expected: Vec<Candidate> = rule.detect(&a, &params).iter().map(mirrored).collect();

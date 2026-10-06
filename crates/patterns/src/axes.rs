@@ -12,7 +12,7 @@ const TECH: &str = "7k.regular.tech";
 const SPEED: &str = "7k.regular.speed";
 const STREAM: &str = "7k.regular.stream";
 
-pub static K7: [(PatternId, AxisId); 25] = [
+pub static K7: [(PatternId, AxisId); 26] = [
     pair("regular.jack.minijack", JACK),
     pair("regular.jack.chordjack", JACK),
     pair("regular.jack.longjack", JACK),
@@ -38,6 +38,7 @@ pub static K7: [(PatternId, AxisId); 25] = [
     pair("ln.tech.shield", "7k.ln.tech"),
     pair("ln.inverse.gap", "7k.ln.inverse"),
     pair("ln.release.timing", "7k.ln.release"),
+    pair("regular.speed.delay", SPEED),
 ];
 
 /// Only 7K has axes so far; other keymodes get their table with their profile (§9.1).

@@ -162,6 +162,17 @@ pub struct SpeedParams {
     pub burst_context_us: i64,
     /// How much faster than the surrounding pace a burst row must be.
     pub burst_min_density_ratio_permille: u32,
+    /// Sliding window, in press rows, for the delay share.
+    pub delay_window_rows: u32,
+    /// A press gap longer than this is a break; windows never span one.
+    pub delay_window_max_gap_us: i64,
+    /// A press gap this short is delay whatever the grid says: charts timed at double tempo put
+    /// their 1/4 here.
+    pub delay_max_gap_us: i64,
+    /// The coarsest snap divisor that counts as off the 1/4 grid.
+    pub delay_min_divisor: u8,
+    /// Seeded from mania-hub's chart-level delay tag; a section is denser than a whole chart.
+    pub delay_min_share_permille: u32,
 }
 
 impl Default for SpeedParams {
@@ -171,6 +182,11 @@ impl Default for SpeedParams {
             burst_max_rows: 12,
             burst_context_us: 4_000_000,
             burst_min_density_ratio_permille: 1_500,
+            delay_window_rows: 16,
+            delay_window_max_gap_us: 1_000_000,
+            delay_max_gap_us: 55_000,
+            delay_min_divisor: 6,
+            delay_min_share_permille: 500,
         }
     }
 }
@@ -321,6 +337,9 @@ impl Default for SegmentParams {
                 id("regular.stream.chordbracket"),
                 id("regular.stream.roll"),
                 id("regular.jack.anchor"),
+                // Below the shapes a staggered section may contain, above the generic streams
+                // it would otherwise read as.
+                id("regular.speed.delay"),
                 id("regular.stream.chordstream_dense"),
                 id("regular.stream.chordstream_light"),
                 id("regular.stream.handstream"),
@@ -366,7 +385,7 @@ mod tests {
 
     // Frozen on first computation: any change to a default or to the params layout moves every
     // pattern vkey, so it must be deliberate.
-    const DEFAULT_HASH: &str = "a2eed329bd0d4a8b200904d764deab9aa7e1b1fa3bdf1452ff57ddf6531e94ae";
+    const DEFAULT_HASH: &str = "a98eedde209ee8f549d037bc3b15554ee7626ceb6351205a08e50b95e317e0b2";
 
     #[test]
     fn default_params_hash_is_frozen() {
