@@ -51,6 +51,7 @@ Rejected: adopting mania-hub's chart-level detectors as the runtime (they are ch
   - 2.0×, 3 rows, burst below irregular: 2.10 / 1.53 / 2.50 / 1.51; 0.79; 39,447 s (bracket 4.80 → 4.41, delay 6.94 → 6.21). Rejected.
   - **2.0×, 4 rows (kept)**: 2.49 / 1.61 / 2.42 / 1.48; 1.10; 28,747 s. Delay 6.53, bracket 4.39.
 - 2026-10-05 T4: RED `burst::tests::near_misses` (3-row run) fails on the old defaults → GREEN. The off-grid golden fixture gained a 1/8 burst and a 48-row delay stream (the old 24-row one only showed up as a tag of a spurious burst). `cargo nextest run --workspace`: 863 passed. clippy, fmt, `stage-lock --check` (patterns v4): ok.
+- 2026-10-05 T5 (partial): research note `docs/research/05-pattern-engine-hint-lift.md`, `library hints` in CLAUDE.md. Gates: fmt, clippy (also `--all-features`), nextest 863 passed, check-layers 0 violations, lint-canary 58/58, deny ok, stage-lock --check ok, bindings no drift, UI tsc + eslint + vitest 126 passed. Pending: corpus `corpus_patterns` (osu! was running).
 
 ## Next step
-T5: corpus `corpus_patterns` with osu! closed, `docs/research/` before/after table, full gate block, remove this document.
+T5: with osu! closed (`tasklist.exe | grep -i osu` empty), run `WOLLUF_CORPUS="/mnt/e/Games/osu!" cargo nextest run -p wolluf-app --run-ignored only -E 'test(corpus_patterns)'`, then `git rm` this document in the close commit.

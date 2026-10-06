@@ -60,7 +60,7 @@ CLI (`cargo run -p wolluf-cli -- …`, binary `wolluf`; global `--data-dir <DIR>
 - `wolluf setup detect`, `wolluf setup set <path>`, `wolluf setup status`
 - `wolluf sync` (Ctrl-C cancels, exit 130), `wolluf players list`, `wolluf jobs list [--limit N]`
 - `wolluf library index` (also chained after `sync`), `wolluf library list [--keys N] [--scale S] [--level-min X] [--level-max Y] [--source SRC] [--text T] [--limit N] [--offset N]`, `wolluf library scales`
-- `wolluf chart show <md5> [--from <s|mm:ss>] [--to <s|mm:ss>] [--layout <preset id>] [--segments]` (ASCII playfield, earliest row at the bottom; default window 20 s; `--segments` marks engine pattern segments), `wolluf chart info <md5>`, `wolluf library patterns`
+- `wolluf chart show <md5> [--from <s|mm:ss>] [--to <s|mm:ss>] [--layout <preset id>] [--segments]` (ASCII playfield, earliest row at the bottom; default window 20 s; `--segments` marks engine pattern segments), `wolluf chart info <md5>`, `wolluf library patterns`, `wolluf library hints` (name-hint lift per axis and pattern; method and the v1→v4 numbers in `docs/research/05-pattern-engine-hint-lift.md`; measure on a copy of the data dir, since `library index` rewrites the cache)
 - `wolluf label [--seed N] [--window SECS] [--keys N] [--scale S] [--level-min X] [--level-max Y]` (blind gold-set labelling REPL: pattern keys, `x` no pattern, `s` skip, `u` undo, `m`/`?` flags, `tl`/`tr` thumb side, `w+`/`w-`/`n`/`p` reshape, `q` quit), `wolluf label stats [--json]`, `wolluf label export [--out PATH]` (default `fixtures/labels/gold-7k.jsonl`)
 - `wolluf osg dump <file> [--format table|json|csv] [--events] [--limit N]`
 - `wolluf osg survey --corpus <root> [--json] [--strict] [--max-files N]` (opens no data dir; use `--release` for timing)
