@@ -6,3 +6,4 @@ pub mod library;
 pub mod players;
 pub mod plays;
 pub mod setup;
+pub mod skins;

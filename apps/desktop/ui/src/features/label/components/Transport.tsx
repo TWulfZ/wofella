@@ -1,10 +1,16 @@
 import { Pause, Play } from "lucide-react";
-import { useId } from "react";
+import { type KeyboardEvent, useId } from "react";
 import { useTranslation } from "react-i18next";
+import { clampOsuSpeed, DEFAULT_STAGE_PARAMS } from "@/features/playfield";
 import { Button } from "@/shared/ui/button";
-import { LABEL_PREFS, type ScrollPref } from "../prefs";
+import { LABEL_PREFS, type ScrollKind, type ScrollPrefs } from "../prefs";
 
 const SCROLL_STEP = 0.05;
+const ZOOM_STEP = 0.05;
+const SCROLL_KINDS = [
+  { kind: "osu", labelKey: "label.transport.modeOsu" },
+  { kind: "pxPerMs", labelKey: "label.transport.modePxPerMs" },
+] as const satisfies readonly { kind: ScrollKind; labelKey: string }[];
 
 interface TransportProps {
   playing: boolean;
@@ -14,19 +20,27 @@ interface TransportProps {
   duration: string;
   offsetMs: number;
   onOffset: (offsetMs: number) => void;
-  scroll: ScrollPref;
-  fixedSpeed: number;
-  onScroll: (scroll: ScrollPref) => void;
+  scroll: ScrollPrefs;
+  onScroll: (patch: Partial<ScrollPrefs>) => void;
+  zoom: number;
+  onZoom: (zoom: number) => void;
   /** After a control here was used with the pointer or changed, so the screen can take focus back. */
   onSettle: () => void;
 }
 
 export function Transport(props: TransportProps) {
-  const { playing, loading, onToggle, range, duration, offsetMs, onOffset, scroll, fixedSpeed, onScroll, onSettle } = props;
+  const { playing, loading, onToggle, range, duration, offsetMs, onOffset, scroll, onScroll, zoom, onZoom, onSettle } =
+    props;
   const { t } = useTranslation();
   const offsetId = useId();
-  const scrollId = useId();
-  const fit = scroll === "fit";
+  const modeId = useId();
+  const speedId = useId();
+  const zoomId = useId();
+  const settleOnEnter = (e: KeyboardEvent): void => {
+    if (e.key === "Enter") {
+      onSettle();
+    }
+  };
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
       <Button size="lg" aria-keyshortcuts="Space" onClick={onToggle} className="min-w-28">
@@ -62,36 +76,107 @@ export function Transport(props: TransportProps) {
         </output>
       </div>
       <div className="flex items-center gap-2 text-sm">
+        <label htmlFor={modeId} className="text-muted-foreground">
+          {t("label.transport.scrollMode")}
+        </label>
+        <select
+          id={modeId}
+          value={scroll.kind}
+          onChange={(e) => {
+            const kind = SCROLL_KINDS.find((k) => k.kind === e.target.value)?.kind;
+            if (kind !== undefined) {
+              onScroll({ kind });
+            }
+            onSettle();
+          }}
+          className="border-input bg-background h-7 rounded-md border px-1.5 text-sm"
+        >
+          {SCROLL_KINDS.map(({ kind, labelKey }) => (
+            <option key={kind} value={kind}>
+              {t(labelKey)}
+            </option>
+          ))}
+        </select>
+        {scroll.kind === "osu" ? (
+          <>
+            <label htmlFor={speedId} className="text-muted-foreground">
+              {t("label.transport.osuSpeed")}
+            </label>
+            <input
+              id={speedId}
+              type="number"
+              min={DEFAULT_STAGE_PARAMS.minOsuSpeed}
+              max={DEFAULT_STAGE_PARAMS.maxOsuSpeed}
+              step={DEFAULT_STAGE_PARAMS.osuSpeedStep}
+              value={scroll.osuSpeed}
+              disabled={scroll.fit}
+              aria-keyshortcuts="F3 F4"
+              title={t("label.transport.osuSpeedHint")}
+              onChange={(e) => {
+                if (e.target.value !== "") {
+                  onScroll({ osuSpeed: clampOsuSpeed(Number(e.target.value)) });
+                }
+              }}
+              onPointerUp={onSettle}
+              onKeyDown={settleOnEnter}
+              className="border-input bg-background h-7 w-14 rounded-md border px-1.5 font-mono text-sm tabular-nums disabled:opacity-40"
+            />
+          </>
+        ) : (
+          <>
+            <label htmlFor={speedId} className="text-muted-foreground">
+              {t("label.transport.scroll")}
+            </label>
+            <input
+              id={speedId}
+              type="range"
+              min={LABEL_PREFS.minPxPerMs}
+              max={LABEL_PREFS.maxPxPerMs}
+              step={SCROLL_STEP}
+              value={scroll.pxPerMs}
+              disabled={scroll.fit}
+              onChange={(e) => {
+                onScroll({ pxPerMs: Number(e.target.value) });
+              }}
+              onPointerUp={onSettle}
+              className="w-24 accent-current disabled:opacity-40"
+            />
+            <output htmlFor={speedId} className="w-16 font-mono text-xs tabular-nums">
+              {t("label.transport.scrollValue", { value: scroll.pxPerMs.toFixed(2) })}
+            </output>
+          </>
+        )}
         <label className="flex items-center gap-1.5">
           <input
             type="checkbox"
-            checked={fit}
+            checked={scroll.fit}
             onChange={(e) => {
-              onScroll(e.target.checked ? "fit" : fixedSpeed);
+              onScroll({ fit: e.target.checked });
               onSettle();
             }}
           />
           {t("label.transport.fit")}
         </label>
-        <label htmlFor={scrollId} className="text-muted-foreground">
-          {t("label.transport.scroll")}
+      </div>
+      <div className="flex items-center gap-2 text-sm">
+        <label htmlFor={zoomId} className="text-muted-foreground">
+          {t("label.transport.zoom")}
         </label>
         <input
-          id={scrollId}
+          id={zoomId}
           type="range"
-          min={LABEL_PREFS.minPxPerMs}
-          max={LABEL_PREFS.maxPxPerMs}
-          step={SCROLL_STEP}
-          value={fixedSpeed}
-          disabled={fit}
+          min={DEFAULT_STAGE_PARAMS.minZoom}
+          max={DEFAULT_STAGE_PARAMS.maxZoom}
+          step={ZOOM_STEP}
+          value={zoom}
           onChange={(e) => {
-            onScroll(Number(e.target.value));
+            onZoom(Number(e.target.value));
           }}
           onPointerUp={onSettle}
-          className="w-24 accent-current disabled:opacity-40"
+          className="w-24 accent-current"
         />
-        <output htmlFor={scrollId} className="w-16 font-mono text-xs tabular-nums">
-          {t("label.transport.scrollValue", { value: fixedSpeed.toFixed(2) })}
+        <output htmlFor={zoomId} className="w-12 font-mono text-xs tabular-nums">
+          {t("label.transport.zoomValue", { value: zoom.toFixed(2) })}
         </output>
       </div>
     </div>

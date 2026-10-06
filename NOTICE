@@ -6,6 +6,7 @@ Licensed under the MIT License; see LICENSE.
 Third-party code included:
 - Interlude (YAVSRG, commit d41fc21623d45a94bd98e8207a0674c1407ea245), prelude/src/Calculator/Patterns/Primitives.fs (direction, roll and jack primitives) and Patterns.fs (default rule thresholds), MIT, Copyright (c) 2024 percyqaz. Ported to crates/patterns/src/view.rs and crates/patterns/src/params.rs.
 - mania-hub (aleju03, commit ef02a57d27caecafcdc328b6ae1e3bdb20f94d2e), algorithms/dan-estimator/features.ts offGridRowShare (off-grid row rule and its thresholds), MIT, Copyright (c) 2026 aleju03. Ported to crates/patterns/src/rules/delay.rs and the delay fields of crates/patterns/src/params.rs.
+- osu! (ppy/osu, commit 6359741babba4ced42da1fcda738c35370fdf3f4), osu.Game/Skinning/{LegacySkinDecoder,LegacyManiaSkinDecoder,LegacyManiaSkinConfiguration,LegacySkin,LegacySkinExtensions,LegacyColourCompatibility}.cs and osu.Game.Rulesets.Mania/Skinning/Legacy/*.cs (legacy skin.ini decoding, mania defaults, texture lookup order, legacy mania piece geometry), MIT, Copyright (c) 2025 ppy Pty Ltd. Ported to crates/source-osu/src/codec/skin_ini.rs, crates/source-osu/src/skins.rs and apps/desktop/ui/src/features/playfield/.
 
 Ported code is attributed here in the same commit that brings it in
 (docs/conventions.md, "Licensing and NOTICE"; ADR 0008). Each entry names

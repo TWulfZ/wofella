@@ -7,15 +7,23 @@ export interface AudioBufferLike {
 
 export interface AudioBufferSourceNodeLike {
   buffer: AudioBufferLike | null;
-  loop: boolean;
-  /** Seconds. */
-  loopStart: number;
-  /** Seconds. */
-  loopEnd: number;
+  onended: ((ev: Event) => unknown) | null;
   connect(destination: object): unknown;
   disconnect(): void;
-  start(when?: number, offset?: number): void;
+  /** Seconds, all three. */
+  start(when?: number, offset?: number, duration?: number): void;
   stop(): void;
+}
+
+export interface AudioParamLike {
+  setValueAtTime(value: number, startTime: number): unknown;
+  linearRampToValueAtTime(value: number, endTime: number): unknown;
+}
+
+export interface GainNodeLike {
+  readonly gain: AudioParamLike;
+  connect(destination: object): unknown;
+  disconnect(): void;
 }
 
 export interface AudioContextLike {
@@ -29,6 +37,7 @@ export interface AudioContextLike {
   readonly state: string;
   resume(): Promise<void>;
   createBufferSource(): AudioBufferSourceNodeLike;
+  createGain(): GainNodeLike;
   decodeAudioData(data: ArrayBuffer): Promise<AudioBufferLike>;
 }
 
@@ -51,15 +60,29 @@ export interface AudioLoopClock extends Clock {
   setOffsetMs(offsetMs: number): void;
 }
 
+/** How one loop iteration hands over to the next. */
+export interface LoopSpliceParams {
+  /** Fade at both edges of every iteration: a hard cut mid-phrase clicks. */
+  fadeMs: number;
+  /** Silence between iterations, so a restart is heard as a restart. The clock holds the loop start meanwhile. */
+  gapMs: number;
+}
+
 const MS_PER_S = 1000;
 
-/** Where `elapsedMs` of looped playback lands; before the first sample is heard it stays at the start. */
-export function loopPosition(elapsedMs: number, loop: LoopSpan): number {
+/** Where `elapsedMs` of looped playback lands; before the first sample is heard and during the gap it stays at the start. */
+export function loopPosition(elapsedMs: number, loop: LoopSpan, gapMs = 0): number {
   const len = loop.endMs - loop.startMs;
   if (elapsedMs <= 0 || len <= 0) {
     return loop.startMs;
   }
-  return loop.startMs + (elapsedMs % len);
+  const inPeriod = elapsedMs % (len + Math.max(0, gapMs));
+  return inPeriod < len ? loop.startMs + inPeriod : loop.startMs;
+}
+
+interface Voice {
+  source: AudioBufferSourceNodeLike;
+  gain: GainNodeLike;
 }
 
 export function createAudioLoopClock(
@@ -67,55 +90,101 @@ export function createAudioLoopClock(
   buffer: AudioBufferLike,
   loop: LoopSpan,
   offsetMs: number,
+  splice: LoopSpliceParams,
 ): AudioLoopClock {
-  // WebAudio silently plays the whole buffer when loopEnd lies past it, which would desync the clock from the sound.
+  // A one-shot asked to play past the buffer ends early, which would desync the clock from the sound.
   const span: LoopSpan = { startMs: loop.startMs, endMs: Math.min(loop.endMs, buffer.duration * MS_PER_S) };
   if (span.endMs <= span.startMs) {
     // The section lies past the end of the audio: an empty span would freeze the clock at its start.
-    return contextSilentLoopClock(ctx, loop, offsetMs);
+    return contextSilentLoopClock(ctx, loop, offsetMs, splice.gapMs);
   }
+  const lenMs = span.endMs - span.startMs;
+  const periodMs = lenMs + Math.max(0, splice.gapMs);
   let offset = offsetMs;
-  let positionMs = span.startMs;
-  let source: AudioBufferSourceNodeLike | null = null;
+  // Scheduled (not heard) elapsed time into the loop: what was already sent to the device must not be sent again.
+  let pausedElapsedMs = 0;
+  let playing = false;
+  // The iteration playing (or waiting out the gap) first, then the one scheduled ahead of it.
+  let voices: Voice[] = [];
+  let iteration = 0;
   let startedAtS = 0;
   let disposed = false;
 
   const latencyMs = (): number => (ctx.outputLatency ?? ctx.baseLatency ?? 0) * MS_PER_S;
-  const heardMs = (): number =>
-    source === null ? positionMs : loopPosition((ctx.currentTime - startedAtS) * MS_PER_S - latencyMs(), span);
+  const scheduledElapsedMs = (): number => (playing ? (ctx.currentTime - startedAtS) * MS_PER_S : pausedElapsedMs);
+  const heardMs = (): number => loopPosition(scheduledElapsedMs() - latencyMs(), span, splice.gapMs);
+
+  const detach = (voice: Voice): void => {
+    voice.source.onended = null;
+    voice.source.disconnect();
+    voice.gain.disconnect();
+  };
+
+  // Each iteration is its own one-shot source, scheduled one iteration ahead on the audio clock: `node.loop` cannot
+  // fade or pause between iterations, and timers on the main thread drift.
+  const schedule = (whenS: number, fromMs: number, durationMs: number): void => {
+    // A source node plays once per spec, so every iteration and every resume needs a fresh one.
+    const source = ctx.createBufferSource();
+    const gain = ctx.createGain();
+    source.buffer = buffer;
+    source.connect(gain);
+    gain.connect(ctx.destination);
+    const durationS = durationMs / MS_PER_S;
+    const fadeS = Math.min(Math.max(0, splice.fadeMs), durationMs / 2) / MS_PER_S;
+    gain.gain.setValueAtTime(0, whenS);
+    gain.gain.linearRampToValueAtTime(1, whenS + fadeS);
+    gain.gain.setValueAtTime(1, whenS + durationS - fadeS);
+    gain.gain.linearRampToValueAtTime(0, whenS + durationS);
+    source.start(whenS, fromMs / MS_PER_S, durationS);
+    const voice: Voice = { source, gain };
+    source.onended = () => {
+      if (voices[0] !== voice) {
+        return;
+      }
+      detach(voice);
+      voices = voices.slice(1);
+      scheduleNext();
+    };
+    voices.push(voice);
+  };
+  const scheduleNext = (): void => {
+    // After a main-thread stall a pass due in the past would start now, off the clock's grid and over the next one.
+    const dueIteration = Math.ceil(((ctx.currentTime - startedAtS) * MS_PER_S) / periodMs);
+    iteration = Math.max(iteration + 1, dueIteration);
+    schedule(startedAtS + (iteration * periodMs) / MS_PER_S, span.startMs, lenMs);
+  };
 
   const stop = (): void => {
-    if (source === null) {
+    if (!playing) {
       return;
     }
-    positionMs = heardMs();
-    source.stop();
-    source.disconnect();
-    source = null;
+    pausedElapsedMs = loopPosition(scheduledElapsedMs(), span, splice.gapMs) - span.startMs;
+    playing = false;
+    for (const voice of voices) {
+      detach(voice);
+      voice.source.stop();
+    }
+    voices = [];
   };
 
   return {
     get playing() {
-      return source !== null;
+      return playing;
     },
     nowMs: () => heardMs() + offset,
     play() {
-      if (disposed || source !== null) {
+      if (disposed || playing) {
         return;
       }
       if (ctx.state === "suspended") {
         void ctx.resume();
       }
-      // A source node plays once per spec, so every resume needs a fresh one.
-      const node = ctx.createBufferSource();
-      node.buffer = buffer;
-      node.loop = true;
-      node.loopStart = span.startMs / MS_PER_S;
-      node.loopEnd = span.endMs / MS_PER_S;
-      node.connect(ctx.destination);
-      node.start(0, positionMs / MS_PER_S);
-      startedAtS = ctx.currentTime - (positionMs - span.startMs) / MS_PER_S;
-      source = node;
+      const nowS = ctx.currentTime;
+      startedAtS = nowS - pausedElapsedMs / MS_PER_S;
+      iteration = 0;
+      playing = true;
+      schedule(nowS, span.startMs + pausedElapsedMs, lenMs - pausedElapsedMs);
+      scheduleNext();
     },
     pause: stop,
     dispose() {
@@ -128,8 +197,8 @@ export function createAudioLoopClock(
   };
 }
 
-function contextSilentLoopClock(ctx: AudioContextLike, loop: LoopSpan, offsetMs: number): AudioLoopClock {
-  const silent = createSilentLoopClock(loop, () => ctx.currentTime * MS_PER_S);
+function contextSilentLoopClock(ctx: AudioContextLike, loop: LoopSpan, offsetMs: number, gapMs: number): AudioLoopClock {
+  const silent = createSilentLoopClock(loop, () => ctx.currentTime * MS_PER_S, gapMs);
   let offset = offsetMs;
   return {
     get playing() {
@@ -155,13 +224,17 @@ function contextSilentLoopClock(ctx: AudioContextLike, loop: LoopSpan, offsetMs:
   };
 }
 
-/** Same loop semantics on a wall clock, for charts without usable audio. */
-export function createSilentLoopClock(loop: LoopSpan, nowFn: () => number = () => performance.now()): Clock {
+/** Same loop semantics, gap included, on a wall clock, for charts without usable audio. */
+export function createSilentLoopClock(
+  loop: LoopSpan,
+  nowFn: () => number = () => performance.now(),
+  gapMs = 0,
+): Clock {
   let positionMs = loop.startMs;
   let startedAtMs: number | null = null;
   let disposed = false;
 
-  const currentMs = (): number => (startedAtMs === null ? positionMs : loopPosition(nowFn() - startedAtMs, loop));
+  const currentMs = (): number => (startedAtMs === null ? positionMs : loopPosition(nowFn() - startedAtMs, loop, gapMs));
   const stop = (): void => {
     positionMs = currentMs();
     startedAtMs = null;

@@ -181,3 +181,16 @@ jobs:
           path: target/release/bundle/nsis/*-setup.exe
           if-no-files-found: error
           retention-days: 14
+      # Tauri embeds the UI in the exe and WebView2 ships with Windows 10/11, so the bare binary
+      # runs without the installer.
+      - name: Stage portable exe
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force target/release/portable | Out-Null
+          Copy-Item target/release/wolluf-desktop.exe target/release/portable/wolluf.exe
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wolluf-windows-portable
+          path: target/release/portable/wolluf.exe
+          if-no-files-found: error
+          retention-days: 14

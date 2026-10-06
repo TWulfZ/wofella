@@ -15,6 +15,8 @@ pub mod keys {
     pub const LAZER_NOT_SUPPORTED: &str = "setup.error.lazer_not_supported";
     pub const CHART_AUDIO_UNAVAILABLE: &str = "error.chart_audio_unavailable";
     pub const CHART_AUDIO_TOO_LARGE: &str = "error.chart_audio_too_large";
+    pub const SKIN_UNAVAILABLE: &str = "error.skin_unavailable";
+    pub const SKIN_TOO_LARGE: &str = "error.skin_too_large";
 }
 
 /// Spec 004 IPC: the players slice's `players.error.*` keys (`players.json` in the UI).

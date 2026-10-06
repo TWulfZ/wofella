@@ -65,6 +65,19 @@ describe("project", () => {
     ]);
   });
 
+  it("keeps each note's unclipped head and tail y for skinned drawing, dropping notes entirely above the top", () => {
+    const notes = [
+      { tMs: 1000, col: 0, endMs: null },
+      { tMs: 900, col: 3, endMs: 3000 },
+      { tMs: 2100, col: 1, endMs: null },
+      { tMs: 1000, col: 7, endMs: null },
+    ];
+    expect(project(chartWindow({ notes }), VIEW).spans).toEqual([
+      { col: 0, headY: 500, tailY: null },
+      { col: 3, headY: 550, tailY: -500 },
+    ]);
+  });
+
   it("ignores notes in columns the layout does not have", () => {
     const notes = [{ tMs: 1000, col: 7, endMs: null }];
     expect(project(chartWindow({ notes }), VIEW).notes).toEqual([]);

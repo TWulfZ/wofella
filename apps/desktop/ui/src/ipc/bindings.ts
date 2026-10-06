@@ -49,6 +49,10 @@ export const commands = {
 	labelStats: () => typedError<LabelStatsDto, IpcError>(__TAURI_INVOKE("label_stats")),
 	/**  The chart's audio file for the playfield's WebAudio loop; the webview sends only the md5. */
 	chartAudio: (md5: string) => typedError<ChartAudioDto, IpcError>(__TAURI_INVOKE("chart_audio", { md5 })),
+	/**  The skin folders of the catalog install, plus the cfg's active skin and mania speed. */
+	skinList: () => typedError<SkinListDto, IpcError>(__TAURI_INVOKE("skin_list")),
+	/**  One skin's `[Mania]` block and images for `keymode`; the webview sends only the folder name. */
+	skinGet: (folder: string, keymode: number) => typedError<SkinDto, IpcError>(__TAURI_INVOKE("skin_get", { folder, keymode })),
 };
 
 /** Events */
@@ -342,11 +346,51 @@ export type LayoutDto = {
 	columns: ColumnDto[],
 };
 
+/**  `None` where `skin.ini` sets no colour, so the renderer keeps its own. */
+export type ManiaColoursDto = {
+	/**
+	 *  `Colour1` is `column[0]`. Raw alpha: column backgrounds draw with alpha A², and alpha 0
+	 *  hides them (research 06, Geometry).
+	 */
+	column: ([number, number, number, number] | null)[],
+	/**  Alpha 0 is already sent as 255, as stable does for these colours. */
+	columnLine: [number, number, number, number] | null,
+	judgementLine: [number, number, number, number] | null,
+	barline: [number, number, number, number] | null,
+	hold: [number, number, number, number] | null,
+};
+
+/**
+ *  The `[Mania]` block for the requested key count, or lazer's all-defaults block when the skin
+ *  has none (research 06).
+ */
+export type ManiaConfigDto = {
+	keys: number,
+	columnWidth: (number | null)[],
+	/**  `keys - 1` gaps. */
+	columnSpacing: (number | null)[],
+	/**  `keys + 1` lines. */
+	columnLineWidth: (number | null)[],
+	/**  Judgement line y from the top, already clamped to 240–480. */
+	hitPosition: number | null,
+	lightPosition: number | null,
+	widthForNoteHeightScale: number | null,
+	noteBodyStyle: NoteBodyStyleDto,
+	judgementLine: boolean,
+	keysUnderNotes: boolean,
+	upsideDown: boolean,
+	barlineHeight: number | null,
+	colours: ManiaColoursDto,
+};
+
 export type MatchKindDto = "equal" | "prefix";
 
 export type MatchSourceDto = "cfg_username" | "linked_account";
 
 export type MergeModeDto = "merged" | "separate";
+
+/**  lazer's values; the wiki's 0/1/2 disagree and are unverified (research 06). */
+export type NoteBodyStyleDto = "stretch" | "repeat_top" | "repeat_bottom" | "repeat_top_and_bottom";
 
 export type NoteDto = {
 	tMs: number,
@@ -415,6 +459,66 @@ export type SetupStatusDto = {
 	logsDir: string,
 	appVersion: string,
 	lastSync: JobDto | null,
+};
+
+export type SkinDiagnosticDto = {
+	/**  A stable `skin.*` id. */
+	code: string,
+	slot: string | null,
+};
+
+export type SkinDto = {
+	folder: string,
+	name: string | null,
+	/**  `[General] Version`; 1.0 when absent, 2.7 for `latest` or without `skin.ini`. */
+	version: number | null,
+	config: ManiaConfigDto,
+	/**  Resolved slots only; a slot absent here is drawn procedurally. */
+	images: SkinImageRefDto[],
+	/**  Each resolved file once, shared by every slot that resolves to it. */
+	files: SkinFileDto[],
+	diagnostics: SkinDiagnosticDto[],
+};
+
+export type SkinEntryDto = {
+	/**  What `skin_get` takes; `[General] Name` is neither unique nor the folder (research 06). */
+	folder: string,
+	name: string | null,
+	/**  Key counts with a `[Mania]` block; empty without a readable `skin.ini`. */
+	keymodes: number[],
+	/**  Opaque cache key that changes when `skin.ini` is edited (ADR 0019). */
+	iniMtime: string | null,
+};
+
+/**  A PNG or JPEG checked by its header, never decoded here; the webview decodes it. */
+export type SkinFileDto = {
+	mime: string,
+	/**  2 for an `@2x` file: its display size is the pixel size halved. */
+	scale: number,
+	width: number,
+	height: number,
+	/**  RFC 4648 with padding. */
+	base64: string,
+};
+
+/**
+ *  `slot` ids: `note.{i}`, `note.{i}.head`, `note.{i}.tail`, `body.{i}`, `key.{i}`,
+ *  `key.{i}.down`, `stage.{left,right,bottom,hint,light}`, with 0-based columns.
+ */
+export type SkinImageRefDto = {
+	slot: string,
+	/**  Index into `SkinDto::files`. */
+	file: number,
+};
+
+export type SkinListDto = {
+	/**  By folder name, byte order. */
+	skins: SkinEntryDto[],
+	/**  The cfg `Skin`, only when it names a listed folder byte for byte. */
+	current: string | null,
+	/**  The cfg `ManiaSpeed`, 1–40. */
+	maniaSpeed: number | null,
+	maniaSpeedBpmScale: boolean | null,
 };
 
 export type SyncPlaysStartDto = {

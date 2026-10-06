@@ -21,14 +21,15 @@ use wolluf_store::repo::cache::{
 use wolluf_store::{Conn, DbHandle, StoreError};
 
 use super::LibraryParams;
-use super::chart_audio::{base64, mime_of};
+use super::chart_audio::mime_of;
 use super::dto::{
     ChartAudioDto, ChartDetailDto, ChartLabelDto, ChartSpanDto, ChartWindowDto, ColumnDto,
     FingerDto, HandDto, HintAgreementDto, LayoutDto, LibraryChartDto, LibraryFilterDto, NoteDto,
     PatternCountDto, ScaleCountDto, SegmentDto, TimingDto, TimingKindDto,
 };
-use super::index::{IndexLibraryJob, Keys, Segmenters, catalog_install};
-use crate::context::{AppContext, blocking_join_error, songs_dir};
+use super::index::{IndexLibraryJob, Keys, Segmenters};
+use crate::base64;
+use crate::context::{AppContext, blocking_join_error, catalog_install, songs_dir};
 use crate::errors::{AppError, keys};
 use crate::events::AppEvent;
 use crate::jobs::dto::{JobDto, JobId};
@@ -269,7 +270,7 @@ impl<'a> LibraryService<'a> {
                 })?;
             Ok(ChartAudioDto {
                 mime: mime_of(&audio).to_owned(),
-                base64: base64(&bytes),
+                base64: base64::encode(&bytes),
             })
         })
         .await

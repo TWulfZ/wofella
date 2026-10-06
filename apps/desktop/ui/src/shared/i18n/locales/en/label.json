@@ -19,7 +19,22 @@
       "offsetValue": "{{value}} ms",
       "scroll": "Scroll speed",
       "fit": "Fit window",
-      "scrollValue": "{{value}} px/ms"
+      "scrollValue": "{{value}} px/ms",
+      "scrollMode": "Scroll mode",
+      "modeOsu": "osu!",
+      "modePxPerMs": "px/ms",
+      "osuSpeed": "osu! speed",
+      "osuSpeedHint": "F3 slower, F4 faster",
+      "zoom": "Zoom",
+      "zoomValue": "×{{value}}"
+    },
+    "skin": {
+      "label": "Skin",
+      "none": "None (procedural)",
+      "defaults": "{{folder}} (defaults)",
+      "reload": "Reload skin",
+      "decodeFailed": "Some skin images could not be decoded and are drawn plainly: {{slots}}",
+      "bpmScaleIgnored": "osu! scales your speed with the BPM; here the speed stays fixed, since that scaling is not reproduced."
     },
     "audio": {
       "decodeFailed": "This chart's audio could not be decoded, so the window plays without sound."
@@ -77,7 +92,7 @@
       "noPattern": "x answers “no clear pattern” and is stored, unlike a skip.",
       "flags": "m and ? toggle mixed and unsure, tl/tr mark the thumb side (the same side again clears it); alone or inside a label line.",
       "commands": "Alone on the line: s skip, u undo the last label, w+/w- widen or narrow by 1 s, n/p shift by half a window, q end the session.",
-      "hotkeys": "Typing anywhere goes into the answer box. Space plays or pauses while the box is empty, Enter saves, Esc clears it."
+      "hotkeys": "Typing anywhere goes into the answer box. Space plays or pauses while the box is empty, Enter saves, Esc clears it. F3 and F4 lower or raise the osu! speed."
     },
     "footer": {
       "labelled": "Labelled: {{count}}",

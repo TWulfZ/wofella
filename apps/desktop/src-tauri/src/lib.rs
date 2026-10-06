@@ -64,6 +64,8 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::label::label_undo,
             commands::label::label_stats,
             commands::chart::chart_audio,
+            commands::skin::skin_list,
+            commands::skin::skin_get,
         ])
 }
 

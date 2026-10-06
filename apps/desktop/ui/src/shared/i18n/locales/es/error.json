@@ -18,6 +18,8 @@
     "instance_running": "wolluf ya se está ejecutando con esta carpeta de datos ({{path}}).",
     "data_dir_inside_osu": "La carpeta de datos de wolluf ({{dataDir}}) no puede estar dentro de la carpeta de osu! ({{osuDir}}).",
     "chart_audio_unavailable": "No se encontró un archivo de audio para este mapa en su carpeta de canción.",
-    "chart_audio_too_large": "El archivo de audio de este mapa es demasiado grande para cargarlo ({{bytes}} bytes, el límite es {{maxBytes}})."
+    "chart_audio_too_large": "El archivo de audio de este mapa es demasiado grande para cargarlo ({{bytes}} bytes, el límite es {{maxBytes}}).",
+    "skin_unavailable": "No se encontró esta skin en la carpeta Skins de osu!.",
+    "skin_too_large": "Esta skin es demasiado grande para cargarla ({{bytes}} bytes, el límite es {{maxBytes}})."
   }
 }

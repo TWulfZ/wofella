@@ -69,5 +69,5 @@ CLI (`cargo run -p wolluf-cli -- …`, binary `wolluf`; global `--data-dir <DIR>
 Desktop:
 - `cargo tauri dev`, run from `apps/desktop/src-tauri`. On WSLg a blank window needs `WEBKIT_DISABLE_DMABUF_RENDERER=1`.
 - Gold-set labelling happens in the desktop **Label** screen (Canvas2D Playfield + looping section audio, ADR 0018); `wolluf label` stays as the CLI fallback. On WSLg, mp3 audio needs the GStreamer plugins (`gstreamer1.0-plugins-good`, `-ugly`, `-libav`), otherwise the screen falls back to a silent clock.
-- No local Windows toolchain needed to try a branch: every PR's CI job `desktop-windows` uploads the NSIS installer as the artifact `wolluf-windows-nsis` (`gh run download <run> -n wolluf-windows-nsis`).
+- No local Windows toolchain needed to try a branch: every PR's CI job `desktop-windows` uploads the NSIS installer (`wolluf-windows-nsis`) and a portable `wolluf.exe` that runs without installing (`wolluf-windows-portable`; `gh run download <run> -n wolluf-windows-portable`).
 - Windows build: clone natively on NTFS (not `\\wsl$`), rustup msvc toolchain 1.98.1, VS Build Tools with the C++ workload, WebView2 runtime, Node 24 + pnpm; then `cargo tauri build --bundles nsis`. Cross-compiling from WSL is not supported.

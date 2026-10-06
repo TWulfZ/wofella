@@ -6,6 +6,7 @@ pub mod jobs;
 pub mod label;
 pub mod players;
 pub mod setup;
+pub mod skin;
 
 use std::sync::Arc;
 

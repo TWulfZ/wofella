@@ -24,11 +24,14 @@ export interface SectionPlayerSnapshot {
 
 export type ClosableAudioContext = AudioContextLike & { close?: () => Promise<void> };
 
+export type LoopSpliceParams = Parameters<typeof createAudioLoopClock>[4];
+
 export interface SectionPlayerDeps {
   createContext: () => ClosableAudioContext;
   decode?: (ctx: AudioContextLike, base64: string) => Promise<AudioBufferLike>;
   /** Wall clock for the silent fallback, in ms. */
   now?: () => number;
+  splice: LoopSpliceParams;
 }
 
 const IDLE: SectionPlayerSnapshot = { clock: null, playing: false, loading: false, notice: null };
@@ -163,9 +166,9 @@ export class SectionPlayer {
       const buffer = this.currentBuffer();
       const silent = this.audio.kind === "missing" || this.ctxFailed || buffer === null;
       if (silent) {
-        this.clock = createSilentLoopClock(loop, this.deps.now);
+        this.clock = createSilentLoopClock(loop, this.deps.now, this.deps.splice.gapMs);
       } else if (buffer !== undefined && ctx !== null) {
-        this.audioClock = createAudioLoopClock(ctx, buffer, loop, this.offsetMs);
+        this.audioClock = createAudioLoopClock(ctx, buffer, loop, this.offsetMs, this.deps.splice);
         this.clock = this.audioClock;
       } else if (this.audio.kind === "data" && ctx !== null) {
         this.startDecode(ctx, md5, this.audio.base64);

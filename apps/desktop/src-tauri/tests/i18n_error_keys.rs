@@ -50,4 +50,20 @@ mod i18n_error_keys {
         }
         assert!(missing.is_empty(), "missing keys: {missing:?}");
     }
+
+    /// ADR 0019: the Label screen shows these when a skin cannot be served.
+    #[test]
+    fn skin_keys_have_en_and_es_text() {
+        let mut missing = Vec::new();
+        for lang in LOCALES {
+            let json = error_json(lang);
+            for key in [keys::SKIN_UNAVAILABLE, keys::SKIN_TOO_LARGE] {
+                let value = key.split('.').fold(&json, |node, part| &node[part]);
+                if !value.as_str().is_some_and(|s| !s.trim().is_empty()) {
+                    missing.push(format!("{lang}: {key}"));
+                }
+            }
+        }
+        assert!(missing.is_empty(), "missing keys: {missing:?}");
+    }
 }
