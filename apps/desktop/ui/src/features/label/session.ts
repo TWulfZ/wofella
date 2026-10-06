@@ -39,6 +39,7 @@ export type SessionAction =
   | { type: "undone"; eventId: string }
   | { type: "skipped" }
   | { type: "flagsToggled"; toggle: FlagToggle }
+  | { type: "thumbSet"; side: ThumbSide | null }
   | { type: "sessionDone" };
 
 const NEUTRAL_FLAGS: SessionFlags = { mixed: false, unsure: false, thumb: null };
@@ -101,6 +102,8 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
       };
     case "flagsToggled":
       return { ...state, flags: toggled(state.flags, action.toggle) };
+    case "thumbSet":
+      return { ...state, flags: { ...state.flags, thumb: action.side } };
     case "sessionDone":
       return { ...state, window: null, done: true };
   }

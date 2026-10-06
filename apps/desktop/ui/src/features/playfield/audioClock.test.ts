@@ -191,6 +191,35 @@ describe("createAudioLoopClock", () => {
     expect(clock.nowMs()).toBeCloseTo(1100);
   });
 
+  it.each([
+    ["starts at the buffer end", { duration: 1 }],
+    ["starts past the buffer end", { duration: 0.5 }],
+  ])("runs a silent loop on the context clock when the loop %s", (_, buffer) => {
+    const ctx = fakeContext();
+    const clock = createAudioLoopClock(ctx, buffer, LOOP, 20);
+    expect(clock.nowMs()).toBe(1020);
+    clock.play();
+    expect(clock.playing).toBe(true);
+    expect(ctx.sources).toEqual([]);
+    ctx.currentTime = 10.3;
+    expect(clock.nowMs()).toBeCloseTo(1320);
+    ctx.currentTime = 11.3;
+    expect(clock.nowMs()).toBeCloseTo(1320);
+    clock.setOffsetMs(-30);
+    expect(clock.nowMs()).toBeCloseTo(1270);
+    clock.pause();
+    ctx.currentTime = 50;
+    expect(clock.playing).toBe(false);
+    expect(clock.nowMs()).toBeCloseTo(1270);
+  });
+
+  it("resumes a suspended context for the silent loop too, since its time is the context's", () => {
+    const ctx = fakeContext();
+    ctx.state = "suspended";
+    createAudioLoopClock(ctx, { duration: 0.5 }, LOOP, 0).play();
+    expect(ctx.resumes).toBe(1);
+  });
+
   it("resumes a suspended context on play", () => {
     const ctx = fakeContext();
     ctx.state = "suspended";

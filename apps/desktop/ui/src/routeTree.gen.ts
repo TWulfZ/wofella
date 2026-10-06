@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as LabelRouteImport } from './routes/label'
 import { Route as SettingsIndexRouteImport } from './routes/settings.index'
 import { Route as SettingsIdentityRouteImport } from './routes/settings.identity'
 import { Route as SetupIndexRouteImport } from './routes/setup.index'
@@ -18,6 +19,11 @@ import { Route as SetupIdentityRouteImport } from './routes/setup.identity'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LabelRoute = LabelRouteImport.update({
+  id: '/label',
+  path: '/label',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsIndexRoute = SettingsIndexRouteImport.update({
@@ -43,6 +49,7 @@ const SetupIdentityRoute = SetupIdentityRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/label': typeof LabelRoute
   '/settings/identity': typeof SettingsIdentityRoute
   '/setup/identity': typeof SetupIdentityRoute
   '/settings/': typeof SettingsIndexRoute
@@ -50,6 +57,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/label': typeof LabelRoute
   '/settings/identity': typeof SettingsIdentityRoute
   '/setup/identity': typeof SetupIdentityRoute
   '/settings': typeof SettingsIndexRoute
@@ -58,6 +66,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/label': typeof LabelRoute
   '/settings/identity': typeof SettingsIdentityRoute
   '/setup/identity': typeof SetupIdentityRoute
   '/settings/': typeof SettingsIndexRoute
@@ -66,12 +75,24 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/settings/identity' | '/setup/identity' | '/settings/' | '/setup/'
+    | '/'
+    | '/label'
+    | '/settings/identity'
+    | '/setup/identity'
+    | '/settings/'
+    | '/setup/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/settings/identity' | '/setup/identity' | '/settings' | '/setup'
+  to:
+    | '/'
+    | '/label'
+    | '/settings/identity'
+    | '/setup/identity'
+    | '/settings'
+    | '/setup'
   id:
     | '__root__'
     | '/'
+    | '/label'
     | '/settings/identity'
     | '/setup/identity'
     | '/settings/'
@@ -80,6 +101,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  LabelRoute: typeof LabelRoute
   SettingsIdentityRoute: typeof SettingsIdentityRoute
   SetupIdentityRoute: typeof SetupIdentityRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
@@ -93,6 +115,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/label': {
+      id: '/label'
+      path: '/label'
+      fullPath: '/label'
+      preLoaderRoute: typeof LabelRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings/': {
@@ -128,6 +157,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  LabelRoute: LabelRoute,
   SettingsIdentityRoute: SettingsIdentityRoute,
   SetupIdentityRoute: SetupIdentityRoute,
   SettingsIndexRoute: SettingsIndexRoute,

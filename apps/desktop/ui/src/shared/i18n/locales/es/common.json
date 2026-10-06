@@ -9,6 +9,7 @@
     "nav": {
       "label": "Principal",
       "home": "Inicio",
+      "labelling": "Etiquetar",
       "settings": "Ajustes",
       "identity": "Identidad"
     },

@@ -124,6 +124,17 @@ describe("sessionReducer", () => {
     expect(s.flags.thumb).toBeNull();
   });
 
+  it("sets the thumb side outright, keeping the other flags", () => {
+    let s = loaded(initialSession("1"), "a");
+    s = sessionReducer(s, { type: "flagsToggled", toggle: "mixed" });
+    s = sessionReducer(s, { type: "thumbSet", side: "right" });
+    expect(s.flags).toEqual({ mixed: true, unsure: false, thumb: "right" });
+    s = sessionReducer(s, { type: "thumbSet", side: "right" });
+    expect(s.flags.thumb).toBe("right");
+    s = sessionReducer(s, { type: "thumbSet", side: null });
+    expect(s.flags).toEqual({ mixed: true, unsure: false, thumb: null });
+  });
+
   it("ends the session", () => {
     const s = sessionReducer(loaded(initialSession("1"), "a"), { type: "sessionDone" });
     expect(s.done).toBe(true);

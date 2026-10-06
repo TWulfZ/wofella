@@ -55,7 +55,7 @@ Rejected: porting mania-hub's replay renderer. It lives outside `algorithms/`, t
 - [x] T4 — Pure Playfield projection: time to y, LN clipping, beat lines, hand separators, shading outside the window. Route: delegated (writer). Tier: medium. Commit: `feat(ui): add pure playfield projection`
 - [x] T5 — Canvas Playfield plus `AudioClock` (WebAudio loop, `setOffsetMs`, silent fallback clock, base64 decode). Route: delegated (writer). Tier: medium. Commit: `feat(ui): draw the playfield on canvas with a looping audio clock`
 - [x] T6 — Answer parser (REPL grammar) and session reducer. Route: delegated (writer). Tier: medium. Commit: `feat(ui): add label answer parser and session reducer`
-- [ ] T7 — Label screen, route, nav, i18n es/en, pattern chips. Route: delegated (writer). Tier: medium. Commit: —
+- [x] T7 — Label screen, route, nav, i18n es/en, pattern chips by axis, answer line, flags, transport, offset/scroll prefs. Route: delegated (writer + one scoped correction after review). Tier: medium. Commit: `feat(ui): add the label screen with playfield and section audio`
 - [ ] T8 — Close: full gates, `CLAUDE.md` Desktop notes, manual audio check, remove this document. Tier: passive. Commit: —
 
 ## Progress
@@ -68,6 +68,14 @@ Rejected: porting mania-hub's replay renderer. It lives outside `algorithms/`, t
   - the ADR now says containment is textual and symlinks are followed on purpose.
   The parent also checks size on the opened handle (TOCTOU) and added the §8 rows, the bindings and the UI `EMITTED_ERROR_KEYS`. Gates: nextest source-osu+app+desktop+engine 425 passed; clippy, fmt, check-layers clean; UI tsc, lint, vitest 189 passed.
 - 2026-10-06 T5: RED: 4 test files failed to import the missing modules → GREEN. `pnpm test playfield`: 47 passed. Type test: the real `AudioContext` satisfies `AudioContextLike`. Paused view fits the whole window; `draw(ctx, projection, theme, view)`.
+- 2026-10-06 T7: RED: 6 new test files failed to import missing modules → GREEN (54 label tests). Independent review: the REPL semantics hold (blind, `shown` excluded, undo pops on success, flags XOR, reshape refetch, done). It confirmed 5 defects and 1 race, fixed in one correction, each RED first:
+  - audio looped after the session ended;
+  - single-key hotkeys fired outside the answer box (`st` skipped, `bu` undid); printable keys now go into the answer line, with no single-key commands;
+  - buttons cleared the chips;
+  - sliders and checkboxes blocked shortcuts;
+  - Space and Enter repeat; Enter could double-submit (the guard now holds until a new window object arrives).
+  Also fixed: the audio loop clamp when the section starts past the audio end; Escape and a Clear button; thumb buttons drop an inline tl/tr. Parent spot check: tsc and lint clean; vitest 36 files, 254 passed.
+- 2026-10-06 Known behaviour: between rounds the player pauses; each window starts with Space or Play.
 
 ## Next step
-T7: Label screen wiring `chart_window`/`chart_audio`/`label_*` through `ipc`, route `label`, nav entry, i18n es/en, pattern chips by axis, offset slider.
+T8: full gate block in this worktree; the pilot tries the Label screen (`cargo tauri dev` from apps/desktop/src-tauri, or a Windows build) and confirms audio sync; then CLAUDE.md Desktop notes and remove this document.

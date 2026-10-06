@@ -70,6 +70,10 @@ export function createAudioLoopClock(
 ): AudioLoopClock {
   // WebAudio silently plays the whole buffer when loopEnd lies past it, which would desync the clock from the sound.
   const span: LoopSpan = { startMs: loop.startMs, endMs: Math.min(loop.endMs, buffer.duration * MS_PER_S) };
+  if (span.endMs <= span.startMs) {
+    // The section lies past the end of the audio: an empty span would freeze the clock at its start.
+    return contextSilentLoopClock(ctx, loop, offsetMs);
+  }
   let offset = offsetMs;
   let positionMs = span.startMs;
   let source: AudioBufferSourceNodeLike | null = null;
@@ -117,6 +121,33 @@ export function createAudioLoopClock(
     dispose() {
       stop();
       disposed = true;
+    },
+    setOffsetMs(next) {
+      offset = next;
+    },
+  };
+}
+
+function contextSilentLoopClock(ctx: AudioContextLike, loop: LoopSpan, offsetMs: number): AudioLoopClock {
+  const silent = createSilentLoopClock(loop, () => ctx.currentTime * MS_PER_S);
+  let offset = offsetMs;
+  return {
+    get playing() {
+      return silent.playing;
+    },
+    nowMs: () => silent.nowMs() + offset,
+    play() {
+      // A suspended context's currentTime stands still.
+      if (ctx.state === "suspended") {
+        void ctx.resume();
+      }
+      silent.play();
+    },
+    pause: () => {
+      silent.pause();
+    },
+    dispose: () => {
+      silent.dispose();
     },
     setOffsetMs(next) {
       offset = next;
