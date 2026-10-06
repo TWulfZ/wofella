@@ -10,6 +10,7 @@ export const COLUMN_COLORS = {
 export const PLAYFIELD_COLORS = {
   background: "#0b0d12",
   columnTint: "rgba(255, 255, 255, 0.03)",
+  columnSeparator: "rgba(255, 255, 255, 0.08)",
   lnBodyAlpha: 0.55,
   beatLine: "rgba(255, 255, 255, 0.12)",
   measureLine: "rgba(255, 255, 255, 0.35)",
