@@ -94,3 +94,27 @@ export function recordingContext(): {
   };
   return { ctx, ops, images, all, transforms };
 }
+
+export interface FakeSurfaceCanvas {
+  width: number;
+  height: number;
+  rec: ReturnType<typeof recordingContext>;
+}
+
+/** A stand-in for OffscreenCanvas whose 2D context records, one recorder per canvas. */
+export function fakeOffscreenCanvas() {
+  const instances: FakeSurfaceCanvas[] = [];
+  class FakeOffscreenCanvas implements FakeSurfaceCanvas {
+    rec = recordingContext();
+    constructor(
+      public width: number,
+      public height: number,
+    ) {
+      instances.push(this);
+    }
+    getContext(kind: string): RecordingContext | null {
+      return kind === "2d" ? this.rec.ctx : null;
+    }
+  }
+  return { FakeOffscreenCanvas, instances };
+}

@@ -71,9 +71,9 @@ Lengths are in stable's 480-high virtual space ("based on a height of 480 pixels
 - Colours: alpha 0 becomes 1 (`osu.Game/Skinning/LegacyColourCompatibility.cs` L22–26); column backgrounds apply alpha twice, so the effective alpha is A² (L38–42).
 - **Approximations, unverified against stable:**
   - key sprites are bottom-anchored with no 1.6 factor on their height (`LegacyKeyArea.cs` L50–64);
-  - repeat body styles: lazer stretches the sprite by `max(1, 32800 / DrawHeight)` with the comment "i dunno this looks about right??" (`LegacyBodyPiece.cs` L198–209). wolluf tiles the body image from the bottom instead;
+  - repeat body styles: lazer anchors the body sprite at the tail end (`Origin`/`Anchor = TopCentre` in downscroll, `LegacyBodyPiece.cs`), so the image's row 0 faces the tail. Percy skins rely on this: their very tall bodies (138×40000 on the pilot's install) start with transparent rows and a rounded cap, which make the tail look cut. wolluf anchors every repeat style at the tail too, tiles toward the head at the column's width-fit (natural) aspect, and crops bodies taller than its cap to their top rows. A cropped or strip-shaped body (height ≥ 8 × width) is drawn once from the tail, and its last few rows are stretched over the rest of a longer hold; it is never tiled again, so the cap cannot reappear mid-hold. Still unverified against stable: the vertical scale. wolluf uses the natural aspect (31.7 stable px of lead-in for the pilot's percy body), while lazer stretches the sprite by `max(1, 32800 / DrawHeight)` with the comment "i dunno this looks about right??" (`LegacyBodyPiece.cs` L198–209), about 48.7 px;
   - the all-defaults block for a skin without `Keys: 7`;
-  - the `NoteBodyStyle` enum mismatch between wiki and lazer.
+  - the `NoteBodyStyle` enum mismatch between wiki and lazer. lazer's decoder reads the value with `Enum.TryParse`, which accepts `1` as an undefined enum value; that value is not `Stretch`, so it draws with repeat wrapping at any skin version. wolluf therefore maps `1` to `RepeatBottom` regardless of version (`crates/source-osu/src/codec/skin_ini.rs`). Whether stable's wiki "Repeat" looks the same is unverified.
 
 ## Scroll speed
 

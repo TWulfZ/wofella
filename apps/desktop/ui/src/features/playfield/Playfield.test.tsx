@@ -7,7 +7,7 @@ import { fitPxPerMs, project } from "./project";
 import { skinLayout } from "./skinLayout";
 import { SKIN_SLOT } from "./skinModel";
 import { DEFAULT_STAGE_PARAMS, judgeYFromHitPosition, osuPxPerMs, type ScrollMode } from "./stage";
-import { type FillOp, recordingContext } from "./testCanvas";
+import { fakeOffscreenCanvas, type FillOp, type Op, recordingContext } from "./testCanvas";
 import { image, skin7k } from "./testSkin";
 import type { ChartWindow, ColumnHand } from "./types";
 
@@ -248,6 +248,12 @@ describe("Playfield", () => {
 
 describe("Playfield with a skin", () => {
   const SKIN = skin7k({}, [[SKIN_SLOT.note(3), image(100, 50)]]);
+  let layerCanvases: ReturnType<typeof fakeOffscreenCanvas>;
+
+  beforeEach(() => {
+    layerCanvases = fakeOffscreenCanvas();
+    vi.stubGlobal("OffscreenCanvas", layerCanvases.FakeOffscreenCanvas);
+  });
 
   function expectedSkinned(nowMs: number, pxPerMs: number, zoom = 1) {
     const layout = skinLayout(SKIN, H, zoom);
@@ -259,6 +265,15 @@ describe("Playfield with a skin", () => {
     return { all, layout };
   }
 
+  /** The canvas's ops with each stage-layer blit replaced by what was painted on that layer. */
+  function flattened(): Op[] {
+    return rec.all.flatMap((op) => {
+      const layer =
+        op.type === "image" ? layerCanvases.instances.find((c) => (c as unknown) === op.image) : undefined;
+      return layer === undefined ? [op] : layer.rec.all;
+    });
+  }
+
   it("draws with the skin, sized from its layout, and keeps zooming", () => {
     const { container, rerender } = render(
       <Playfield window={WINDOW} clock={null} scroll={PX} hitPosition={SKIN.hitPosition} columnWidths={SKIN.columnWidth} skin={SKIN} />,
@@ -267,7 +282,7 @@ describe("Playfield with a skin", () => {
     const { all, layout } = expectedSkinned(WINDOW.fromMs, 0.5);
     const canvas = container.querySelector("canvas");
     expect(canvas?.style.width).toBe(`${layout.width}px`);
-    expect(rec.all).toEqual(all);
+    expect(flattened()).toEqual(all);
     expect(rec.images.length).toBeGreaterThan(0);
 
     rec.all.length = 0;
@@ -284,7 +299,35 @@ describe("Playfield with a skin", () => {
     );
     const zoomed = expectedSkinned(WINDOW.fromMs, 0.5, 1.25);
     expect(canvas?.style.width).toBe(`${zoomed.layout.width}px`);
-    expect(rec.all).toEqual(zoomed.all);
+    expect(flattened()).toEqual(zoomed.all);
+  });
+
+  it("paints the stage background once while playing and again once after a resize", () => {
+    const clock = fakeClock(1200, true);
+    render(<Playfield window={WINDOW} clock={clock} scroll={PX} skin={SKIN} />);
+    const ro = observer();
+    ro.resize(CONTAINER_W, H);
+    runFrame();
+    clock.nowMsValue = 1300;
+    runFrame();
+    expect(layerCanvases.instances.map((c) => [c.width, c.height])).toEqual([
+      [Math.round(Math.min(skinLayout(SKIN, H, 1).width, CONTAINER_W) * 2), H * 2],
+    ]);
+    ro.resize(CONTAINER_W, H + 100);
+    runFrame();
+    runFrame();
+    expect(layerCanvases.instances).toHaveLength(2);
+    // The replaced background gives its memory back.
+    expect(layerCanvases.instances[0]?.width).toBe(0);
+  });
+
+  it("releases the cached background when the skin becomes null", () => {
+    const { rerender } = render(<Playfield window={WINDOW} clock={null} scroll={PX} skin={SKIN} />);
+    observer().resize(CONTAINER_W, H);
+    expect(layerCanvases.instances).toHaveLength(1);
+    expect(layerCanvases.instances[0]?.width).toBeGreaterThan(0);
+    rerender(<Playfield window={WINDOW} clock={null} scroll={PX} skin={null} />);
+    expect(layerCanvases.instances[0]?.width).toBe(0);
   });
 
   it("draws procedurally, with no image, when the skin is null", () => {

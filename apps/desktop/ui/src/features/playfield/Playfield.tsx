@@ -5,6 +5,7 @@ import { DEFAULT_PLAYFIELD_THEME, draw, drawSkinned } from "./draw";
 import { fitPxPerMs, project } from "./project";
 import { skinLayout } from "./skinLayout";
 import type { LoadedSkin } from "./skinModel";
+import { createStageBackground } from "./stageLayers";
 import {
   DEFAULT_STAGE_PARAMS,
   judgeYFromHitPosition,
@@ -43,6 +44,15 @@ export function Playfield(props: PlayfieldProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
+  const [stageBackground] = useState(createStageBackground);
+
+  // Released on every skin change, so a procedural playfield (skin null) holds no full-canvas surface.
+  useEffect(
+    () => () => {
+      stageBackground.release();
+    },
+    [stageBackground, skin],
+  );
 
   useEffect(() => {
     const container = containerRef.current;
@@ -91,7 +101,7 @@ export function Playfield(props: PlayfieldProps) {
       if (skin === null || layout === null) {
         draw(ctx, projection, DEFAULT_PLAYFIELD_THEME, view);
       } else {
-        drawSkinned(ctx, projection, layout, skin, DEFAULT_PLAYFIELD_THEME, view);
+        drawSkinned(ctx, projection, layout, skin, DEFAULT_PLAYFIELD_THEME, view, undefined, { background: stageBackground, dpr });
       }
     };
     // Paused at the chosen speed, so pressing play does not rescale what was just read.
@@ -120,7 +130,7 @@ export function Playfield(props: PlayfieldProps) {
     return () => {
       cancelAnimationFrame(frame);
     };
-  }, [chartWindow, clock, pxPerMs, judgeY, width, height, skin, layout]);
+  }, [chartWindow, clock, pxPerMs, judgeY, width, height, skin, layout, stageBackground]);
 
   return (
     <div ref={containerRef} className={cn("relative overflow-hidden", className)}>

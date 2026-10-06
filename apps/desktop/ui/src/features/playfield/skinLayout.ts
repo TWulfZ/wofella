@@ -28,6 +28,15 @@ export interface SkinLayoutParams {
   keyHeightPerK: number;
   /** A repeated body thinner than this is stretched: it reads as a solid fill, and tiling costs a draw per px. */
   minBodyTilePx: number;
+  /**
+   * A body at least this many times taller than wide is a strip (percy): drawn once from the tail, never re-tiled,
+   * or its lead-in and cap would reappear mid-hold (research 06).
+   */
+  stripBodyAspect: number;
+  /** A strip's last source rows, stretched over the part of a hold longer than the strip. */
+  stripTailRows: number;
+  /** Images shorter than this are skipped: invisible, yet each still costs a draw (percy's 1-row tail). */
+  minImageDrawPx: number;
   /** Procedural sizes for slots the skin does not resolve, the same as the procedural playfield. */
   fallbackNoteHeightPx: number;
   fallbackTailHeightPx: number;
@@ -48,6 +57,9 @@ export const DEFAULT_SKIN_LAYOUT_PARAMS: SkinLayoutParams = {
   stageBottomScale: 1.6,
   keyHeightPerK: 1,
   minBodyTilePx: 2,
+  stripBodyAspect: 8,
+  stripTailRows: 8,
+  minImageDrawPx: 0.5,
   fallbackNoteHeightPx: DEFAULT_PLAYFIELD_PARAMS.noteHeightPx,
   fallbackTailHeightPx: DEFAULT_PLAYFIELD_PARAMS.lnTailHeightPx,
   columnColour: { r: 0, g: 0, b: 0, a: 255 },
@@ -102,7 +114,7 @@ export interface SkinLayout {
 export type SkinNoteKind = "tap" | "lnHead" | "lnTail";
 
 /** lazer's chains: head → note, tail → head → note (`LegacyHoldNoteHeadPiece.cs`, `LegacyHoldNoteTailPiece.cs`). */
-export function noteImage(skin: LoadedSkin, col: number, kind: SkinNoteKind): SkinImage | undefined {
+export function noteImage(skin: Pick<LoadedSkin, "images">, col: number, kind: SkinNoteKind): SkinImage | undefined {
   const note = skin.images.get(SKIN_SLOT.note(col));
   if (kind === "tap") {
     return note;

@@ -1,17 +1,22 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SKIN_SLOT } from "../skinModel";
+import { fakeOffscreenCanvas } from "../testCanvas";
 import { DEFAULT_SKIN_LOADER_PARAMS, loadSkin } from "./loadSkin";
 import { BROKEN_MIME, config7k, fakeCreateImageBitmap, file, skinDto } from "./testSkinDto";
 
 let fake: ReturnType<typeof fakeCreateImageBitmap>;
+let surfaces: ReturnType<typeof fakeOffscreenCanvas>;
 
 beforeEach(() => {
   fake = fakeCreateImageBitmap();
   globalThis.createImageBitmap = fake.fn as unknown as typeof createImageBitmap;
+  surfaces = fakeOffscreenCanvas();
+  vi.stubGlobal("OffscreenCanvas", surfaces.FakeOffscreenCanvas);
 });
 
 afterEach(() => {
   Reflect.deleteProperty(globalThis, "createImageBitmap");
+  vi.unstubAllGlobals();
 });
 
 describe("loadSkin", () => {
@@ -67,6 +72,7 @@ describe("loadSkin", () => {
         judgementLine: null,
       },
       images: new Map(),
+      lnTails: new Map(),
     });
   });
 
@@ -111,13 +117,19 @@ describe("loadSkin", () => {
     ]);
     const [first, second] = fake.bitmaps;
     expect([...skin.images.keys()]).toEqual(["note.0", "note.6", "key.3.down", "stage.hint"]);
-    expect(skin.images.get(SKIN_SLOT.note(0))).toEqual({ bitmap: first, width: 128, height: 64, scale: 2 });
+    expect(skin.images.get(SKIN_SLOT.note(0))).toEqual({ bitmap: first, width: 128, height: 64, scale: 2, sourceHeight: 64 });
     expect(skin.images.get(SKIN_SLOT.note(6))?.bitmap).toBe(first);
-    expect(skin.images.get(SKIN_SLOT.keyDown(3))).toEqual({ bitmap: second, width: 60, height: 200, scale: 1 });
+    expect(skin.images.get(SKIN_SLOT.keyDown(3))).toEqual({
+      bitmap: second,
+      width: 60,
+      height: 200,
+      scale: 1,
+      sourceHeight: 200,
+    });
     expect(skin.images.get(SKIN_SLOT.stageHint)?.bitmap).toBe(second);
   });
 
-  it("crops a body taller than the cap to its head end, and only for body slots", async () => {
+  it("crops a body taller than the cap to its top rows, keeps its source height, and only for body slots", async () => {
     const cap = DEFAULT_SKIN_LOADER_PARAMS.maxBodyHeightPx;
     const tall = cap + 1000;
     const { skin } = await loadSkin(
@@ -130,15 +142,67 @@ describe("loadSkin", () => {
       }),
     );
     const cropped = fake.bitmaps.find((b) => b.crop !== null);
-    expect(cropped?.crop).toEqual([0, tall - cap, 50, cap]);
-    expect(skin.images.get(SKIN_SLOT.body(0))).toEqual({ bitmap: cropped, width: 50, height: cap, scale: 1 });
+    expect(cropped?.crop).toEqual([0, 0, 50, cap]);
+    expect(skin.images.get(SKIN_SLOT.body(0))).toEqual({
+      bitmap: cropped,
+      width: 50,
+      height: cap,
+      scale: 1,
+      sourceHeight: tall,
+    });
+    expect(skin.images.get(SKIN_SLOT.stageLeft)?.sourceHeight).toBe(tall);
     expect(skin.images.get(SKIN_SLOT.stageLeft)?.height).toBe(tall);
     expect(skin.images.get(SKIN_SLOT.stageLeft)?.bitmap).not.toBe(cropped);
   });
 
+  it("flips each column's LN tail once at load, following the tail, head, note chain", async () => {
+    const { skin } = await loadSkin(
+      skinDto({
+        files: [file(100, 50), file(100, 20), file(90, 30)],
+        images: [
+          { slot: "note.0", file: 0 },
+          { slot: "note.0.tail", file: 1 },
+          { slot: "note.1", file: 0 },
+          { slot: "note.2", file: 0 },
+          { slot: "note.3.head", file: 2 },
+        ],
+      }),
+    );
+    const [note, tail, head] = fake.bitmaps;
+    expect(surfaces.instances.map((c) => [c.width, c.height])).toEqual([
+      [100, 20],
+      [100, 50],
+      [90, 30],
+    ]);
+    const [flippedTail, flippedNote, flippedHead] = surfaces.instances;
+    for (const [canvas, source, h] of [
+      [flippedTail, tail, 20],
+      [flippedNote, note, 50],
+      [flippedHead, head, 30],
+    ] as const) {
+      expect(canvas?.rec.images).toEqual([
+        expect.objectContaining({ image: source, sy: 0, sh: h, dy: 0, dh: h, transform: [1, 0, 0, -1, 0, h] }),
+      ]);
+    }
+    expect([...skin.lnTails.keys()]).toEqual([0, 1, 2, 3]);
+    expect(skin.lnTails.get(0)).toEqual({ bitmap: flippedTail, width: 100, height: 20, scale: 1, sourceHeight: 20 });
+    expect(skin.lnTails.get(1)?.bitmap).toBe(flippedNote);
+    expect(skin.lnTails.get(2)?.bitmap).toBe(flippedNote);
+    expect(skin.lnTails.get(3)?.bitmap).toBe(flippedHead);
+    expect(skin.images.get(SKIN_SLOT.tail(0))?.bitmap).toBe(tail);
+  });
+
+  it("leaves a column's tail out when no offscreen surface can be made", async () => {
+    vi.stubGlobal("OffscreenCanvas", undefined);
+    const { skin } = await loadSkin(skinDto({ files: [file(100, 50)], images: [{ slot: "note.0", file: 0 }] }));
+    expect(skin.lnTails.size).toBe(0);
+    expect(skin.images.get(SKIN_SLOT.note(0))).toBeDefined();
+  });
+
   it("leaves a body within the cap whole", async () => {
-    await loadSkin(skinDto({ files: [file(50, 300)], images: [{ slot: "body.0", file: 0 }] }));
+    const { skin } = await loadSkin(skinDto({ files: [file(50, 300)], images: [{ slot: "body.0", file: 0 }] }));
     expect(fake.bitmaps.map((b) => b.crop)).toEqual([null]);
+    expect(skin.images.get(SKIN_SLOT.body(0))).toMatchObject({ height: 300, sourceHeight: 300 });
   });
 
   it("drops only the slots of a file that fails to decode, and reports them", async () => {
@@ -186,10 +250,12 @@ describe("loadSkin", () => {
       }),
     );
     expect(fake.bitmaps).toHaveLength(3);
+    expect(surfaces.instances).toHaveLength(1);
     result.dispose();
     result.dispose();
     for (const bitmap of fake.bitmaps) {
       expect(bitmap.close).toHaveBeenCalledTimes(1);
     }
+    expect(surfaces.instances.map((c) => [c.width, c.height])).toEqual([[0, 0]]);
   });
 });

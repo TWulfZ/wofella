@@ -11,6 +11,7 @@ import {
   type SkinRect,
 } from "./skinLayout";
 import { type LoadedSkin, type NoteBodyStyle, SKIN_SLOT, type SkinImage } from "./skinModel";
+import type { StageBackground } from "./stageLayers";
 
 export interface PlayfieldTheme {
   background: string;
@@ -59,8 +60,6 @@ export interface Draw2D {
     dw: number,
     dh: number,
   ): void;
-  save(): void;
-  restore(): void;
   translate(x: number, y: number): void;
   scale(x: number, y: number): void;
 }
@@ -119,7 +118,8 @@ export function draw(ctx: Draw2D, projection: Projection, theme: PlayfieldTheme,
 
 /**
  * Draws the chart with a legacy skin, after lazer's legacy pieces (research 06, "Geometry"). Each element whose slot
- * the skin does not resolve is drawn as the procedural playfield draws it, one slot at a time (ADR 0019).
+ * the skin does not resolve is drawn as the procedural playfield draws it, one slot at a time (ADR 0019). With
+ * `stage`, the opaque background is painted once offscreen and blitted every frame.
  */
 export function drawSkinned(
   ctx: Draw2D,
@@ -129,33 +129,38 @@ export function drawSkinned(
   theme: PlayfieldTheme,
   view: DrawView,
   params: SkinLayoutParams = DEFAULT_SKIN_LAYOUT_PARAMS,
+  stage?: { background: StageBackground; dpr: number },
 ): void {
   const { width, height } = view;
   const { stageX, stageWidth } = layout;
-  const fill = (style: string, alpha: number, x: number, y: number, w: number, h: number): void => {
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = style;
-    ctx.fillRect(x, y, w, h);
-  };
+  const on = painter(ctx, params);
+  const { fill, image } = on;
   const skinFill = (f: SkinFill, x: number, y: number, w: number, h: number): void => {
     fill(f.style, f.alpha, x, y, w, h);
-  };
-  const image = (img: SkinImage, r: SkinRect): void => {
-    ctx.globalAlpha = 1;
-    ctx.drawImage(img.bitmap, 0, 0, img.width, img.height, r.x, r.y, r.w, r.h);
   };
   const slotImage = (img: SkinImage | undefined, r: SkinRect | null): void => {
     if (img !== undefined && r !== null) {
       image(img, r);
     }
   };
+  const keys = (): void => {
+    for (const [i, column] of layout.columns.entries()) {
+      slotImage(skin.images.get(SKIN_SLOT.key(i)), column.key);
+    }
+  };
 
-  fill(theme.background, 1, 0, 0, width, height);
-  slotImage(skin.images.get(SKIN_SLOT.stageLeft), layout.stageLeft);
-  slotImage(skin.images.get(SKIN_SLOT.stageRight), layout.stageRight);
-  for (const column of layout.columns) {
-    skinFill(column.background, column.x, 0, column.w, height);
+  const scene: StageScene = { layout, skin, theme, width, height };
+  const cached =
+    stage?.background.get([layout, skin, theme, params], { width, height, dpr: stage.dpr }, (target) => {
+      paintBackground(painter(target, params), scene);
+    }) ?? null;
+  if (cached === null) {
+    paintBackground(on, scene);
+  } else {
+    ctx.globalAlpha = 1;
+    ctx.drawImage(cached.image, 0, 0, cached.pxWidth, cached.pxHeight, 0, 0, width, height);
   }
+
   for (const line of projection.beatLines) {
     const px = line.measure ? theme.measureLinePx : theme.beatLinePx;
     fill(line.measure ? theme.measureLine : theme.beatLine, 1, stageX, line.y - px / 2, stageWidth, px);
@@ -172,18 +177,11 @@ export function drawSkinned(
       fill(theme.handSeparator, 1, x - theme.handSeparatorPx / 2, 0, theme.handSeparatorPx, height);
     }
   }
-  const hint = skin.images.get(SKIN_SLOT.stageHint);
-  slotImage(hint, layout.hitTarget);
+  slotImage(skin.images.get(SKIN_SLOT.stageHint), layout.hitTarget);
   if (layout.judgementLine !== null) {
     const { fill: f, x, y, w, h } = layout.judgementLine;
     skinFill(f, x, y, w, h);
   }
-
-  const keys = (): void => {
-    for (const [i, column] of layout.columns.entries()) {
-      slotImage(skin.images.get(SKIN_SLOT.key(i)), column.key);
-    }
-  };
   if (skin.keysUnderNotes) {
     keys();
   }
@@ -200,10 +198,57 @@ export function drawSkinned(
     fill(theme.shade, 1, 0, region.y0, width, region.y1 - region.y0);
   }
   // The skin's hit target marks the judgement line; without one the procedural line stands in for it.
-  if (hint === undefined) {
+  if (!skin.images.has(SKIN_SLOT.stageHint)) {
     fill(theme.judgementLine, 1, stageX, view.judgeY - theme.judgementLinePx / 2, stageWidth, theme.judgementLinePx);
   }
   ctx.globalAlpha = 1;
+}
+
+interface Painter {
+  fill: Fill;
+  image: (img: SkinImage, r: SkinRect) => void;
+}
+
+function painter(ctx: Draw2D, params: SkinLayoutParams): Painter {
+  return {
+    fill: (style, alpha, x, y, w, h) => {
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = style;
+      ctx.fillRect(x, y, w, h);
+    },
+    image: (img, r) => {
+      if (r.h < params.minImageDrawPx) {
+        return;
+      }
+      ctx.globalAlpha = 1;
+      ctx.drawImage(img.bitmap, 0, 0, img.width, img.height, r.x, r.y, r.w, r.h);
+    },
+  };
+}
+
+interface StageScene {
+  layout: SkinLayout;
+  skin: LoadedSkin;
+  theme: PlayfieldTheme;
+  width: number;
+  height: number;
+}
+
+function paintBackground(on: Painter, scene: StageScene): void {
+  const { layout, skin, theme, width, height } = scene;
+  on.fill(theme.background, 1, 0, 0, width, height);
+  for (const [slot, r] of [
+    [SKIN_SLOT.stageLeft, layout.stageLeft],
+    [SKIN_SLOT.stageRight, layout.stageRight],
+  ] as const) {
+    const img = skin.images.get(slot);
+    if (img !== undefined && r !== null) {
+      on.image(img, r);
+    }
+  }
+  for (const column of layout.columns) {
+    on.fill(column.background.style, column.background.alpha, column.x, 0, column.w, height);
+  }
 }
 
 type Fill = (style: string, alpha: number, x: number, y: number, w: number, h: number) => void;
@@ -255,24 +300,14 @@ function drawSpan(ctx: Draw2D, span: NoteSpan, sc: SpanContext): void {
     }
   }
 
-  const tail = noteImage(skin, span.col, "lnTail");
-  if (tail === undefined) {
-    sprite(undefined, top, column.tailH);
-  } else if (top - column.tailH < height) {
-    // lazer inverts the tail's scroll direction (`LegacyHoldNoteTailPiece.cs` L49): same box, image flipped vertically.
-    ctx.save();
-    ctx.translate(x, top);
-    ctx.scale(1, -1);
-    image(tail, { x: 0, y: 0, w, h: column.tailH });
-    ctx.restore();
-  }
+  sprite(skin.lnTails.get(span.col), top, column.tailH);
   sprite(noteImage(skin, span.col, "lnHead"), bottom, column.headH);
 }
 
 /**
- * Repeat styles tile the image at the column's width-fit height, anchored at the head (bottom) or tail (top) end.
- * lazer stretches instead with a self-described guess (`LegacyBodyPiece.cs` L198–209); tiling is unverified against
- * stable (research 06). RepeatTopAndBottom has no known stable rendering, so it tiles as RepeatBottom.
+ * Every repeat style puts the image's row 0 at the tail and tiles toward the head at the column's width-fit height,
+ * as lazer does (`LegacyBodyPiece.cs`, TopCentre) and percy skins rely on. Whether stable keeps that natural aspect
+ * or stretches like lazer (32800 units) is unverified (research 06).
  */
 function drawBody(
   ctx: Draw2D,
@@ -283,42 +318,48 @@ function drawBody(
   params: SkinLayoutParams,
 ): void {
   const tileH = (displayHeight(img) * body.w) / displayWidth(img);
-  if (style === "Stretch" || !(tileH >= params.minBodyTilePx)) {
-    ctx.globalAlpha = 1;
+  const cropped = img.sourceHeight > img.height;
+  ctx.globalAlpha = 1;
+  if ((style === "Stretch" && !cropped) || !(tileH >= params.minBodyTilePx)) {
     ctx.drawImage(img.bitmap, 0, 0, img.width, img.height, body.x, body.y, body.w, body.h);
     return;
   }
   const visTop = Math.max(body.y, 0);
   const visBottom = Math.min(body.y + body.h, height);
-  const fromTop = style === "RepeatTop";
-  const tiles: { t0: number; t1: number }[] = [];
-  if (fromTop) {
-    for (let n = Math.max(0, Math.floor((visTop - body.y) / tileH)); ; n++) {
-      const t0 = body.y + n * tileH;
-      if (t0 >= visBottom) {
-        break;
-      }
-      tiles.push({ t0, t1: t0 + tileH });
-    }
-  } else {
-    const anchor = body.y + body.h;
-    for (let n = Math.max(0, Math.floor((anchor - visBottom) / tileH)); ; n++) {
-      const t1 = anchor - n * tileH;
-      if (t1 <= visTop) {
-        break;
-      }
-      tiles.push({ t0: t1 - tileH, t1 });
-    }
-  }
-  ctx.globalAlpha = 1;
-  for (const { t0, t1 } of tiles) {
+  const slice = (t0: number, t1: number, sy: number, sh: number): void => {
     const y0 = Math.max(t0, visTop);
     const y1 = Math.min(t1, visBottom);
     if (y1 <= y0) {
-      continue;
+      return;
     }
-    const sy = ((y0 - t0) / tileH) * img.height;
-    const sh = ((y1 - y0) / tileH) * img.height;
-    ctx.drawImage(img.bitmap, 0, sy, img.width, sh, body.x, y0, body.w, y1 - y0);
+    const scale = sh / (t1 - t0);
+    ctx.drawImage(img.bitmap, 0, sy + (y0 - t0) * scale, img.width, (y1 - y0) * scale, body.x, y0, body.w, y1 - y0);
+  };
+  const strip = (artH: number): void => {
+    const artEnd = body.y + artH;
+    slice(body.y, artEnd, 0, img.height);
+    const rows = Math.min(params.stripTailRows, img.height);
+    // A strip ends in a plain bar, so its last rows can be stretched onto just the visible rest of the hold.
+    const restTop = Math.max(artEnd, visTop);
+    if (body.y + body.h > artEnd && visBottom > restTop) {
+      ctx.drawImage(img.bitmap, 0, img.height - rows, img.width, rows, body.x, restTop, body.w, visBottom - restTop);
+    }
+  };
+
+  if (style === "Stretch") {
+    // The whole file spans the hold; the crop kept only its top rows, so they cover their share of it (ADR 0019 cap).
+    strip((body.h * img.height) / img.sourceHeight);
+    return;
+  }
+  if (cropped || displayHeight(img) >= params.stripBodyAspect * displayWidth(img)) {
+    strip(tileH);
+    return;
+  }
+  for (let n = Math.max(0, Math.floor((visTop - body.y) / tileH)); ; n++) {
+    const t0 = body.y + n * tileH;
+    if (t0 >= visBottom) {
+      break;
+    }
+    slice(t0, t0 + tileH, 0, img.height);
   }
 }

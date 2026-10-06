@@ -2,6 +2,8 @@
 
 import type { NoteBodyStyleDto, SkinDto, SkinFileDto } from "@/ipc/bindings";
 import { base64ToBytes } from "../decodeAudio";
+import { createSurface, type Surface, type SurfaceFactory } from "../offscreen";
+import { noteImage } from "../skinLayout";
 import type { LoadedSkin, NoteBodyStyle, SkinImage, SkinRgba, SkinSlot } from "../skinModel";
 import { DEFAULT_STAGE_PARAMS } from "../stage";
 
@@ -72,13 +74,49 @@ async function decode(f: SkinFileDto, crop: boolean, maxHeight: number): Promise
   if (!crop || f.height <= maxHeight) {
     return { bitmap: await createImageBitmap(blob, NO_ROTATION), height: f.height };
   }
-  // The head end sits on the judgement line and is what stays on screen longest; which end stable keeps is
-  // unverified (research 06).
-  const bitmap = await createImageBitmap(blob, 0, f.height - maxHeight, f.width, maxHeight, NO_ROTATION);
+  // Row 0 faces the tail, so percy skins put their transparent lead-in and cap in the top rows (research 06).
+  const bitmap = await createImageBitmap(blob, 0, 0, f.width, maxHeight, NO_ROTATION);
   return { bitmap, height: maxHeight };
 }
 
-export async function loadSkin(dto: SkinDto, params: SkinLoaderParams = DEFAULT_SKIN_LOADER_PARAMS): Promise<SkinLoadResult> {
+function flipVertically(img: SkinImage, surface: SurfaceFactory): Surface | null {
+  const s = surface(img.width, img.height);
+  if (s === null) {
+    return null;
+  }
+  s.ctx.translate(0, img.height);
+  s.ctx.scale(1, -1);
+  s.ctx.drawImage(img.bitmap, 0, 0, img.width, img.height, 0, 0, img.width, img.height);
+  return s;
+}
+
+/** Columns without a tail image, or whose flip cannot be painted, are left out and drawn procedurally. */
+function flippedTails(images: LoadedSkin["images"], columns: number, surface: SurfaceFactory) {
+  const flipped = new Map<CanvasImageSource, Surface | null>();
+  const tails = new Map<number, SkinImage>();
+  for (let col = 0; col < columns; col++) {
+    const tail = noteImage({ images }, col, "lnTail");
+    if (tail === undefined) {
+      continue;
+    }
+    let s = flipped.get(tail.bitmap);
+    if (s === undefined) {
+      s = flipVertically(tail, surface);
+      flipped.set(tail.bitmap, s);
+    }
+    if (s !== null) {
+      tails.set(col, { ...tail, bitmap: s.image });
+    }
+  }
+  const surfaces = [...flipped.values()].flatMap((s) => (s === null ? [] : [s]));
+  return { tails, surfaces };
+}
+
+export async function loadSkin(
+  dto: SkinDto,
+  params: SkinLoaderParams = DEFAULT_SKIN_LOADER_PARAMS,
+  surface: SurfaceFactory = createSurface,
+): Promise<SkinLoadResult> {
   const { config } = dto;
   const decodes = new Map<string, Promise<Decoded | null>>();
   const decodeOnce = (index: number, crop: boolean): Promise<Decoded | null> => {
@@ -109,29 +147,37 @@ export async function loadSkin(dto: SkinDto, params: SkinLoaderParams = DEFAULT_
       failedSlots.push(slot);
       continue;
     }
-    images.set(slot, { bitmap: decoded.bitmap, width: f.width, height: decoded.height, scale: f.scale });
+    images.set(slot, {
+      bitmap: decoded.bitmap,
+      width: f.width,
+      height: decoded.height,
+      scale: f.scale,
+      sourceHeight: f.height,
+    });
   }
 
   const bitmaps = (await Promise.all(decodes.values())).flatMap((d) => (d === null ? [] : [d.bitmap]));
+  const skin = {
+    version: dto.version ?? params.defaultVersion,
+    columnWidth: orDefault(config.columnWidth, params.defaultColumnWidth),
+    columnSpacing: orDefault(config.columnSpacing, params.defaultColumnSpacing),
+    columnLineWidth: orDefault(config.columnLineWidth, params.defaultColumnLineWidth),
+    hitPosition: config.hitPosition ?? params.defaultHitPosition,
+    widthForNoteHeightScale: config.widthForNoteHeightScale,
+    noteBodyStyle: BODY_STYLES[config.noteBodyStyle],
+    judgementLine: config.judgementLine,
+    keysUnderNotes: config.keysUnderNotes,
+    colours: {
+      column: config.colours.column.map(rgba),
+      columnLine: rgba(config.colours.columnLine),
+      judgementLine: rgba(config.colours.judgementLine),
+    },
+    images,
+  };
+  const { tails, surfaces } = flippedTails(images, skin.columnWidth.length, surface);
   let disposed = false;
   return {
-    skin: {
-      version: dto.version ?? params.defaultVersion,
-      columnWidth: orDefault(config.columnWidth, params.defaultColumnWidth),
-      columnSpacing: orDefault(config.columnSpacing, params.defaultColumnSpacing),
-      columnLineWidth: orDefault(config.columnLineWidth, params.defaultColumnLineWidth),
-      hitPosition: config.hitPosition ?? params.defaultHitPosition,
-      widthForNoteHeightScale: config.widthForNoteHeightScale,
-      noteBodyStyle: BODY_STYLES[config.noteBodyStyle],
-      judgementLine: config.judgementLine,
-      keysUnderNotes: config.keysUnderNotes,
-      colours: {
-        column: config.colours.column.map(rgba),
-        columnLine: rgba(config.colours.columnLine),
-        judgementLine: rgba(config.colours.judgementLine),
-      },
-      images,
-    },
+    skin: { ...skin, lnTails: tails },
     failedSlots,
     dispose: () => {
       if (disposed) {
@@ -140,6 +186,9 @@ export async function loadSkin(dto: SkinDto, params: SkinLoaderParams = DEFAULT_
       disposed = true;
       for (const bitmap of bitmaps) {
         bitmap.close();
+      }
+      for (const s of surfaces) {
+        s.release();
       }
     },
   };

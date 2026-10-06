@@ -25,6 +25,11 @@ export interface SkinImage {
   height: number;
   /** 2 for an `@2x` file: display size is pixel size ÷ scale (research 06, "Image resolution"). */
   scale: number;
+  /**
+   * Pixel height of the file. Above `height` when the loader kept only the top rows: the art continues past `height`,
+   * so it is never re-tiled, and Stretch maps the kept rows to their share of the hold.
+   */
+  sourceHeight: number;
 }
 
 export type SkinSlot =
@@ -71,4 +76,9 @@ export interface LoadedSkin {
   keysUnderNotes: boolean;
   colours: SkinColours;
   images: ReadonlyMap<SkinSlot, SkinImage>;
+  /**
+   * Per column, the LN tail after lazer's chain (T, then H, then note), already flipped vertically because lazer
+   * inverts the tail (`LegacyHoldNoteTailPiece.cs` L49); flipping once at load spares a transform per tail per frame.
+   */
+  lnTails: ReadonlyMap<number, SkinImage>;
 }
