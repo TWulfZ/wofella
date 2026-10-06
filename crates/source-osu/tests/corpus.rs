@@ -33,7 +33,6 @@ const REPLAY_DIR: &str = "Data/r";
 /// the before/after check records the Songs directory itself but not its subtree.
 const SONGS_DIR: &str = "Songs";
 /// Spec 002 AC14 names the pilot's cfg string explicitly: it is the garbage login 004 must cope with.
-const PILOT_CFG_USERNAME: &str = "TWulfZasdasdasd d jSS||";
 const OSU_DB_DECODE_BUDGET: Duration = Duration::from_secs(1);
 const SCORES_DB_DECODE_BUDGET: Duration = Duration::from_millis(50);
 /// Best of several runs, so one scheduler hiccup on a busy machine does not fail the budget.
@@ -653,7 +652,14 @@ fn cfg_username_is_verbatim() {
     let cfgs = list_user_cfgs(&root).unwrap();
     let newest = cfgs.first().expect("no osu!.<account>.cfg in the corpus");
     let (cfg, _) = read_user_cfg(&newest.path).unwrap();
-    assert_eq!(cfg.username.as_deref(), Some(PILOT_CFG_USERNAME));
+    // The login changes whenever the pilot signs in again, so compare with the file itself
+    // instead of a frozen value; only the Username line is read, never Password.
+    let bytes = std::fs::read(&newest.path).unwrap();
+    let raw = String::from_utf8_lossy(&bytes)
+        .lines()
+        .find_map(|l| l.strip_prefix("Username = ").map(str::to_owned));
+    assert!(raw.is_some(), "the pilot cfg has a Username line");
+    assert_eq!(cfg.username, raw);
 }
 
 type TreeState = BTreeMap<PathBuf, (u64, Option<SystemTime>)>;
