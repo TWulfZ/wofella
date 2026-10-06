@@ -117,3 +117,91 @@ pub struct HintAgreementDto {
     /// `mean_share / baseline_share`; `None` without either.
     pub lift: Option<f64>,
 }
+
+/// What a playfield draws for `[fromMs, toMs]` of one chart. No segments: labelling is blind.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ChartWindowDto {
+    pub md5: String,
+    pub keymode: u8,
+    pub from_ms: i32,
+    pub to_ms: i32,
+    /// Taps and LN heads in `[fromMs, toMs]` plus LNs whose body enters from before `fromMs`,
+    /// by `(tMs, col)`.
+    pub notes: Vec<NoteDto>,
+    /// The last red line at or before `fromMs`, then every line in `[fromMs, toMs]`.
+    pub timing: Vec<TimingDto>,
+    pub layout: LayoutDto,
+    pub chart_span: ChartSpanDto,
+    pub audio_filename: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteDto {
+    pub t_ms: i32,
+    /// 0-based, column 0 leftmost.
+    pub col: u8,
+    /// The LN tail; `None` for a tap.
+    pub end_ms: Option<i32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum TimingKindDto {
+    Red,
+    Green,
+}
+
+/// A red line has `beatLenMs` and `meter`, a green line `sv`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TimingDto {
+    pub t_ms: i32,
+    pub kind: TimingKindDto,
+    pub beat_len_ms: Option<f64>,
+    pub meter: Option<u8>,
+    pub sv: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LayoutDto {
+    pub id: String,
+    /// One per column, leftmost first.
+    pub columns: Vec<ColumnDto>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ColumnDto {
+    pub hand: HandDto,
+    pub finger: FingerDto,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum HandDto {
+    Left,
+    Right,
+    /// Either thumb may take it.
+    Both,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum FingerDto {
+    Pinky,
+    Ring,
+    Middle,
+    Index,
+    Thumb,
+}
+
+/// The first and the last row of the chart (LN tails included); `0, 0` without rows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ChartSpanDto {
+    pub first_ms: i32,
+    pub end_ms: i32,
+}

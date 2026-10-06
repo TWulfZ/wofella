@@ -55,6 +55,14 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::players::players_decide_alias,
             commands::players::players_create_profile,
             commands::players::players_set_default,
+            commands::chart::chart_window,
+            commands::label::label_taxonomy,
+            commands::label::label_sample,
+            commands::label::label_resolve_patterns,
+            commands::label::label_reshape,
+            commands::label::label_submit,
+            commands::label::label_undo,
+            commands::label::label_stats,
         ])
 }
 

@@ -327,15 +327,20 @@ pub fn pick_start(seed: u64, round: u32, md5: ChartMd5, starts: &[TimeUs]) -> Op
 /// [`plan`], then the first chart with a free window. `rows_of` gives a chart's ascending row
 /// times, or `None` when it has none to offer; it is async so the service can read rows through
 /// the library feature (D12) inside this same loop.
-pub async fn sample<E>(
+// `FnMut -> Future`, not `AsyncFnMut`: an async closure's future cannot be proven `Send` for
+// every borrow, which Tauri commands require.
+pub async fn sample<E, F>(
     seed: u64,
     round: u32,
     pool: &Pool,
     exclude: &[SegmentAnchor],
     window: TimeUs,
     params: &SamplerParams,
-    mut rows_of: impl AsyncFnMut(ChartMd5) -> Result<Option<Vec<TimeUs>>, E>,
-) -> Result<Option<Pick>, E> {
+    mut rows_of: impl FnMut(ChartMd5) -> F,
+) -> Result<Option<Pick>, E>
+where
+    F: Future<Output = Result<Option<Vec<TimeUs>>, E>>,
+{
     for (md5, stratum) in plan(seed, round, pool, params) {
         let Some(rows) = rows_of(md5).await? else {
             continue;

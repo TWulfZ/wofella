@@ -1,7 +1,9 @@
 //! Thin IPC commands (D11): map the DTO, call one app service, map the error.
 
 pub mod app;
+pub mod chart;
 pub mod jobs;
+pub mod label;
 pub mod players;
 pub mod setup;
 

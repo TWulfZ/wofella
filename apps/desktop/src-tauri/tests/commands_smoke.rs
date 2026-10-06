@@ -6,12 +6,14 @@ mod commands_smoke {
     use std::sync::Arc;
 
     use serde_json::{Value, json};
+    use std::path::{Path, PathBuf};
     use tauri::ipc::{CallbackFn, InvokeBody};
     use tauri::test::{
         INVOKE_KEY, MockRuntime, get_ipc_response, mock_builder, mock_context, noop_assets,
     };
     use tauri::webview::InvokeRequest;
     use tauri::{App, WebviewWindow, WebviewWindowBuilder};
+
     use wolluf_app::context::{AppContext, AppPaths};
     use wolluf_core::{FixedClock, UnixUs};
     use wolluf_desktop::{manage_context, specta_builder, with_plugins};
@@ -19,6 +21,16 @@ mod commands_smoke {
     const T0: UnixUs = UnixUs(1_790_637_236_636_000);
     /// Crockford base32, 26 characters (003's `JobId`).
     const ULID_LEN: usize = 26;
+    const FIXTURES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../fixtures/dbs");
+    /// Fixture osu!.db entry 1, a 7K map: `md5("wolluf-fixture:1")` at `folder-1/file-1`
+    /// (fixtures/dbs/MANIFEST.toml).
+    const FIXTURE_7K_MD5: &str = "643833896a402cef06fd6ee5c120211a";
+    /// md5 of [`chart`]'s bytes. The shell may not depend on an md5 crate, so it is pinned; a
+    /// stale value shows up as `NOT_FOUND`, because sync verifies the file against it.
+    const CHART_MD5: &str = "241aa444ab16b2c707d1021d0f47ff99";
+    const SEVEN_KEYS: u32 = 7;
+    /// The fixture scores.db's one named player, made the session user so sync selects it.
+    const FIXTURE_PLAYER: &str = "player-01";
 
     struct Harness {
         dir: tempfile::TempDir,
@@ -67,6 +79,157 @@ mod commands_smoke {
             };
             get_ipc_response(&self.webview, request).map(|b| b.deserialize::<Value>().unwrap())
         }
+    }
+
+    /// 32 taps 125 ms apart walking the columns, then one LN in column 3 at 4.0-4.5 s.
+    fn chart() -> Vec<u8> {
+        let x = |col: u32| (2 * col + 1) * 256 / SEVEN_KEYS;
+        let mut text = format!(
+            "osu file format v14\n\n[General]\nAudioFilename: audio.mp3\nMode: 3\n\n\
+             [Metadata]\nTitle: t\nArtist: a\nCreator: c\nVersion: v\n\n\
+             [Difficulty]\nHPDrainRate: 8\nCircleSize: {SEVEN_KEYS}\nOverallDifficulty: 8\n\n\
+             [TimingPoints]\n0,500,4,1,0,100,1,0\n\n[HitObjects]\n"
+        );
+        for i in 0..32 {
+            text.push_str(&format!(
+                "{},192,{},1,0,0:0:0:0:\n",
+                x(i % SEVEN_KEYS),
+                i * 125
+            ));
+        }
+        text.push_str(&format!("{},192,4000,128,0,4500:0:0:0:0:\n", x(3)));
+        text.into_bytes()
+    }
+
+    /// The committed minimized install with fixture entry 1 re-pointed at [`chart`]: an md5 has
+    /// a fixed length, so swapping it in place keeps osu!.db valid.
+    fn install_with_chart(dir: &Path) -> PathBuf {
+        let root = dir.join("osu!");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("osu!.exe"), b"MZ").unwrap();
+        let fixtures = Path::new(FIXTURES);
+        std::fs::copy(
+            fixtures.join("scores_db/scores-20260924.min.db"),
+            root.join("scores.db"),
+        )
+        .unwrap();
+        let mut db = std::fs::read(fixtures.join("osu_db/osu-20260924.min.db")).unwrap();
+        let at = db
+            .windows(FIXTURE_7K_MD5.len())
+            .position(|w| w == FIXTURE_7K_MD5.as_bytes())
+            .unwrap();
+        db[at..at + CHART_MD5.len()].copy_from_slice(CHART_MD5.as_bytes());
+        std::fs::write(root.join("osu!.db"), db).unwrap();
+        std::fs::write(
+            root.join("osu!.fixture.cfg"),
+            format!("Username = {FIXTURE_PLAYER}\n"),
+        )
+        .unwrap();
+        let folder = root.join("Songs").join("folder-1");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("file-1"), chart()).unwrap();
+        root
+    }
+
+    /// Synced and indexed, so the chart is parsed and the self profile exists.
+    fn synced() -> Harness {
+        let h = Harness::new();
+        let root = install_with_chart(h.dir.path());
+        let rt = h.ctx.runtime();
+        let install = rt.block_on(h.ctx.register_install(root, None)).unwrap();
+        rt.block_on(h.ctx.plays().sync_and_wait(install)).unwrap();
+        h
+    }
+
+    #[test]
+    fn chart_window_returns_notes() {
+        let h = synced();
+        let window = h
+            .invoke(
+                "chart_window",
+                json!({ "md5": CHART_MD5, "fromMs": 3_800, "toMs": 4_200, "layoutId": null }),
+            )
+            .unwrap();
+        assert_eq!(
+            window["notes"],
+            json!([
+                { "tMs": 3_875, "col": 3, "endMs": null },
+                { "tMs": 4_000, "col": 3, "endMs": 4_500 },
+            ]),
+            "{window}"
+        );
+        assert_eq!(window["keymode"], json!(7));
+        assert_eq!(window["layout"]["columns"].as_array().unwrap().len(), 7);
+        assert_eq!(window["audioFilename"], json!("audio.mp3"));
+        assert_eq!(window["chartSpan"], json!({ "firstMs": 0, "endMs": 4_500 }));
+
+        let err = h
+            .invoke(
+                "chart_window",
+                json!({ "md5": CHART_MD5, "fromMs": 1, "toMs": 1, "layoutId": null }),
+            )
+            .unwrap_err();
+        assert_eq!(err["code"], json!("INVALID_INPUT"), "{err}");
+    }
+
+    #[test]
+    fn label_submit_then_undo_round_trips() {
+        let h = synced();
+        let taxonomy = h.invoke("label_taxonomy", json!({ "keymode": 7 })).unwrap();
+        assert!(!taxonomy.as_array().unwrap().is_empty(), "{taxonomy}");
+        let ids = h
+            .invoke(
+                "label_resolve_patterns",
+                json!({ "keymode": 7, "tokens": ["js"] }),
+            )
+            .unwrap();
+        assert_eq!(ids, json!(["regular.stream.jumpstream"]));
+        let sampled = h
+            .invoke(
+                "label_sample",
+                json!({ "req": {
+                    "keymode": 7, "seed": "1", "round": 0, "windowMs": 2_000, "scale": null,
+                    "levelMin": null, "levelMax": null, "exclude": [],
+                } }),
+            )
+            .unwrap();
+        assert_eq!(sampled["anchor"]["md5"], json!(CHART_MD5), "{sampled}");
+
+        let anchor =
+            json!({ "md5": CHART_MD5, "t0Ms": 0, "t1Ms": 2_000, "cols": [1, 2, 3, 4, 5, 6, 7] });
+        let next = h
+            .invoke("label_reshape", json!({ "anchor": anchor, "op": "next" }))
+            .unwrap();
+        assert_eq!(
+            (next["t0Ms"].clone(), next["t1Ms"].clone()),
+            (json!(1_000), json!(3_000))
+        );
+
+        let event = h
+            .invoke(
+                "label_submit",
+                json!({ "req": {
+                    "anchor": anchor, "patterns": ids, "noPattern": false, "mixed": false,
+                    "unsure": false, "thumbPref": null,
+                } }),
+            )
+            .unwrap();
+        let id = event["id"].as_str().unwrap().to_owned();
+        assert_eq!(id.len(), ULID_LEN, "{id}");
+        assert_eq!(
+            h.invoke("label_stats", json!({})).unwrap()["total"],
+            json!(1)
+        );
+
+        h.invoke("label_undo", json!({ "eventId": id })).unwrap();
+        assert_eq!(
+            h.invoke("label_stats", json!({})).unwrap()["total"],
+            json!(0)
+        );
+        let err = h
+            .invoke("label_undo", json!({ "eventId": "not a ulid" }))
+            .unwrap_err();
+        assert_eq!(err["code"], json!("INVALID_INPUT"), "{err}");
     }
 
     #[test]

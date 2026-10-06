@@ -115,12 +115,14 @@ impl<'a> LabelingService<'a> {
             level_max: req.level_max,
         };
         let pool = Pool::new(seed, &facts, &assigned, &filter);
-        let library = self.ctx.library();
-        let rows_of = async |md5| match library.row_times(md5).await {
-            Ok(rows) => Ok(Some(rows.times)),
-            // Re-indexed away between the overview and now.
-            Err(e) if e.code == ErrorCode::NotFound => Ok(None),
-            Err(e) => Err(e),
+        let ctx = self.ctx;
+        let rows_of = move |md5| async move {
+            match ctx.library().row_times(md5).await {
+                Ok(rows) => Ok(Some(rows.times)),
+                // Re-indexed away between the overview and now.
+                Err(e) if e.code == ErrorCode::NotFound => Ok(None),
+                Err(e) => Err(e),
+            }
         };
         let Some(pick) = sampler::sample(
             seed,

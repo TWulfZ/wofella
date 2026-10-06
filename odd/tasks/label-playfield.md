@@ -49,8 +49,8 @@ Rejected: porting mania-hub's replay renderer. It lives outside `algorithms/`, t
 - Manual check: on the pilot's install, audio loops in sync with the scroll.
 
 ## Tasks
-- [ ] T1 — `chart_window` DTO, service and command. Route: delegated (writer). Tier: medium. Commit: —
-- [ ] T2 — `label_*` commands (taxonomy, sample, resolve_patterns, reshape, submit, undo, stats). Route: delegated (writer). Tier: medium. Commit: —
+- [x] T1 — `chart_window`: extraction in `engine::window`, DTO and service in app, command. Route: delegated (writer, plus one correction). Tier: medium. Commit: `feat(desktop): expose chart window and labeling commands` (with T2: they share `lib.rs`, the smoke tests and `bindings.ts`)
+- [x] T2 — `label_*` commands (taxonomy, sample, resolve_patterns, reshape, submit, undo, stats); the sampler takes `FnMut -> Future` so `label_sample` is `Send`. Route: delegated (writer). Tier: medium. Commit: same as T1
 - [ ] T3 — `chart_audio` read-only plus ADR 0018 and the architecture §8 edit. Route: delegated (writer). Tier: **high** (independent verifier). Commit: —
 - [x] T4 — Pure Playfield projection: time to y, LN clipping, beat lines, hand separators, shading outside the window. Route: delegated (writer). Tier: medium. Commit: `feat(ui): add pure playfield projection`
 - [ ] T5 — Canvas Playfield plus `AudioClock` (WebAudio loop, offset slider, no-audio fallback). Route: delegated (writer). Tier: medium. Commit: —
@@ -61,6 +61,7 @@ Rejected: porting mania-hub's replay renderer. It lives outside `algorithms/`, t
 ## Progress
 - 2026-10-06 T4+T6: RED: all 4 test files failed to resolve the missing modules → GREEN. Writer: `pnpm test playfield` 13 passed, `pnpm test label` 16 passed, tsc and lint clean, full UI suite 155 passed. Parent spot check: `pnpm test playfield label`: 29 passed; tsc ok.
 - 2026-10-06 Accepted change: T1's writer re-exported `wolluf_chart` types from `engine` so the app could name them. That bypasses `layers.toml`, so the extraction moves into an engine module (like `render.rs`) and the app only maps it to DTOs (one scoped correction).
+- 2026-10-06 T1+T2: RED: build failures on missing `chart_window`/types; smoke tests `Command chart_window not found`, `Command label_taxonomy not found`; `service_futures_are_send` failed with `Send is not general enough` → GREEN. After the correction: engine 94, app 178, desktop 17 passed. Parent: `cargo xtask bindings` regenerated; `nextest -p wolluf-desktop -p wolluf-app -p wolluf-engine`: 289 passed; clippy workspace clean; fmt clean; check-layers 0 violations; `grep wolluf_chart crates/app/src`: none.
 
 ## Next step
-Phase A in parallel: T1 + T2 (Rust writer) and T4 + T6 (UI writer, pure modules).
+T3 (`chart_audio` + ADR 0018, high tier with verifier) and T5 (canvas + AudioClock) in parallel; then T7.
