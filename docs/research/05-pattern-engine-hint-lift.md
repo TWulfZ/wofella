@@ -1,6 +1,6 @@
 # 05 Pattern engine: name-hint lift on the pilot library
 
-Status: measured on 2026-10-05, read-only, on a copy of the pilot data dir. 18,333 parsed 7K charts. Command: `wolluf library hints` after `wolluf library index`.
+Status: measured on 2026-10-05 (v1–v4) and 2026-10-06 (v5), read-only, on a copy of the pilot data dir. 18,333 parsed 7K charts. Command: `wolluf library hints` after `wolluf library index`.
 
 **Lift** is the mean share of segmented time on charts whose name hints a target, divided by the library-wide mean share. A lift above 1 means the engine finds more of that pattern where mappers say it is.
 
@@ -48,11 +48,17 @@ Status: measured on 2026-10-05, read-only, on a copy of the pilot data dir. 18,3
   Ranking burst lower also cost bracket (4.80 → 4.41) and delay (6.94 → 6.21), so it was rejected.
 - The jack axis dipped from 2.67 to 2.42 across v4. Rows that burst used to own now partly fall to jack patterns in the baseline as well, which raises the denominator.
 
-## Trill and jumptrill stay at ~0%, and that is not a detector bug
+**v5: community trill vocabulary** (ADR 0017 amendment 2026-10-06), measured 2026-10-06 on a fresh copy of the pilot data dir, 18,334 parsed 7K charts.
+- `chordbracket` became `chordtrill`. The hint table no longer reads `Chord//Bracket` (kasumi99, 7 rate copies) as one pattern, so those charts now hint `bracket`: the bracket set grew from 192 to 200 charts, and set sizes elsewhere moved by one or two charts.
+- Jumptrill and split trill are split by hands as the osu! wiki does. The `[123]/[4567]` whole-hand alternation below is now a jumptrill: `regular.stream.jumptrill` has a lift of 634.9 on its 9 hinted charts (66.7% of segmented time against a 0.1% base), up from ~0%. Trill stays at 0.
+- Axis lifts barely moved: jack 2.42, speed 2.51, stream 1.51, tech 1.63. Bracket 4.58, chordjack 4.44, delay 6.35, burst 1.05.
+- Rejected: ranking chordtrill above bracket. Bracket's segmented time fell from 129,675 s to 13,470 s and its lift from 4.58 to 1.90, while chordtrill grew from 11,650 s to 109,479 s. Mappers' "bracket" charts are mostly jackless chord rows in which one hand alternates, so bracket stays above chordtrill.
+
+## Trill stays at ~0%; jumptrill was a vocabulary problem (fixed in v5)
 - The 18 hinted charts are 4 distinct charts plus rate copies.
 - Rendering them (`wolluf chart show --segments`) shows three things:
   - single-hand bracket shapes, such as 5 against [4, 6];
-  - a [123]/[4567] whole-hand alternation, which ADR 0017 files as `split_trill` while the mapper calls it "Jumptrill";
+  - a [123]/[4567] whole-hand alternation, which ADR 0017 filed as `split_trill` until v5 while the mapper calls it "Jumptrill";
   - a 27 ms joke roll.
 - mania-hub's `trillRunShare` also requires exact two-row alternation.
 - Relaxing `alternations` would need gold labels, not these hints.
