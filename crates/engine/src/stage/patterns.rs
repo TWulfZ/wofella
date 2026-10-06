@@ -17,7 +17,7 @@ pub use wolluf_chart::Chart;
 pub use wolluf_patterns::Segment;
 
 pub const STAGE: StageId = StageId::from_static("patterns");
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
 
 const CONFIG_TAG: &[u8] = b"wolluf.patterns.config.v1";
 
@@ -136,7 +136,7 @@ mod tests {
     #[test]
     fn stage_id_and_version_are_stable() {
         assert_eq!(STAGE.as_str(), "patterns");
-        assert_eq!(VERSION, 2);
+        assert_eq!(VERSION, 3);
     }
 
     fn rule_versions() -> Vec<(PatternId, u32)> {
@@ -173,7 +173,7 @@ mod tests {
         // Frozen: a change re-keys every stored segment.
         assert_eq!(
             key.to_string(),
-            "813363c46579e234229651d321a22521ad85b2fb3cad6df8e2b4ba5d0fc8561a"
+            "fc127791dcd99c27a1acccb48ad2acfa5998bdf2dbf571e0b900f486f24cce1e"
         );
     }
 

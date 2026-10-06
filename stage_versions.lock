@@ -11,5 +11,5 @@ version = 1
 golden = "ba3334e1f848735b9f7cdbfd9837aaa4c5557fb0a8c128ad56da83a6988e1c59"
 
 [stages."patterns"]
-version = 2
-golden = "55594dde237d51caa6dbd9a0530964a1df51cd456a7c3119ab617a87287b45a3"
+version = 3
+golden = "374acd0595e08746dff1b07516bdbbceb7bb330af54df19daf5883256461e299"

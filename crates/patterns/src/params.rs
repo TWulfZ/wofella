@@ -340,6 +340,9 @@ impl Default for SegmentParams {
                 // Below the shapes a staggered section may contain, above the generic streams
                 // it would otherwise read as.
                 id("regular.speed.delay"),
+                // Owns its rows rather than tagging them: otherwise the tech axis never gets a
+                // segment, hence no evidence.
+                id("regular.tech.irregular"),
                 id("regular.stream.chordstream_dense"),
                 id("regular.stream.chordstream_light"),
                 id("regular.stream.handstream"),
@@ -351,7 +354,6 @@ impl Default for SegmentParams {
                 id("regular.jack.minijack"),
             ],
             tag_only: vec![
-                id("regular.tech.irregular"),
                 id("regular.tech.hand_imbalance"),
                 id("regular.tech.thumb"),
                 id("ln.general.density"),
@@ -385,7 +387,7 @@ mod tests {
 
     // Frozen on first computation: any change to a default or to the params layout moves every
     // pattern vkey, so it must be deliberate.
-    const DEFAULT_HASH: &str = "a98eedde209ee8f549d037bc3b15554ee7626ceb6351205a08e50b95e317e0b2";
+    const DEFAULT_HASH: &str = "8945a0338c13ead0c7007f37a86e9e63c46e2fdce47aaa72cdb06fa990819e43";
 
     #[test]
     fn default_params_hash_is_frozen() {
