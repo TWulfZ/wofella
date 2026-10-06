@@ -59,9 +59,9 @@ Rejected:
 - [x] T1 — Scroll modes (`osu` 1–40 / `pxPerMs`), judgeY from HitPosition, paused view at the chosen speed, F3/F4, prefs migration. Route: delegated (writer). Tier: medium. Commit: `feat(ui): add osu! scroll speed mode and a larger playfield` (with T2: shared files)
 - [x] T2 — Larger playfield: width from columns × height, zoom. Route: delegated (writer). Tier: medium. Commit: same as T1
 - [x] T3 — cfg allowlist keys `Skin`, `ManiaSpeed`, `ManiaSpeedBPMScale`, `UsePerBeatmapManiaSpeed` (codec only; exposure to the UI moves to T7). Route: delegated (writer) + parent fix. Tier: **high** (verifier). Commit: `feat(source-osu): read skin and mania speed from the osu! cfg`
-- [ ] T4 — ADR 0019 (skin assets over IPC), `docs/research/06-mania-skin-and-scroll.md`, NOTICE. Route: inline. Tier: passive. Commit: —
+- [x] T4 — ADR 0019 (skin assets over IPC), `docs/research/06-mania-skin-and-scroll.md`, NOTICE. Route: delegated (docs writer) + parent amendment. Tier: passive. Commit: `docs: record skin assets over IPC and mania skin research`
 - [x] T5 — `codec/skin_ini.rs` pure parser. Route: delegated (writer). Tier: medium. Commit: `feat(source-osu): parse skin.ini mania sections as lazer does`
-- [ ] T6 — `source-osu/src/skins.rs` read-only resolution (lookup chain, IHDR and magic, caps), `corpus_skins`. Route: delegated (writer). Tier: **high**. Commit: —
+- [x] T6 — `source-osu/src/skins.rs` read-only resolution (lookup chain, IHDR and magic, caps), `corpus_skins`. Route: delegated (writer + one correction). Tier: **high** (verifier). Commit: `feat(source-osu): resolve skin images read-only with lazer's lookup`
 - [ ] T7 — app skins slice plus `skin_list` (with current) and `skin_get` commands, errors, bindings. Route: delegated (writer). Tier: **high**. Commit: —
 - [ ] T8 — UI skin loader (ImageBitmap cache, tall-body crop) and picker defaulting to cfg `Skin`. Route: delegated (writer). Tier: medium. Commit: —
 - [ ] T9 — Skin renderer (`skinLayout.ts`, `draw.ts`): columns, lines, hint, notes, LN Stretch/RepeatBottom, flipped tail, keys, stage, per-slot fallback. Route: delegated (writer). Tier: medium. Commit: —
@@ -77,6 +77,19 @@ Rejected:
   - **Corpus:** `corpus_skin_ini` ran with osu! closed: 26 parsed, 25 with `Keys: 7`.
   - **Verifier:** confirmed a Password leak on bare-CR files (`Skin = a\rPassword = …` kept the secret inside `skin`). RED `a_bare_cr_ends_a_line…` (`left: Some("a\rPassword = secret…")`) → fixed by splitting lines on CR as stable does. Suggestion taken: `clamp` replaced with `max/min`, which cannot panic on bad params.
   - **Checks:** nextest source-osu+app 341 passed; clippy and fmt clean.
+- 2026-10-06 T4: docs writer verified every lazer/wiki line and URL (7 inherited line ranges corrected); survey anonymised (counts only). Parent amended the ADR so a skin without `skin.ini` loads with lazer defaults (as the code and lazer do), names must match the listing byte for byte, and a per-skin decoded-pixel budget applies; NOTICE credits ppy/osu @6359741b.
+- 2026-10-06 T6:
+  - **RED:** the stubbed module failed all 15 integration tests → GREEN.
+  - **Verifier:** no escape (`..`, UNC, drive, NUL, `.@2x.` → `..`, ADS forms on Windows checked read-only) and no exhaustion (2 GiB sparse files, FIFO, `/dev/zero`, 2³¹² IHDR).
+  - **Mismatches with ADR 0019, fixed in one correction, each with RED:**
+    - `-0` before plain;
+    - folder must equal a listed entry;
+    - followed-link test (RED forced by disabling link follow);
+    - IHDR length 13 / SOF ≥ 8;
+    - per-skin pixel budget 64 Mi px;
+    - `skin.ini` found past a truncated listing.
+  - **Corpus `corpus_skins`** (osu! closed): 27 skins, 25 with 7K. Active skin: 47 slots, 17 files, 344,763 bytes, no diagnostics.
+  - **Parent:** source-osu 179 passed; clippy, fmt, check-layers clean; no write calls in `skins.rs`.
 
 ## Next step
-T4 (ADR 0019, research doc, NOTICE) inline, then T6 (skins.rs, high, verifier) → T7 (app + IPC, high) → T8 + T9 (UI). Research material: `<scratchpad>/skins-research/{PLAN,REPORTS}.md` and the lazer sources under `<scratchpad>/skins-research/lazer-legacy-mania/src/`.
+T7 (app skins slice + `skin_list`/`skin_get` + cfg defaults over IPC, high) then T8 + T9 (UI loader and renderer). Research material: `<scratchpad>/skins-research/{PLAN,REPORTS}.md` and the lazer sources under `<scratchpad>/skins-research/lazer-legacy-mania/src/`.
