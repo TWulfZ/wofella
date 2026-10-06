@@ -2,10 +2,25 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import "@fontsource-variable/exo-2";
+
+/* Dark-only (product decision, 2026-10-06): supersedes spec 005 "Styling", where dark followed prefers-color-scheme.
+   shadcn `dark:` variants key off the `.dark` class set in index.html, so they apply whatever the OS theme is. */
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
-    --font-heading: var(--font-sans);
+    --font-heading: var(--font-display);
+    --font-display: 'Exo 2 Variable', 'Geist Variable', sans-serif;
     --font-sans: 'Geist Variable', sans-serif;
+    --color-osu-pink: var(--osu-pink);
+    --color-osu-blue: var(--osu-blue);
+    --color-osu-lime: var(--osu-lime);
+    --color-osu-yellow: var(--osu-yellow);
+    --color-osu-purple: var(--osu-purple);
+    --color-success: var(--success);
+    --color-warning: var(--warning);
+    --color-surface-raised: var(--surface-raised);
+    --color-header: var(--header);
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -46,76 +61,66 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* osu!-web language: every surface is the brand hue at low saturation, so greys read warm-pink, not neutral. */
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
+    color-scheme: dark;
+    --hue: 333;
+    --osu-pink: hsl(333 100% 70%);
+    --osu-blue: hsl(200 100% 70%);
+    --osu-lime: hsl(90 100% 70%);
+    --osu-yellow: hsl(45 100% 70%);
+    --osu-purple: hsl(270 100% 75%);
+
+    --header: hsl(var(--hue) 10% 8%);
+    --background: hsl(var(--hue) 10% 11%);
+    --foreground: hsl(var(--hue) 20% 95%);
+    --card: hsl(var(--hue) 10% 15%);
+    --card-foreground: var(--foreground);
+    --surface-raised: hsl(var(--hue) 10% 19%);
+    --popover: hsl(var(--hue) 10% 17%);
+    --popover-foreground: var(--foreground);
+    /* Dark text on pink: white on #ff66aa is ~2.9:1 and fails AA; this pair is ~6.8:1. */
+    --primary: var(--osu-pink);
+    --primary-foreground: hsl(var(--hue) 40% 10%);
+    --secondary: hsl(var(--hue) 10% 22%);
+    --secondary-foreground: var(--foreground);
+    --muted: hsl(var(--hue) 10% 20%);
+    --muted-foreground: hsl(var(--hue) 12% 70%);
+    --accent: hsl(var(--hue) 18% 25%);
+    --accent-foreground: var(--foreground);
+    --destructive: hsl(0 100% 70%);
+    --success: hsl(90 70% 62%);
+    --warning: var(--osu-yellow);
+    --border: hsl(var(--hue) 10% 24%);
+    --input: hsl(var(--hue) 10% 28%);
+    --ring: var(--osu-pink);
+    --chart-1: var(--osu-pink);
+    --chart-2: var(--osu-blue);
+    --chart-3: var(--osu-lime);
+    --chart-4: var(--osu-yellow);
+    --chart-5: var(--osu-purple);
     --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
+    --sidebar: var(--header);
+    --sidebar-foreground: var(--foreground);
+    --sidebar-primary: var(--osu-pink);
+    --sidebar-primary-foreground: var(--primary-foreground);
+    --sidebar-accent: var(--accent);
+    --sidebar-accent-foreground: var(--foreground);
+    --sidebar-border: var(--border);
+    --sidebar-ring: var(--osu-pink);
 }
 
-/* Spec 005 Styling: dark follows the OS (prefers-color-scheme), matching Tailwind v4's default dark variant. */
-@media (prefers-color-scheme: dark) {
-  :root {
-      --background: oklch(0.145 0 0);
-      --foreground: oklch(0.985 0 0);
-      --card: oklch(0.205 0 0);
-      --card-foreground: oklch(0.985 0 0);
-      --popover: oklch(0.205 0 0);
-      --popover-foreground: oklch(0.985 0 0);
-      --primary: oklch(0.922 0 0);
-      --primary-foreground: oklch(0.205 0 0);
-      --secondary: oklch(0.269 0 0);
-      --secondary-foreground: oklch(0.985 0 0);
-      --muted: oklch(0.269 0 0);
-      --muted-foreground: oklch(0.708 0 0);
-      --accent: oklch(0.269 0 0);
-      --accent-foreground: oklch(0.985 0 0);
-      --destructive: oklch(0.704 0.191 22.216);
-      --border: oklch(1 0 0 / 10%);
-      --input: oklch(1 0 0 / 15%);
-      --ring: oklch(0.556 0 0);
-      --chart-1: oklch(0.87 0 0);
-      --chart-2: oklch(0.556 0 0);
-      --chart-3: oklch(0.439 0 0);
-      --chart-4: oklch(0.371 0 0);
-      --chart-5: oklch(0.269 0 0);
-      --sidebar: oklch(0.205 0 0);
-      --sidebar-foreground: oklch(0.985 0 0);
-      --sidebar-primary: oklch(0.488 0.243 264.376);
-      --sidebar-primary-foreground: oklch(0.985 0 0);
-      --sidebar-accent: oklch(0.269 0 0);
-      --sidebar-accent-foreground: oklch(0.985 0 0);
-      --sidebar-border: oklch(1 0 0 / 10%);
-      --sidebar-ring: oklch(0.556 0 0);
-  }
+/* Static osu!-lazer triangles; left unanimated so nothing moves that does not mean something. */
+@utility osu-triangles {
+    background-image:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='160' viewBox='0 0 320 160'%3E%3Cg fill='%23fff'%3E%3Cpath fill-opacity='.05' d='M24 120 54 68 84 120z'/%3E%3Cpath fill-opacity='.03' d='M110 70 150 0 190 70z'/%3E%3Cpath fill-opacity='.04' d='M200 150 222 112 244 150z'/%3E%3Cpath fill-opacity='.025' d='M248 96 288 26 328 96z'/%3E%3Cpath fill-opacity='.035' d='M70 40 84 16 98 40z'/%3E%3Cpath fill-opacity='.03' d='M150 160 176 115 202 160z'/%3E%3C/g%3E%3C/svg%3E"),
+        linear-gradient(120deg, color-mix(in oklch, var(--osu-pink) 22%, transparent), transparent 55%),
+        linear-gradient(300deg, color-mix(in oklch, var(--osu-purple) 14%, transparent), transparent 60%);
+    background-size: 320px 160px, 100% 100%, 100% 100%;
+}
+
+@utility tabular {
+    font-variant-numeric: tabular-nums;
 }
 
 @layer base {
@@ -123,9 +128,27 @@
     @apply border-border outline-ring/50;
     }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
     }
   html {
     @apply font-sans;
     }
+  h1, h2, h3 {
+    @apply font-display tracking-tight;
+    }
+  ::selection {
+    background: color-mix(in oklch, var(--osu-pink) 40%, transparent);
+    }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--input) transparent;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
