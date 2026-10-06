@@ -44,6 +44,28 @@ describe("SetupScreen", () => {
     expect(screen.getByRole("radio", { name: /\/mnt\/d\/osu!/ })).toBeDisabled();
   });
 
+  it("shows the two first-run steps with the osu! folder step current", async () => {
+    mockCommands({ setupDetectInstalls: () => [REGISTRY] });
+    renderSetup();
+
+    const steps = await screen.findByRole("list", { name: "Setup steps" });
+    const items = within(steps).getAllByRole("listitem");
+    expect(items.map((li) => li.textContent)).toEqual(["1osu! folder", "2Identity"]);
+    expect(items[0]).toHaveAttribute("aria-current", "step");
+    expect(items[1]).not.toHaveAttribute("aria-current");
+  });
+
+  it("marks a valid candidate as ready in text, not only by colour", async () => {
+    mockCommands({ setupDetectInstalls: () => [REGISTRY, DRIVE_SCAN] });
+    renderSetup();
+
+    const registryItem = (await screen.findByRole("radio", { name: /\/mnt\/e\/Games\/osu!/ })).closest("li") as HTMLElement;
+    expect(within(registryItem).getByText("Ready to use")).toBeInTheDocument();
+    const scanItem = screen.getByRole("radio", { name: /\/mnt\/d\/osu!/ }).closest("li") as HTMLElement;
+    expect(within(scanItem).queryByText("Ready to use")).not.toBeInTheDocument();
+    expect(within(scanItem).getByText("Not a valid install")).toBeInTheDocument();
+  });
+
   it("confirming a valid install sets the path, then starts sync_plays, then goes to /setup/identity", async () => {
     const calls = mockCommands({
       setupDetectInstalls: () => [REGISTRY],

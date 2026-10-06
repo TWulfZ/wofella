@@ -14,11 +14,17 @@
     },
     "home": {
       "title": "Home",
+      "subtitle": "Your osu!mania training hub",
       "install": "osu! install",
       "noInstall": "No osu! install configured.",
+      "dbVersion": "osu!.db {{version}}",
       "lastSync": "Last sync",
       "neverSynced": "No sync has run yet.",
-      "syncSummary": "{{playsNew}} new plays, {{playsExisting}} already known, {{replaysLinked}} replays linked",
+      "stats": {
+        "playsNew": "New plays",
+        "playsExisting": "Already known",
+        "replaysLinked": "Replays linked"
+      },
       "jobStatus": {
         "queued": "Queued",
         "running": "Running",

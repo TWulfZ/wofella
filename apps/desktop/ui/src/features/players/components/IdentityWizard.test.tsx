@@ -79,6 +79,16 @@ describe("IdentityWizard", () => {
     expect(text).toContain("270 online · 2,749 offline");
   });
 
+  it("keeps the full alias name and chart title as tooltips, since both cells truncate", async () => {
+    renderWizard(pilotAliasList());
+    const [first] = await rows();
+    if (first === undefined) {
+      throw new Error("no rows");
+    }
+    expect(within(first).getByTestId("alias-name")).toHaveAttribute("title", "TWulfZ");
+    expect(within(first).getByText("Chart A", { exact: false }).closest("li")).toHaveAttribute("title", "Chart A [7K Hard]");
+  });
+
   it("renders the empty name as (no name) with the raw quotes in monospace", async () => {
     renderWizard(pilotAliasList());
     const body = await rows();
@@ -94,6 +104,27 @@ describe("IdentityWizard", () => {
       expect(rowCheckbox(r)).not.toBeChecked();
     }
     expect(screen.getByText(/Tick the names that are yours/)).toBeInTheDocument();
+  });
+
+  it("the action bar counts the ticked names", async () => {
+    renderWizard(pilotAliasList());
+    const body = await rows();
+    const bar = screen.getByRole("region", { name: "Confirm your names" });
+    expect(bar).toHaveTextContent("2 names selected");
+
+    await userEvent.click(rowCheckbox(at(body, 3)));
+    expect(bar).toHaveTextContent("3 names selected");
+    expect(within(bar).getByRole("button", { name: "Confirm" })).toBeInTheDocument();
+  });
+
+  it("shows the identity step as current in the first-run flow", async () => {
+    renderWizard(pilotAliasList());
+    const steps = await screen.findByRole("list", { name: "Setup steps" });
+    const current = within(steps)
+      .getAllByRole("listitem")
+      .filter((li) => li.getAttribute("aria-current") === "step");
+    expect(current).toHaveLength(1);
+    expect(current[0]).toHaveTextContent("Identity");
   });
 
   it("Select all is tri-state and ticks every row", async () => {
@@ -181,6 +212,8 @@ describe("IdentityWizard in settings mode", () => {
 
     const body = await rows();
     expect(within(at(body, 3)).getByText("confirmed")).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Setup steps" })).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Save your names" })).toHaveTextContent("3 names selected");
     expect(within(at(body, 4)).getByText("not you")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Save" }));

@@ -14,11 +14,17 @@
     },
     "home": {
       "title": "Inicio",
+      "subtitle": "Tu centro de entrenamiento de osu!mania",
       "install": "Instalación de osu!",
       "noInstall": "No hay ninguna instalación de osu! configurada.",
+      "dbVersion": "osu!.db {{version}}",
       "lastSync": "Última sincronización",
       "neverSynced": "Todavía no se ha sincronizado.",
-      "syncSummary": "{{playsNew}} jugadas nuevas, {{playsExisting}} ya conocidas, {{replaysLinked}} replays enlazadas",
+      "stats": {
+        "playsNew": "Partidas nuevas",
+        "playsExisting": "Ya conocidas",
+        "replaysLinked": "Replays vinculados"
+      },
       "jobStatus": {
         "queued": "En cola",
         "running": "En curso",

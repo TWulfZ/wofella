@@ -1,3 +1,4 @@
+import { Eye, TriangleAlert } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useActiveEntry } from "../activeEntry";
 
@@ -8,11 +9,14 @@ export function NotSelfBanner() {
   if (active === undefined || active.profileKind === "self") {
     return null;
   }
+  const allPlayers = active.profileKind === "all_players";
+  const Icon = allPlayers ? TriangleAlert : Eye;
   return (
-    <div role="note" className="border-b bg-amber-100 px-6 py-2 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">
-      {active.profileKind === "all_players"
-        ? t("players.banner.allPlayers")
-        : t("players.banner.other", { label: active.label })}
+    <div role="note" className="bg-warning/10 border-warning/40 text-foreground border-b text-sm">
+      <div className="mx-auto flex w-full max-w-5xl items-center gap-2 px-6 py-2">
+        <Icon className="text-warning size-4 shrink-0" aria-hidden="true" />
+        <span>{allPlayers ? t("players.banner.allPlayers") : t("players.banner.other", { label: active.label })}</span>
+      </div>
     </div>
   );
 }

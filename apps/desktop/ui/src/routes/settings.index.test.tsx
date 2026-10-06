@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { bootApp } from "@/app/testing";
@@ -10,6 +10,7 @@ describe("/settings/", () => {
     expect(await screen.findByText("/home/pilot/.local/share/wolluf")).toBeInTheDocument();
     expect(screen.getByText("/home/pilot/.local/share/wolluf/logs")).toBeInTheDocument();
     expect(screen.getByText("0.1.0")).toBeInTheDocument();
+    expect(screen.getByText("Language, folders and identity")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Choose which names are yours" })).toHaveAttribute("href", "/settings/identity");
   });
 
@@ -21,6 +22,18 @@ describe("/settings/", () => {
     });
     expect(window.localStorage.getItem(LANGUAGE_STORAGE_KEY)).toBe("es");
     expect(await screen.findByRole("heading", { name: "Ajustes" })).toBeInTheDocument();
+  });
+
+  it("keeps the segmented language control a radiogroup whose labels switch the language", async () => {
+    await bootApp("/settings/");
+    const group = await screen.findByRole("radiogroup", { name: "Language" });
+    expect(within(group).getByRole("radio", { name: "English" })).toBeChecked();
+    await userEvent.click(within(group).getByText("Español"));
+    await waitFor(() => {
+      expect(i18n.language).toBe("es");
+    });
+    expect(within(group).getByRole("radio", { name: "Español" })).toBeChecked();
+    expect(await screen.findByText("Idioma, carpetas e identidad")).toBeInTheDocument();
   });
 
   it("opens the logs folder through app_open_logs_dir", async () => {
