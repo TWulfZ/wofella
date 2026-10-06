@@ -1,4 +1,4 @@
-//! `wolluf library index|list|scales` over `LibraryService` and `IndexLibrary` (F1).
+//! `wolluf library index|list|scales|patterns|hints` over `LibraryService` and `IndexLibrary` (F1).
 
 use std::future::Future;
 use std::process::ExitCode;
@@ -6,7 +6,8 @@ use std::process::ExitCode;
 use wolluf_app::context::AppContext;
 use wolluf_app::errors::AppError;
 use wolluf_app::features::library::dto::{
-    ChartLabelDto, LibraryChartDto, LibraryFilterDto, ScaleCountDto,
+    ChartLabelDto, HintAgreementDto, LibraryChartDto, LibraryFilterDto, PatternCountDto,
+    ScaleCountDto,
 };
 use wolluf_app::jobs::JobStatusDto;
 use wolluf_app::jobs::dto::{JobDto, JobStartDto, JobSummaryDto};
@@ -38,6 +39,22 @@ pub(crate) async fn run(ctx: &AppContext, cmd: LibraryCmd, json: bool) -> anyhow
                 render::json(&scales)?;
             } else {
                 render::text(&scales_table(&scales))?;
+            }
+        }
+        LibraryCmd::Patterns => {
+            let counts = ctx.library().pattern_counts().await?;
+            if json {
+                render::json(&counts)?;
+            } else {
+                render::text(&patterns_table(&counts))?;
+            }
+        }
+        LibraryCmd::Hints => {
+            let rows = ctx.library().hint_agreement().await?;
+            if json {
+                render::json(&rows)?;
+            } else {
+                render::text(&hints_table(&rows))?;
             }
         }
     }
@@ -96,6 +113,7 @@ fn job_text(job: &JobDto) -> String {
             ("skipped memoized", s.skipped_memoized.to_string()),
             ("skipped unavailable", s.skipped_unavailable.to_string()),
             ("labels written", s.labels_written.to_string()),
+            ("segments written", s.segments_written.to_string()),
             ("failed items", s.failed_items.to_string()),
         ]);
     }
@@ -157,6 +175,62 @@ fn charts_table(charts: &[LibraryChartDto]) -> String {
     render::table(
         &[
             "MD5", "TITLE", "VERSION", "NOTES", "LN%", "LENGTH", "NPS", "LABELS",
+        ],
+        &rows,
+    )
+}
+
+fn patterns_table(counts: &[PatternCountDto]) -> String {
+    let rows: Vec<Vec<String>> = counts
+        .iter()
+        .map(|c| {
+            vec![
+                c.keymode.to_string(),
+                c.key.clone(),
+                c.pattern_id.clone(),
+                c.segments.to_string(),
+                c.charts.to_string(),
+                format!("{:.1}", c.total_s),
+            ]
+        })
+        .collect();
+    render::table(
+        &["KEYS", "KEY", "PATTERN", "SEGMENTS", "CHARTS", "SECONDS"],
+        &rows,
+    )
+}
+
+fn share(s: Option<f64>) -> String {
+    s.map_or_else(|| "-".to_owned(), |s| format!("{:.1}", s * PERCENT))
+}
+
+/// Shares in percent of segmented time.
+fn hints_table(rows: &[HintAgreementDto]) -> String {
+    let rows: Vec<Vec<String>> = rows
+        .iter()
+        .map(|r| {
+            vec![
+                r.keymode.to_string(),
+                r.scale.clone(),
+                r.target_id.clone(),
+                r.hinted_charts.to_string(),
+                r.segmented_charts.to_string(),
+                share(r.mean_share),
+                share(Some(r.baseline_share)),
+                r.lift.map_or_else(|| "-".to_owned(), |l| format!("{l:.2}")),
+            ]
+        })
+        .collect();
+    render::table(
+        &[
+            "KEYS",
+            "SCALE",
+            "TARGET",
+            "HINTED",
+            "SEGMENTED",
+            "MEAN%",
+            "BASE%",
+            "LIFT",
         ],
         &rows,
     )
@@ -235,6 +309,8 @@ mod tests {
         assert_eq!(duration(3_600_000), "60:00");
         assert_eq!(ln_percent(1.0 / 3.0), "33.3");
         assert_eq!(labels(&[]), "-");
+        assert_eq!(share(None), "-");
+        assert_eq!(share(Some(0.1234)), "12.3");
         assert_eq!(
             labels(&[lab("insane", "4", false), lab("satellite", "sl2", true)]),
             "insane:4 satellite:sl2*"

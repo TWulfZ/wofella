@@ -1,12 +1,24 @@
-//! `chart_label`: difficulty-name labels of a chart (`crate::labels`). The key is stage-level,
-//! like `chart_parse`'s: labels depend only on the catalog strings and this code.
+//! `chart_label`: difficulty-name labels of a chart (`crate::labels`) followed by its weak name
+//! hints (`crate::labels::hints`). The key is stage-level, like `chart_parse`'s: rows depend only
+//! on the catalog strings and this code.
 
 use wolluf_core::{StageId, VersionKey, VersionKeyBuilder};
 
 use crate::error::EngineError;
+use crate::labels::hints::hint_labels;
+use crate::labels::{ChartLabel, LabelInput, extract_labels};
 
 pub const STAGE: StageId = StageId::from_static("chart_label");
-pub const VERSION: u32 = 1;
+/// 2: name hints (`source = name_hint`).
+pub const VERSION: u32 = 2;
+
+/// Every `chart_label` row of one chart: the labels in `extract_labels` order, then the hints.
+pub fn run(input: &LabelInput<'_>) -> Vec<ChartLabel> {
+    let mut rows = extract_labels(input);
+    let hints = hint_labels(input, &rows);
+    rows.extend(hints);
+    rows
+}
 
 /// The stage-level key of `chart_label` rows.
 pub fn vkey() -> Result<VersionKey, EngineError> {
@@ -20,7 +32,7 @@ mod tests {
     #[test]
     fn stage_id_and_version_are_stable() {
         assert_eq!(STAGE.as_str(), "chart_label");
-        assert_eq!(VERSION, 1);
+        assert_eq!(VERSION, 2);
     }
 
     // Frozen: a change re-keys every stored label row.
@@ -30,8 +42,38 @@ mod tests {
         assert_eq!(key, vkey().unwrap());
         assert_eq!(
             key.to_string(),
-            "e6bc56df4e3e4ea7cbb3f6e386c1be62639087f87ad786a061a12c1249edb53f"
+            "9e4137f3e1b96da58e371acef90907b2e2e68f5e8a5b6ca8332b8b5236cdba19"
         );
         assert_ne!(key, crate::stage::chart_parse::vkey().unwrap());
+    }
+
+    #[test]
+    fn run_appends_hints_after_the_labels() {
+        let input = LabelInput {
+            folder: "1877617 Various Artists - KomeijiDove 7K Jack Practice",
+            version: "~ 9th ~ Minijack Song",
+            creator: "KomeijiDove",
+            set_id: Some(1877617),
+        };
+        let rows = run(&input);
+        let ids: Vec<(&str, &str, &str)> = rows
+            .iter()
+            .map(|l| (l.source.as_str(), l.scale.as_str(), l.level_text.as_str()))
+            .collect();
+        assert_eq!(
+            ids,
+            [
+                ("komeijidove_practice", "jinjin_dan", "9th"),
+                ("name_hint", "hint_axis", "7k.regular.jack"),
+                ("name_hint", "hint_pattern", "regular.jack.minijack"),
+            ]
+        );
+        let plain = LabelInput {
+            folder: "100 Artist - Song",
+            version: "Hard",
+            creator: "Mapper",
+            set_id: None,
+        };
+        assert!(run(&plain).is_empty());
     }
 }

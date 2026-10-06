@@ -15,6 +15,7 @@ use wolluf_app::context::{AppContext, AppPaths};
 use wolluf_app::jobs::JobStatusDto;
 use wolluf_app::jobs::dto::{IndexLibrarySummaryDto, JobDto, JobKindDto, JobSummaryDto};
 use wolluf_core::Clock;
+use wolluf_engine::labels::source;
 use wolluf_engine::stage::{chart_label, chart_parse};
 use wolluf_store::open_cache_db;
 use wolluf_store::repo::cache::{
@@ -155,11 +156,16 @@ async fn corpus_library_index() {
         .into_iter()
         .filter(|d| d.stage == chart_parse::STAGE && d.vkey == parse_key)
         .collect();
+    // Name hints are no audit labels; `corpus_name_hints` measures them.
     let labels: Vec<Vec<ChartLabel>> = cache
         .read(|c| {
             catalog
                 .iter()
-                .map(|chart| label_repo::list_for(c, chart.md5, label_key))
+                .map(|chart| {
+                    let mut labels = label_repo::list_for(c, chart.md5, label_key)?;
+                    labels.retain(|l| l.source != source::NAME_HINT);
+                    Ok(labels)
+                })
                 .collect()
         })
         .unwrap();
