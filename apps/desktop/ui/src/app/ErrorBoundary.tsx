@@ -1,8 +1,10 @@
 import { useRouter, type ErrorComponentProps } from "@tanstack/react-router";
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { CircleX, RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toIpcError } from "@/ipc/client";
 import { useErrorText } from "@/ipc/errorText";
+import { BrandMark } from "@/shared/ui/brand-mark";
 import { Button } from "@/shared/ui/button";
 
 interface ErrorViewProps {
@@ -15,22 +17,31 @@ export function ErrorView({ error, onRetry }: ErrorViewProps) {
   const errorText = useErrorText();
   const ipcError = toIpcError(error);
   return (
-    <div role="alert" className="m-6 flex max-w-xl flex-col gap-3 rounded-lg border border-destructive/40 p-4">
-      <h2 className="font-semibold">{t("error.title")}</h2>
-      <p>{errorText(ipcError)}</p>
-      {ipcError.details !== null && (
-        <details className="text-muted-foreground text-xs">
-          <summary>{t("error.details")}</summary>
-          <code className="break-all">
-            {ipcError.code}: {ipcError.details}
-          </code>
-        </details>
-      )}
-      {ipcError.retryable && onRetry !== undefined && (
-        <Button className="self-start" onClick={onRetry}>
-          {t("common.retry")}
-        </Button>
-      )}
+    <div className="flex justify-center px-6 py-12">
+      <div
+        role="alert"
+        className="bg-card ring-destructive/40 flex w-full max-w-xl flex-col items-center gap-3 rounded-xl p-8 text-center shadow-lg shadow-black/20 ring-1"
+      >
+        <div className="bg-destructive/15 grid size-12 place-items-center rounded-full">
+          <CircleX className="text-destructive size-6" aria-hidden="true" />
+        </div>
+        <h2 className="font-display text-xl font-bold">{t("error.title")}</h2>
+        <p className="text-muted-foreground">{errorText(ipcError)}</p>
+        {ipcError.details !== null && (
+          <details className="text-muted-foreground self-stretch text-left text-xs">
+            <summary className="cursor-pointer">{t("error.details")}</summary>
+            <code className="bg-muted mt-2 block rounded-md px-3 py-2 font-mono break-all">
+              {ipcError.code}: {ipcError.details}
+            </code>
+          </details>
+        )}
+        {ipcError.retryable && onRetry !== undefined && (
+          <Button className="mt-2" onClick={onRetry}>
+            <RotateCcw aria-hidden="true" />
+            {t("common.retry")}
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
@@ -45,6 +56,25 @@ export function RouteErrorView({ error, reset }: ErrorComponentProps) {
         void router.invalidate();
       }}
     />
+  );
+}
+
+// The root route's own error replaces RootLayout, so it brings a minimal shell (no nav: that needs the root context).
+// Child-route errors render inside RootLayout and keep using RouteErrorView, or they would get two headers.
+export function RootErrorView(props: ErrorComponentProps) {
+  const { t } = useTranslation();
+  return (
+    <div className="bg-background text-foreground flex min-h-screen flex-col">
+      <header className="bg-header osu-triangles h-14 border-b">
+        <div className="mx-auto flex h-full w-full max-w-5xl items-center gap-2.5 px-6">
+          <BrandMark className="size-8" />
+          <span className="font-display text-lg font-bold tracking-tight">{t("common.appName")}</span>
+        </div>
+      </header>
+      <main className="flex flex-1 flex-col justify-center">
+        <RouteErrorView {...props} />
+      </main>
+    </div>
   );
 }
 

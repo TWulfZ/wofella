@@ -9,13 +9,15 @@
       "syncNow": "Sync now",
       "syncing": "Importing your plays… The list updates when the import finishes.",
       "confirm": "Confirm",
-      "submitting": "Saving…"
+      "submitting": "Saving…",
+      "actions": "Confirm your names"
     },
     "settings": {
       "title": "Identity",
       "intro": "Choose which names are yours. Your choices always win over the automatic match.",
       "save": "Save",
-      "saved": "Saved"
+      "saved": "Saved",
+      "actions": "Save your names"
     },
     "table": {
       "selectAll": "Select all",
@@ -64,6 +66,8 @@
     "banner": {
       "allPlayers": "All players: mixed, not a person",
       "other": "Viewing {{label}}: not your profile. Nothing here affects your skill."
-    }
+    },
+    "selected_one": "{{count}} name selected",
+    "selected_other": "{{count}} names selected"
   }
 }

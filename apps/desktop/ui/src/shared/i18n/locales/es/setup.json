@@ -24,6 +24,12 @@
     },
     "error": {
       "lazer_not_supported": "“{{path}}” es una instalación de osu!lazer. wolluf solo lee osu! stable."
+    },
+    "valid": "Lista para usar",
+    "steps": {
+      "label": "Pasos de configuración",
+      "install": "Carpeta de osu!",
+      "identity": "Identidad"
     }
   }
 }

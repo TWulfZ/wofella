@@ -65,6 +65,13 @@ describe("JobTray", () => {
     expect(within(item).getByRole("progressbar")).toBeInTheDocument();
   });
 
+  it("a queued job shows no progress bar until it runs", async () => {
+    await renderTray([{ ...RUNNING, status: "queued" }]);
+    const item = await screen.findByRole("listitem");
+    expect(item).toHaveTextContent("Queued");
+    expect(within(item).queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+
   it("Cancel calls jobs_cancel with the job id", async () => {
     const { calls } = await renderTray([RUNNING]);
     await userEvent.click(await screen.findByRole("button", { name: "Cancel" }));

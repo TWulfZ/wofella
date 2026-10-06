@@ -30,6 +30,7 @@ describe("first-run guard", () => {
     await bootApp("/", { setupStatus: () => mockIpcError("OSU_RUNNING", {}, { retryable: true }) });
     expect(await screen.findByRole("alert")).toHaveTextContent("Close osu! and retry.");
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(screen.getByRole("banner")).toHaveTextContent("wolluf");
   });
 });
 

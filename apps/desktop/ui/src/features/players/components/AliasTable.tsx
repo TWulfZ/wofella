@@ -17,18 +17,18 @@ export function AliasTable({ rows, ticked, mode, onToggle, onToggleAll }: AliasT
   const { t } = useTranslation();
   return (
     <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-8">
+      <TableHeader className="bg-header/50">
+        <TableRow className="hover:bg-transparent">
+          <TableHead className="w-8 pl-4">
             <SelectAllCheckbox ticked={ticked.size} total={rows.length} onChange={onToggleAll} />
           </TableHead>
           <TableHead>{t("players.table.name")}</TableHead>
-          <TableHead>{t("players.table.plays")}</TableHead>
+          <TableHead className="text-right">{t("players.table.plays")}</TableHead>
           <TableHead>{t("players.table.keymodes")}</TableHead>
           <TableHead>{t("players.table.played")}</TableHead>
           <TableHead>{t("players.table.split")}</TableHead>
-          <TableHead>{t("players.table.replays")}</TableHead>
-          <TableHead>{t("players.table.topCharts")}</TableHead>
+          <TableHead className="text-right">{t("players.table.replays")}</TableHead>
+          <TableHead className="pr-4">{t("players.table.topCharts")}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>

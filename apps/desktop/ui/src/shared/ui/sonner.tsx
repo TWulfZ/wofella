@@ -4,8 +4,8 @@ import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon
 const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
-      // Dark mode follows prefers-color-scheme (spec 005 Styling), so there is no theme provider to read.
-      theme="system"
+      // Dark-only app (supersedes spec 005 "Styling"); "system" would paint light toasts under a light OS theme.
+      theme="dark"
       className="toaster group"
       icons={{
         success: (

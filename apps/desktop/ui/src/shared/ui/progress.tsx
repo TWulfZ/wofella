@@ -7,6 +7,7 @@ function Progress({
   value,
   ...props
 }: React.ComponentProps<typeof ProgressPrimitive.Root>) {
+  const indeterminate = value === null || value === undefined
   return (
     <ProgressPrimitive.Root
       data-slot="progress"
@@ -20,8 +21,15 @@ function Progress({
     >
       <ProgressPrimitive.Indicator
         data-slot="progress-indicator"
-        className="size-full flex-1 bg-primary transition-all"
-        style={{ transform: `translateX(-${100 - (value ?? 0)}%)` }}
+        className={cn(
+          "h-full bg-linear-to-r from-osu-pink to-osu-purple",
+          // Without a total, a partial segment reads as "working" without claiming any amount done.
+          indeterminate
+            ? "w-1/3 opacity-60 motion-safe:animate-progress-slide"
+            : "w-full origin-left transition-transform duration-300"
+        )}
+        // scaleX, not translateX: the visible bar then always shows the whole pink-to-purple gradient.
+        style={indeterminate ? undefined : { transform: `scaleX(${value / 100})` }}
       />
     </ProgressPrimitive.Root>
   )
