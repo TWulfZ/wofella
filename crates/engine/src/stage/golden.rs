@@ -132,7 +132,7 @@ fn section(rows: &mut Vec<&'static str>, cycle: &[&'static str], n: usize) {
 
 /// Together the fixtures put every ADR 0017 pattern id in the dump, as a primary or a tag
 /// (`patterns_golden_covers_every_pattern_id`): rice, jacks, streams, LN sections, off-grid
-/// timing, under both 3|1+3 thumb sides (the thumb column changes hand-dependent rules), plus
+/// and delay timing, under both 3|1+3 thumb sides (the thumb column changes hand-dependent rules), plus
 /// a keymode without an axis table.
 fn patterns_fixtures() -> Vec<(&'static str, Option<Chart>, Vec<&'static str>)> {
     let jumpstream = [
@@ -239,8 +239,9 @@ fn patterns_fixtures() -> Vec<(&'static str, Option<Chart>, Vec<&'static str>)> 
     ]
 }
 
-/// A single-note stream alternating 1/4 and 1/3 gaps of a 400 ms beat: the DSL draws no red
-/// lines, so this one goes through the decoder.
+/// A single-note stream alternating 1/4 and 1/3 gaps of a 400 ms beat, then, after a break, a
+/// delay stream of 1/16 + 3/16 staggers and a slow stream with a 1/8 burst: the DSL draws no red lines, so this one goes through
+/// the decoder.
 fn off_grid() -> Option<Chart> {
     let mut text = OsuText::mania(7).timing_line("0,400,4,1,0,100,1,0");
     let cols = [0, 2, 1, 3];
@@ -248,6 +249,18 @@ fn off_grid() -> Option<Chart> {
     for i in 0..22 {
         text = text.tap(cols[i % cols.len()], TimeUs::from_ms(t));
         t += if i % 2 == 0 { 100 } else { 133 };
+    }
+    t += 2_000;
+    let staggered = [4, 6, 5, 3, 1];
+    for i in 0..48 {
+        text = text.tap(staggered[i % staggered.len()], TimeUs::from_ms(t));
+        t += if i % 2 == 0 { 25 } else { 75 };
+    }
+    t += 2_000;
+    let burst = [0, 1, 2, 3, 4, 5, 6];
+    for i in 0..20 {
+        text = text.tap(burst[i % burst.len()], TimeUs::from_ms(t));
+        t += if (8..12).contains(&i) { 50 } else { 400 };
     }
     parse_chart(text.build().as_bytes()).ok().map(|p| p.chart)
 }

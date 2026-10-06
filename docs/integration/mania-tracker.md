@@ -5,7 +5,7 @@ Status: Draft for discussion between TWulfZ (wolluf) and aleju03 (mania-tracker)
 wolluf is a local desktop companion. It reads the player's osu! stable files and replays, models per-pattern skill and recommends practice. mania-tracker is an online tracker with a large chart corpus (~200k charts), osu! login and a chart preview. The goal is to share three things: **one pattern vocabulary**, **one crowd-label dataset** and **one chart-feature exchange**. With those in place, each tool can recommend charts the other knows about.
 
 ## 1. Shared vocabulary
-- 7K pattern ids and axes are in ADR 0017 (`docs/adr/0017-7k-pattern-vocabulary.md`): 25 dotted ids under 8 axes (`7k.regular.{jack,tech,speed,stream}`, `7k.ln.{general,tech,inverse,release}`).
+- 7K pattern ids and axes are in ADR 0017 (`docs/adr/0017-7k-pattern-vocabulary.md`): 26 dotted ids under 8 axes (delay added 2026-10-05) (`7k.regular.{jack,tech,speed,stream}`, `7k.ln.{general,tech,inverse,release}`).
 - Ids are stable strings and never renumbered. A meaning change creates a new id.
 - 4K: a parallel vocabulary will be agreed together, starting from mania-tracker's 4K speed/tech split and Etterna skillsets. Open.
 

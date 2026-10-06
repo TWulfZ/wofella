@@ -97,7 +97,7 @@ const LN_TECH: &str = "7k.ln.tech";
 /// The longest phrase at a position wins and consumes its words, so "LN Tech" is only
 /// `7k.ln.tech` and "split trill" only `split_trill`. Ambiguous generic words map to an axis,
 /// explicit leaf words to a leaf (feature `name-hints`).
-pub static HINT_KEYWORDS: [HintKeyword; 27] = [
+pub static HINT_KEYWORDS: [HintKeyword; 28] = [
     kw(
         "minijack",
         &["minijack", "mini jack"],
@@ -210,6 +210,13 @@ pub static HINT_KEYWORDS: [HintKeyword; 27] = [
         pattern("regular.speed.burst"),
         SkillContext,
         "ADR 0017 leaf, but common in titles (\"Burst The Gravity\")",
+    ),
+    kw(
+        "delay",
+        &["delay", "delaymaster"],
+        pattern("regular.speed.delay"),
+        Anywhere,
+        "ADR 0017 leaf: BMS difficulty jargon (`DELAYMASTER`); `delayed` never matches",
     ),
     kw(
         "inverse",

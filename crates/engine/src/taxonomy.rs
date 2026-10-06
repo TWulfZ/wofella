@@ -38,7 +38,7 @@ const LN_RELEASE: &str = "7k.ln.release";
 
 /// The 7K Regular axes are jack, tech, speed and stream; the LN axes general, tech, inverse and
 /// release (stamina is derived, not an axis).
-static K7: [PatternDef; 25] = [
+static K7: [PatternDef; 26] = [
     def(
         "regular.jack.minijack",
         JACK,
@@ -190,6 +190,12 @@ static K7: [PatternDef; 25] = [
         LN_RELEASE,
         "lr",
         "release timing: tails that need precise, staggered releases",
+    ),
+    def(
+        "regular.speed.delay",
+        SPEED,
+        "d",
+        "delay (BMS): notes and small chords staggered off the 1/4 grid",
     ),
 ];
 

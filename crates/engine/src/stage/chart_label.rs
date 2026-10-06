@@ -10,7 +10,7 @@ use crate::labels::{ChartLabel, LabelInput, extract_labels};
 
 pub const STAGE: StageId = StageId::from_static("chart_label");
 /// 2: name hints (`source = name_hint`).
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
 
 /// Every `chart_label` row of one chart: the labels in `extract_labels` order, then the hints.
 pub fn run(input: &LabelInput<'_>) -> Vec<ChartLabel> {
@@ -32,7 +32,7 @@ mod tests {
     #[test]
     fn stage_id_and_version_are_stable() {
         assert_eq!(STAGE.as_str(), "chart_label");
-        assert_eq!(VERSION, 2);
+        assert_eq!(VERSION, 3);
     }
 
     // Frozen: a change re-keys every stored label row.
@@ -42,7 +42,7 @@ mod tests {
         assert_eq!(key, vkey().unwrap());
         assert_eq!(
             key.to_string(),
-            "9e4137f3e1b96da58e371acef90907b2e2e68f5e8a5b6ca8332b8b5236cdba19"
+            "e9d693f48df88f55576233ed0f6193c2d14a0c7415e6c0ef8ff5f2ecbfa8d741"
         );
         assert_ne!(key, crate::stage::chart_parse::vkey().unwrap());
     }

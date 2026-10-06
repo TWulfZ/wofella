@@ -534,7 +534,25 @@ mod tests {
     }
 
     #[test]
-    fn window_rules_only_tag() {
+    fn delay_and_irregular_beat_the_single_stream_they_read_as() {
+        let alternating = |a: i32, b: i32| -> Vec<i32> {
+            (1..24).map(|k| if k % 2 == 1 { a } else { b }).collect()
+        };
+        let cols = [0, 2, 1, 3];
+        let delay = only(
+            &run_loose(&seq(&alternating(25, 75), &cols, Some(400.0))),
+            "regular.speed.delay",
+        );
+        assert!(tagged(&delay, "regular.stream.single"), "{delay:?}");
+        let irregular = only(
+            &run_loose(&seq(&alternating(100, 133), &cols, Some(400.0))),
+            "regular.tech.irregular",
+        );
+        assert!(tagged(&irregular, "regular.stream.single"), "{irregular:?}");
+    }
+
+    #[test]
+    fn thumb_and_hand_imbalance_only_tag() {
         let cols: Vec<u8> = [3, 1, 4, 3, 0, 5]
             .iter()
             .copied()
