@@ -547,7 +547,8 @@ Gate rules live in `params/gates.toml`. A pack cannot be released without a comm
 |---|---|
 | setup | `setup_detect_installs`, `setup_set_install_path`, `setup_status` |
 | players | `players_list_aliases` (stats + session-user match + decision), `players_list_profiles`, `players_set_profile_aliases`, `players_decide_alias`, `players_create_profile`, `players_set_default` |
-| library / chart | `library_search`, `chart_get` (rows, segments, difficulty per rate) |
+| library / chart | `library_search`, `chart_get` (rows, segments, difficulty per rate), `chart_window` (notes, timing and layout of one window, no segments), `chart_audio` (the chart's audio, read-only, base64; ADR 0018) |
+| label | `label_taxonomy`, `label_sample`, `label_resolve_patterns`, `label_reshape`, `label_submit`, `label_undo`, `label_stats` (gold-set rounds; ADR 0017, ADR 0018) |
 | plays | `plays_list(scope)`, `plays_get_breakdown(play_id)` |
 | skill | `skill_overview(scope)`, `skill_axis_history(scope, axis)`, `skill_pattern_offsets(scope)`, `skill_compare(scope_a, scope_b)` |
 | sessions | `sessions_list(scope)`, `sessions_report(id)` (current + the impression shown at the time) |

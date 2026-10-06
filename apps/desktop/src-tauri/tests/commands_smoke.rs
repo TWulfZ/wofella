@@ -173,6 +173,29 @@ mod commands_smoke {
     }
 
     #[test]
+    fn chart_audio_reads_the_set_folder_only() {
+        let h = synced();
+        let err = h
+            .invoke("chart_audio", json!({ "md5": CHART_MD5 }))
+            .unwrap_err();
+        assert_eq!(err["code"], json!("NOT_FOUND"), "{err}");
+        assert_eq!(err["messageKey"], json!("error.chart_audio_unavailable"));
+
+        // Only a test temp dir is written; the chart's `AudioFilename` is `audio.mp3`.
+        let set = h.dir.path().join("osu!").join("Songs").join("folder-1");
+        std::fs::write(set.join("audio.mp3"), b"ID3").unwrap();
+        let audio = h
+            .invoke("chart_audio", json!({ "md5": CHART_MD5 }))
+            .unwrap();
+        assert_eq!(audio, json!({ "mime": "audio/mpeg", "base64": "SUQz" }));
+
+        let err = h
+            .invoke("chart_audio", json!({ "md5": "../folder-1/audio.mp3" }))
+            .unwrap_err();
+        assert_eq!(err["code"], json!("INVALID_INPUT"), "{err}");
+    }
+
+    #[test]
     fn label_submit_then_undo_round_trips() {
         let h = synced();
         let taxonomy = h.invoke("label_taxonomy", json!({ "keymode": 7 })).unwrap();

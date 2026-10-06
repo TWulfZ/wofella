@@ -47,6 +47,8 @@ export const commands = {
 	labelSubmit: (req: LabelSubmitDto) => typedError<LabelEventDto, IpcError>(__TAURI_INVOKE("label_submit", { req })),
 	labelUndo: (eventId: string) => typedError<null, IpcError>(__TAURI_INVOKE("label_undo", { eventId })),
 	labelStats: () => typedError<LabelStatsDto, IpcError>(__TAURI_INVOKE("label_stats")),
+	/**  The chart's audio file for the playfield's WebAudio loop; the webview sends only the md5. */
+	chartAudio: (md5: string) => typedError<ChartAudioDto, IpcError>(__TAURI_INVOKE("chart_audio", { md5 })),
 };
 
 /** Events */
@@ -103,6 +105,14 @@ export type AnchorDto = {
 export type AutoMatchDto = {
 	source: MatchSourceDto,
 	kind: MatchKindDto,
+};
+
+/**  The chart's `AudioFilename` from its set folder, for the webview to decode. */
+export type ChartAudioDto = {
+	/**  `application/octet-stream` when the extension is not mp3, ogg or wav. */
+	mime: string,
+	/**  RFC 4648 with padding. */
+	base64: string,
 };
 
 /**  The first and the last row of the chart (LN tails included); `0, 0` without rows. */

@@ -205,3 +205,13 @@ pub struct ChartSpanDto {
     pub first_ms: i32,
     pub end_ms: i32,
 }
+
+/// The chart's `AudioFilename` from its set folder, for the webview to decode.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ChartAudioDto {
+    /// `application/octet-stream` when the extension is not mp3, ogg or wav.
+    pub mime: String,
+    /// RFC 4648 with padding.
+    pub base64: String,
+}

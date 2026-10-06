@@ -51,6 +51,8 @@ mod bindings {
             "playersSetDefault",
             "chartWindow",
             "ChartWindowDto",
+            "chartAudio",
+            "ChartAudioDto",
             "labelTaxonomy",
             "labelSample",
             "labelResolvePatterns",

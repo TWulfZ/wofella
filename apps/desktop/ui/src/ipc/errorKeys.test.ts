@@ -13,7 +13,12 @@ function lookup(content: Record<string, unknown>, path: string[]): unknown {
 }
 
 // Keys emitted by Rust outside the per-code fallbacks (003 context and store errors); slices own theirs in their tests.
-const EMITTED_ERROR_KEYS = ["error.instance_running", "error.data_dir_inside_osu"];
+const EMITTED_ERROR_KEYS = [
+  "error.instance_running",
+  "error.data_dir_inside_osu",
+  "error.chart_audio_unavailable",
+  "error.chart_audio_too_large",
+];
 
 describe("error.json", () => {
   it.each(SUPPORTED_LANGUAGES)("%s has a fallback for every ErrorCode", (lng) => {
