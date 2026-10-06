@@ -45,9 +45,17 @@ export interface NoteRect {
   clipped: boolean;
 }
 
+/** Unclipped y of a note's head and LN tail; the skinned path sizes sprites itself, so it cannot use NoteRect. */
+export interface NoteSpan {
+  col: number;
+  headY: number;
+  tailY: number | null;
+}
+
 export interface Projection {
   /** In draw order: an LN's body comes before its tail and head. */
   notes: NoteRect[];
+  spans: NoteSpan[];
   beatLines: { y: number; measure: boolean }[];
   handSeparators: { x: number }[];
   columns: { x: number; w: number; hand: ColumnHand }[];
@@ -78,6 +86,7 @@ export function project(
   }
 
   const notes: NoteRect[] = [];
+  const spans: NoteSpan[] = [];
   const push = (col: number, top: number, bottom: number, kind: NoteKind): void => {
     const column = columns[col];
     const y0 = Math.max(top, 0);
@@ -89,6 +98,10 @@ export function project(
   };
   for (const note of window.notes) {
     const headY = yOf(note.tMs);
+    // Every sprite of a note lies above its head, so a head at or above the top edge leaves nothing visible.
+    if (columns[note.col] !== undefined && headY > 0) {
+      spans.push({ col: note.col, headY, tailY: note.endMs === null ? null : yOf(note.endMs) });
+    }
     if (note.endMs === null) {
       push(note.col, headY - params.noteHeightPx, headY, "tap");
       continue;
@@ -101,6 +114,7 @@ export function project(
 
   return {
     notes,
+    spans,
     beatLines: beatLines(window.timing, bottomMs, topMs, params).map(({ tMs, measure }) => ({ y: yOf(tMs), measure })),
     handSeparators,
     columns,

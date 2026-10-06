@@ -9,6 +9,7 @@ const VIEW = { width: 300, height: 600, judgeY: 500 };
 function projection(overrides: Partial<Projection> = {}): Projection {
   return {
     notes: [],
+    spans: [],
     beatLines: [],
     handSeparators: [{ x: 200 }],
     columns: [

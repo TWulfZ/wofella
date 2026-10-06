@@ -11,18 +11,37 @@ export {
 } from "./audioClock";
 export { COLUMN_COLORS, columnColor, PLAYFIELD_COLORS } from "./colors";
 export { decodeBase64Audio } from "./decodeAudio";
-export { DEFAULT_PLAYFIELD_THEME, draw, type Draw2D, type DrawView, type PlayfieldTheme } from "./draw";
+export { DEFAULT_PLAYFIELD_THEME, draw, type Draw2D, type DrawView, drawSkinned, type PlayfieldTheme } from "./draw";
 export { Playfield, type PlayfieldProps } from "./Playfield";
 export {
   DEFAULT_PLAYFIELD_PARAMS,
   fitPxPerMs,
   type NoteKind,
   type NoteRect,
+  type NoteSpan,
   type PlayfieldParams,
   project,
   type Projection,
   type ProjectView,
 } from "./project";
+export {
+  DEFAULT_SKIN_LAYOUT_PARAMS,
+  type SkinColumn,
+  type SkinFill,
+  type SkinLayout,
+  type SkinLayoutParams,
+  type SkinRect,
+  skinLayout,
+} from "./skinLayout";
+export {
+  type LoadedSkin,
+  type NoteBodyStyle,
+  SKIN_SLOT,
+  type SkinColours,
+  type SkinImage,
+  type SkinRgba,
+  type SkinSlot,
+} from "./skinModel";
 export {
   clampOsuSpeed,
   clampZoom,
