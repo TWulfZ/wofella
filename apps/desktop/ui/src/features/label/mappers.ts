@@ -22,6 +22,8 @@ export function toLabelWindow(dto: LabelWindowDto): LabelWindow {
     title: dto.title,
     artist: dto.artist,
     version: dto.version,
+    creator: dto.creator,
+    stars: dto.stars,
     level: dto.level,
     stratum: dto.stratum,
     played: dto.played,

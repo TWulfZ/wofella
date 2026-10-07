@@ -48,7 +48,7 @@ export class SectionPlayer {
   private offsetMs = 0;
   private ctx: ClosableAudioContext | null = null;
   private ctxFailed = false;
-  // One chart's buffer only: a decoded song is tens of MB of PCM, and reshapes keep the same md5.
+  // One chart's buffer only: a decoded song is tens of MB of PCM, and window moves keep the same md5.
   private decoded: { md5: string; buffer: AudioBufferLike | null } | null = null;
   private decoding: string | null = null;
   private clock: Clock | null = null;

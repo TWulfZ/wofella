@@ -29,6 +29,8 @@ pub struct CatalogChart {
     pub od: f64,
     pub hp: f64,
     pub length_ms: u32,
+    /// stable's cached no-mod osu!mania star rating; `None` until stable has computed it.
+    pub stars: Option<f64>,
 }
 
 str_enum! {
@@ -197,7 +199,7 @@ fn prune_vkeys_except(tx: &Tx<'_>, table: &str, keep: &[VersionKey]) -> Result<u
 pub mod catalog_chart {
     use super::*;
 
-    const COLUMNS: &str = "md5, keymode, title, artist, version, creator, set_id, beatmap_id, path, od, hp, length_ms";
+    const COLUMNS: &str = "md5, keymode, title, artist, version, creator, set_id, beatmap_id, path, od, hp, length_ms, stars";
 
     fn from_row(row: &Row<'_>) -> rusqlite::Result<CatalogChart> {
         Ok(CatalogChart {
@@ -213,6 +215,7 @@ pub mod catalog_chart {
             od: row.get(9)?,
             hp: row.get(10)?,
             length_ms: int(row, 11)?,
+            stars: row.get(12)?,
         })
     }
 
@@ -226,7 +229,7 @@ pub mod catalog_chart {
         tx.0.execute("DELETE FROM catalog_chart", [])?;
         let mut insert = tx.0.prepare_cached(&format!(
             "INSERT INTO catalog_chart ({COLUMNS}, snapshot_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)"
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)"
         ))?;
         for c in rows {
             insert.execute(rusqlite::params![
@@ -242,6 +245,7 @@ pub mod catalog_chart {
                 c.od,
                 c.hp,
                 c.length_ms,
+                c.stars,
                 snapshot_id.0,
             ])?;
         }
@@ -862,6 +866,7 @@ mod tests {
             od: 8.5,
             hp: 7.0,
             length_ms: 150_000,
+            stars: Some(4.25),
         }
     }
 
@@ -916,7 +921,11 @@ mod tests {
             keymode: 4,
             ..chart(MD5_C, "C")
         };
-        let rows = vec![chart(MD5_B, "B"), four, chart(MD5_A, "A")];
+        let unrated = CatalogChart {
+            stars: None,
+            ..chart(MD5_B, "B")
+        };
+        let rows = vec![unrated.clone(), four, chart(MD5_A, "A")];
         db.write(move |tx| catalog_chart::replace_all(tx, SnapshotId(1), &rows))
             .unwrap();
         let (seven, six) = db
@@ -927,7 +936,7 @@ mod tests {
                 ))
             })
             .unwrap();
-        assert_eq!(seven, vec![chart(MD5_B, "B"), chart(MD5_A, "A")]);
+        assert_eq!(seven, vec![unrated, chart(MD5_A, "A")]);
         assert!(six.is_empty());
     }
 

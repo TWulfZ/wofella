@@ -28,6 +28,8 @@ function labelWindow(md5: string): LabelWindow {
     title: `Title ${md5}`,
     artist: "Artist",
     version: "Hard",
+    creator: "Mapper",
+    stars: null,
     level: null,
     stratum: "dan_07/nps_2",
     played: false,
@@ -256,16 +258,30 @@ describe("sessionReducer answer", () => {
     expect(s.answer).toEqual(EMPTY_ANSWER);
   });
 
-  it("keeps the answer across a reshape, which changes the anchor but not what was shown", () => {
+  it("keeps the answer across a timeline move, which changes the anchor but not what was shown", () => {
     let s = run(planned(initialSession("1"), "a"), { type: "flagsToggled", toggle: "unsure" });
-    const wider = anchor("a", 500, 5500);
-    s = sessionReducer(s, { type: "windowReshaped", anchor: wider });
-    expect(currentEntry(s)?.window.anchor).toEqual(wider);
+    const later = anchor("a", 6000, 10_000);
+    s = sessionReducer(s, { type: "windowMoved", cursor: 0, anchor: later });
+    expect(currentEntry(s)?.window.anchor).toEqual(later);
     expect(currentEntry(s)?.window.title).toBe("Title a");
     expect(s.shown).toEqual([anchor("a")]);
     expect(s.answer.unsure).toBe(true);
     const empty = initialSession("1");
-    expect(sessionReducer(empty, { type: "windowReshaped", anchor: wider })).toBe(empty);
+    expect(sessionReducer(empty, { type: "windowMoved", cursor: 0, anchor: later })).toBe(empty);
+  });
+
+  it("moves the window the move was asked for, even after the cursor left it, but never a saved one", () => {
+    let s = run(planned(initialSession("1"), "a"), { type: "moved", to: "next" });
+    s = planned(s, "b");
+    const later = anchor("a", 6000, 10_000);
+    s = sessionReducer(s, { type: "windowMoved", cursor: 0, anchor: later });
+    expect(s.history[0]?.window.anchor).toEqual(later);
+    expect(currentEntry(s)?.window.anchor).toEqual(anchor("b"));
+
+    s = saved(run(s, { type: "noPatternToggled" }), "01B");
+    const savedState = s;
+    expect(sessionReducer(s, { type: "windowMoved", cursor: 1, anchor: anchor("b", 9000, 13_000) })).toBe(savedState);
+    expect(sessionReducer(s, { type: "windowMoved", cursor: 7, anchor: later })).toBe(savedState);
   });
 
   it("keeps the history, undo and the other sources usable once the plan is finished", () => {

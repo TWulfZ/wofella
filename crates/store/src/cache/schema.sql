@@ -29,6 +29,8 @@ CREATE TABLE catalog_chart (
     od          REAL NOT NULL,
     hp          REAL NOT NULL,
     length_ms   INTEGER NOT NULL,
+    -- stable's cached no-mod osu!mania star rating; NULL until stable has computed it.
+    stars       REAL NULL,
     snapshot_id INTEGER NOT NULL
 ) STRICT;
 

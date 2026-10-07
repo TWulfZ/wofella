@@ -19,11 +19,13 @@ export {
   undoTarget,
   type WindowOrigin,
 } from "./session";
-export type { Anchor, LabelWindow, ThumbSide, WindowOp } from "./types";
+export type { Anchor, LabelWindow, Span, ThumbSide } from "./types";
 export { LABEL_SCREEN_PARAMS, LabelScreen, type LabelScreenParams, type LabelScreenProps } from "./LabelScreen";
 export { toChartWindow, toLabelWindow } from "./mappers";
 export {
   chartAudioQuery,
+  chartBackgroundQuery,
+  chartTimelineQuery,
   chartWindowQuery,
   labelKeys,
   labelPatternExamplesQuery,

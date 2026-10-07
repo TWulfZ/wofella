@@ -28,10 +28,10 @@ use wolluf_core::ErrorCode;
 use wolluf_store::StoreError;
 
 use super::dto::{
-    AnchorDto, CountDto, LabelEventDto, LabelExportDto, LabelStatsDto, LabelSubmitDto,
-    LabelWindowDto, NowPlayingDto, NowPlayingRequestDto, NowPlayingSourceDto, PatternDefDto,
-    PatternExampleDto, RandomRequestDto, SampleRequestDto, ThumbPrefDto, WindowAtRequestDto,
-    WindowOpDto,
+    AnchorDto, ChartTimelineDto, ChartTimelineRequestDto, CountDto, LabelEventDto, LabelExportDto,
+    LabelStatsDto, LabelSubmitDto, LabelWindowDto, MoveWindowRequestDto, NowPlayingDto,
+    NowPlayingRequestDto, NowPlayingSourceDto, PatternDefDto, PatternExampleDto, RandomRequestDto,
+    SampleRequestDto, SpanDto, ThumbPrefDto, WindowAtRequestDto, WindowOpDto,
 };
 use super::keys;
 use super::now_playing::{NowPlayingParams, title_matches};
@@ -90,6 +90,8 @@ impl Catalog {
             title: chart.title.clone(),
             artist: chart.artist.clone(),
             version: chart.version.clone(),
+            creator: chart.creator.clone(),
+            stars: chart.stars,
             level: assigned.and_then(|a| a.label.clone()),
             stratum: assigned.map_or_else(|| UNKNOWN_STRATUM.to_owned(), |a| a.stratum.to_string()),
             played: self.played.contains(&md5),
@@ -142,9 +144,25 @@ impl<'a> LabelingService<'a> {
     }
 
     /// One synthetic chart per pattern, so previews never show library content (ADR 0018).
-    pub fn pattern_examples(&self, keymode: u8) -> Result<Vec<PatternExampleDto>, AppError> {
+    /// `layout_id` `None` draws with the stored preference; an id that is no preset of the
+    /// keymode is `INVALID_INPUT`.
+    pub async fn pattern_examples(
+        &self,
+        keymode: u8,
+        layout_id: Option<&str>,
+    ) -> Result<Vec<PatternExampleDto>, AppError> {
         let profile = labelled_profile(keymode)?;
-        let layout = profile.layout();
+        let layout = match layout_id {
+            Some(id) => profile
+                .layout_by_id(id)
+                .ok_or_else(|| AppError::invalid_input().with_arg("layoutId", id))?,
+            None => {
+                let preferred = self.ctx.settings().hand_layout(keymode).await?;
+                profile
+                    .layout_by_id(&preferred)
+                    .unwrap_or_else(|| profile.layout())
+            }
+        };
         Ok(examples::for_keymode(profile.keymode)
             .into_iter()
             .map(|ex| {
@@ -358,6 +376,71 @@ impl<'a> LabelingService<'a> {
         let reshaped = SegmentAnchor::new(md5, t0, t1, a.cols(), rows.keymode)
             .map_err(|e| AppError::internal(format!("reshaped anchor: {e}")))?;
         anchor_dto(&reshaped)
+    }
+
+    /// `req.anchor` moved to start at `req.t0Ms` with its length, slid back inside the chart's
+    /// rows. Columns are recomputed as the sampler sets them (every column), whatever the
+    /// request carried.
+    pub async fn move_window(&self, req: MoveWindowRequestDto) -> Result<AnchorDto, AppError> {
+        let md5 = parse_md5(&req.anchor.md5)?;
+        let rows = self.ctx.library().row_times(md5).await?;
+        let a = parse_anchor(md5, &req.anchor, rows.keymode)?;
+        let span = window::chart_span(&rows.times)
+            .ok_or_else(|| AppError::not_found().with_arg("md5", req.anchor.md5.clone()))?;
+        let len = TimeUs(a.t1_us().0 - a.t0_us().0);
+        let (t0, t1) = window::move_to(TimeUs::from_ms(req.t0_ms), len, span);
+        let moved = SegmentAnchor::new(md5, t0, t1, ColMask::full(rows.keymode), rows.keymode)
+            .map_err(|e| AppError::internal(format!("moved anchor: {e}")))?;
+        anchor_dto(&moved)
+    }
+
+    /// The chart's span cut into `req.buckets` equal slices with their note counts, plus the
+    /// self profile's labelled windows on it. `NOT_FOUND` for a chart of another keymode or
+    /// without a parse.
+    pub async fn chart_timeline(
+        &self,
+        req: ChartTimelineRequestDto,
+    ) -> Result<ChartTimelineDto, AppError> {
+        let keymode = labelled_profile(req.keymode)?.keymode;
+        if req.buckets == 0 || req.buckets > self.params.max_timeline_buckets {
+            return Err(AppError::invalid_input().with_arg("buckets", req.buckets.to_string()));
+        }
+        let md5 = parse_md5(&req.md5)?;
+        let not_found = || AppError::not_found().with_arg("md5", req.md5.clone());
+        let rows = self.ctx.library().row_times(md5).await?;
+        if rows.keymode != keymode {
+            return Err(not_found());
+        }
+        let (first, end) = window::chart_span(&rows.times).ok_or_else(not_found)?;
+        let mut density = vec![0_u16; usize::from(req.buckets)];
+        let width = i128::from(end.0 - first.0);
+        for (t, notes) in rows.times.iter().zip(&rows.notes) {
+            let at = i128::from(t.0 - first.0) * i128::from(req.buckets) / width;
+            let slot = usize::try_from(at).unwrap_or(0).min(density.len() - 1);
+            density[slot] = density[slot].saturating_add(u16::from(*notes));
+        }
+        let mut labelled: Vec<SpanDto> = match self.self_profile().await? {
+            Some(me) => self
+                .labels(me)
+                .await?
+                .into_iter()
+                .filter(|l| l.anchor.chart_md5() == md5)
+                .map(|l| {
+                    anchor_dto(&l.anchor).map(|a| SpanDto {
+                        t0_ms: a.t0_ms,
+                        t1_ms: a.t1_ms,
+                    })
+                })
+                .collect::<Result<_, _>>()?,
+            None => Vec::new(),
+        };
+        labelled.sort_by_key(|s| (s.t0_ms, s.t1_ms));
+        Ok(ChartTimelineDto {
+            first_ms: ms_i32(first)?,
+            end_ms: ms_i32(end)?,
+            density,
+            labelled,
+        })
     }
 
     /// Appends one `segment_label` event under the self profile. A skip is never stored.
@@ -776,15 +859,16 @@ fn parse_anchor(md5: ChartMd5, a: &AnchorDto, keymode: Keymode) -> Result<Segmen
     .map_err(|_| invalid())
 }
 
+fn ms_i32(t: TimeUs) -> Result<i32, AppError> {
+    i32::try_from(t.as_ms_floor())
+        .map_err(|_| AppError::internal(format!("chart time {} out of range", t.0)))
+}
+
 fn anchor_dto(a: &SegmentAnchor) -> Result<AnchorDto, AppError> {
-    let ms = |t: TimeUs| {
-        i32::try_from(t.as_ms_floor())
-            .map_err(|_| AppError::internal(format!("anchor time {} out of range", t.0)))
-    };
     Ok(AnchorDto {
         md5: a.chart_md5().to_string(),
-        t0_ms: ms(a.t0_us())?,
-        t1_ms: ms(a.t1_us())?,
+        t0_ms: ms_i32(a.t0_us())?,
+        t1_ms: ms_i32(a.t1_us())?,
         cols: one_based(a.cols()),
     })
 }

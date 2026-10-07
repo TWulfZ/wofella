@@ -74,6 +74,8 @@ pub(crate) struct Map {
     pub(crate) version: String,
     pub(crate) creator: String,
     pub(crate) set_id: i32,
+    /// stable's no-mod osu!mania star rating in osu!.db.
+    pub(crate) stars: Option<f64>,
     /// `None`: missing from `Songs/`.
     pub(crate) bytes: Option<Vec<u8>>,
 }
@@ -89,6 +91,7 @@ impl Map {
             version: "Normal".to_owned(),
             creator: "wolluf".to_owned(),
             set_id: 100,
+            stars: None,
             bytes: Some(bytes),
         }
     }
@@ -104,6 +107,11 @@ impl Map {
     pub(crate) fn named(mut self, folder: &str, version: &str) -> Self {
         self.folder = folder.to_owned();
         self.version = version.to_owned();
+        self
+    }
+
+    pub(crate) fn rated(mut self, stars: f64) -> Self {
+        self.stars = Some(stars);
         self
     }
 
@@ -130,12 +138,16 @@ impl Map {
     }
 
     fn beatmap(&self) -> OsuDbBeatmap {
-        let mut b = BeatmapBuilder::mania(&self.md5, self.keys)
+        let builder = BeatmapBuilder::mania(&self.md5, self.keys)
             .folder(&self.folder)
             .osu_file(&self.file)
             .title(&self.title)
-            .ids(1, self.set_id)
-            .build();
+            .ids(1, self.set_id);
+        let mut b = match self.stars {
+            Some(stars) => builder.star_rating(3, 0, stars),
+            None => builder,
+        }
+        .build();
         b.difficulty = OsuString::present(self.version.as_bytes());
         b.creator = OsuString::present(self.creator.as_bytes());
         b

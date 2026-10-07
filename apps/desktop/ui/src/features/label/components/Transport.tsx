@@ -1,18 +1,9 @@
-import {
-  ChevronsLeft,
-  ChevronsRight,
-  FoldHorizontal,
-  type LucideIcon,
-  Pause,
-  Play,
-  UnfoldHorizontal,
-} from "lucide-react";
+import { Pause, Play } from "lucide-react";
 import { type KeyboardEvent, useId } from "react";
 import { useTranslation } from "react-i18next";
 import { clampOsuSpeed, DEFAULT_STAGE_PARAMS } from "@/features/playfield";
 import { Button } from "@/shared/ui/button";
 import { LABEL_PREFS, type ScrollKind, type ScrollPrefs } from "../prefs";
-import type { WindowOp } from "../types";
 
 const SCROLL_STEP = 0.05;
 const ZOOM_STEP = 0.05;
@@ -20,12 +11,6 @@ const SCROLL_KINDS = [
   { kind: "osu", labelKey: "label.transport.modeOsu" },
   { kind: "pxPerMs", labelKey: "label.transport.modePxPerMs" },
 ] as const satisfies readonly { kind: ScrollKind; labelKey: string }[];
-const RESHAPES: readonly { op: WindowOp; icon: LucideIcon; labelKey: string }[] = [
-  { op: "widen", icon: UnfoldHorizontal, labelKey: "label.reshape.widen" },
-  { op: "narrow", icon: FoldHorizontal, labelKey: "label.reshape.narrow" },
-  { op: "prev", icon: ChevronsLeft, labelKey: "label.reshape.earlier" },
-  { op: "next", icon: ChevronsRight, labelKey: "label.reshape.later" },
-];
 
 interface TransportProps {
   playing: boolean;
@@ -41,14 +26,11 @@ interface TransportProps {
   onZoom: (zoom: number) => void;
   /** After a control here was used with the pointer or changed, so the screen can take focus back. */
   onSettle: () => void;
-  onReshape: (op: WindowOp) => void;
-  reshapeDisabled: boolean;
 }
 
 export function Transport(props: TransportProps) {
   const { playing, loading, onToggle, range, duration, offsetMs, onOffset, scroll, onScroll, zoom, onZoom, onSettle } =
     props;
-  const { onReshape, reshapeDisabled } = props;
   const { t } = useTranslation();
   const offsetId = useId();
   const modeId = useId();
@@ -71,24 +53,6 @@ export function Transport(props: TransportProps) {
           {duration}
           {loading && <> · {t("label.transport.loadingAudio")}</>}
         </span>
-      </div>
-      <div role="group" aria-label={t("label.reshape.title")} className="flex items-center gap-0.5">
-        {RESHAPES.map(({ op, icon: Icon, labelKey }) => (
-          <Button
-            key={op}
-            type="button"
-            variant="ghost"
-            size="icon-lg"
-            aria-label={t(labelKey)}
-            title={t(labelKey)}
-            disabled={reshapeDisabled}
-            onClick={() => {
-              onReshape(op);
-            }}
-          >
-            <Icon aria-hidden />
-          </Button>
-        ))}
       </div>
       <div className="flex items-center gap-2 text-sm">
         <label htmlFor={offsetId} className="text-muted-foreground">

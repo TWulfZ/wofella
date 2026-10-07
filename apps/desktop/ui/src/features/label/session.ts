@@ -25,7 +25,7 @@ export type EntryStatus =
   | { kind: "skipped" };
 
 export interface HistoryEntry {
-  /** Its anchor follows reshapes. */
+  /** Its anchor follows timeline moves. */
   window: LabelWindow;
   origin: WindowOrigin;
   status: EntryStatus;
@@ -59,7 +59,8 @@ export type FlagToggle = "mixed" | "unsure" | "thumbLeft" | "thumbRight";
 
 export type SessionAction =
   | { type: "windowLoaded"; window: LabelWindow; origin: WindowOrigin }
-  | { type: "windowReshaped"; anchor: Anchor }
+  /** `cursor` is the entry the move was asked for: the reply may land after Previous or Next. */
+  | { type: "windowMoved"; cursor: number; anchor: Anchor }
   | { type: "moved"; to: "previous" | "next" }
   | { type: "submitted"; eventId: string; answer: Answer }
   /** Dispatched only once the undo is stored, so a failed undo can be retried. */
@@ -156,13 +157,14 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
   switch (action.type) {
     case "windowLoaded":
       return loaded(state, action.window, action.origin);
-    case "windowReshaped": {
-      const entry = currentEntry(state);
-      if (entry === null) {
+    case "windowMoved": {
+      const entry = state.history[action.cursor];
+      // A saved label is tied to the anchor it was stored with.
+      if (entry === undefined || entry.status.kind === "saved") {
         return state;
       }
       const window = { ...entry.window, anchor: action.anchor };
-      return { ...state, history: state.history.map((e, i) => (i === state.cursor ? { ...e, window } : e)) };
+      return { ...state, history: state.history.map((e, i) => (i === action.cursor ? { ...e, window } : e)) };
     }
     case "moved":
       if (action.to === "previous") {

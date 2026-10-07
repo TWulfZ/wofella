@@ -30,6 +30,9 @@ pub struct SamplerParams {
     pub reshape_step: TimeUs,
     /// Shortest window `w-` leaves.
     pub min_window: TimeUs,
+    /// Most slices a chart timeline is cut into; a bar wider than the screen in pixels gains
+    /// nothing.
+    pub max_timeline_buckets: u16,
 }
 
 impl Default for SamplerParams {
@@ -43,6 +46,7 @@ impl Default for SamplerParams {
             max_chart_tries: 8,
             reshape_step: TimeUs::from_ms(1_000),
             min_window: TimeUs::from_ms(1_000),
+            max_timeline_buckets: 4_096,
         }
     }
 }

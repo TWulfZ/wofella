@@ -2,20 +2,27 @@ import { StrictMode } from "react";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AnchorDto, ChartWindowDto, LabelStatsDto, LabelWindowDto, SampleRequestDto } from "@/ipc/bindings";
+import type {
+  AnchorDto,
+  ChartWindowDto,
+  LabelStatsDto,
+  LabelWindowDto,
+  MoveWindowRequestDto,
+  SampleRequestDto,
+} from "@/ipc/bindings";
 import { mockCommands } from "@/ipc/mocks";
 import { renderWithRouter } from "@/shared/testing/renderWithRouter";
 import { LABEL_SCREEN_PARAMS, LabelScreen, type LabelScreenParams } from "./LabelScreen";
 import type { ClosableAudioContext } from "./sectionPlayer";
 
-// Live audio nodes across the whole label screen: React effects (StrictMode's double run included), reshapes and
+// Live audio nodes across the whole label screen: React effects (StrictMode's double run included), window moves and
 // window changes must never leave more than the playing iteration plus the one scheduled ahead.
 
 const ANCHOR_A: AnchorDto = { md5: "a".repeat(32), t0Ms: 1000, t1Ms: 5000, cols: [1, 2, 3, 4, 5, 6, 7] };
 const ANCHOR_B: AnchorDto = { md5: "b".repeat(32), t0Ms: 20_000, t1Ms: 24_000, cols: [1, 2, 3, 4, 5, 6, 7] };
 
 function labelWindow(anchor: AnchorDto, title: string): LabelWindowDto {
-  return { anchor, title, artist: "x", version: "v", level: "dan:7", stratum: "s", played: true };
+  return { anchor, title, artist: "x", version: "v", creator: "m", stars: null, level: "dan:7", stratum: "s", played: true };
 }
 
 const STATS: LabelStatsDto = {
@@ -161,10 +168,13 @@ function render(audio: Audio, strict: boolean, params: LabelScreenParams = LABEL
     labelSubmit: () => ({ id: "E" }),
     labelUndo: () => null,
     skinList: () => ({ skins: [], current: null, maniaSpeed: null, maniaSpeedBpmScale: null }),
-    labelReshape: (args) => {
-      const anchor = args["anchor"] as AnchorDto;
-      return { ...anchor, t0Ms: anchor.t0Ms + 2000, t1Ms: anchor.t1Ms + 2000 };
+    labelMoveWindow: (args) => {
+      const { anchor, t0Ms } = args["req"] as MoveWindowRequestDto;
+      return { ...anchor, t0Ms, t1Ms: t0Ms + anchor.t1Ms - anchor.t0Ms };
     },
+    labelChartTimeline: () => ({ firstMs: 0, endMs: 60_000, density: [], labelled: [] }),
+    chartBackground: () => null,
+    settingsGetHandLayout: () => "k7.313_right_thumb",
   });
   const ui = <LabelScreen keymode={7} seed="42" createAudioContext={audio.createContext} params={params} />;
   return renderWithRouter(strict ? <StrictMode>{ui}</StrictMode> : ui, { path: "/label" });
@@ -180,7 +190,7 @@ function oldestLive(audio: Audio): FakeSource {
 
 describe("LabelScreen section audio", () => {
   for (const strict of [false, true]) {
-    it(`keeps one playing and one scheduled source through toggles, iterations, reshape and skip (strict=${strict})`, async () => {
+    it(`keeps one playing and one scheduled source through toggles, iterations, a timeline move and skip (strict=${strict})`, async () => {
       const audio = new Audio();
       render(audio, strict);
       await userEvent.click(await screen.findByRole("button", { name: "Play" }));
@@ -201,9 +211,11 @@ describe("LabelScreen section audio", () => {
       expect(audio.live).toBe(0);
       fireEvent.keyDown(document.body, { key: " " });
 
-      await userEvent.click(screen.getByRole("button", { name: "Shift window later" }));
+      screen.getByRole("slider", { name: "Window position" }).focus();
+      await userEvent.keyboard("{PageUp}");
+      // Anchor A moved to start at 6 s: the loop starts 1 s of preroll before it.
       await waitFor(() => {
-        expect(audio.sources.some((s) => s.live && s.starts[0]?.offset === 2)).toBe(true);
+        expect(audio.sources.some((s) => s.live && s.starts[0]?.offset === 5)).toBe(true);
       });
       expect(audio.live).toBe(2);
 

@@ -1,5 +1,5 @@
 use wolluf_app::errors::IpcError;
-use wolluf_app::features::library::dto::{ChartAudioDto, ChartWindowDto};
+use wolluf_app::features::library::dto::{ChartAudioDto, ChartImageDto, ChartWindowDto};
 
 use super::Ctx;
 use crate::error::to_ipc;
@@ -27,4 +27,15 @@ pub async fn chart_window(
 #[tracing::instrument(skip_all)]
 pub async fn chart_audio(ctx: Ctx<'_>, md5: String) -> Result<ChartAudioDto, IpcError> {
     ctx.library().chart_audio(&md5).await.map_err(to_ipc)
+}
+
+/// The chart's `[Events]` background; `None` when it names none or the file cannot be shown.
+#[tauri::command]
+#[specta::specta]
+#[tracing::instrument(skip_all)]
+pub async fn chart_background(
+    ctx: Ctx<'_>,
+    md5: String,
+) -> Result<Option<ChartImageDto>, IpcError> {
+    ctx.library().chart_background(&md5).await.map_err(to_ipc)
 }

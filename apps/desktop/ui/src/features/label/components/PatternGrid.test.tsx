@@ -4,13 +4,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PatternDefDto } from "@/ipc/bindings";
 import type { ChartWindow } from "@/features/playfield";
 import { PatternGrid } from "./PatternGrid";
+import { writeOpenAxes } from "./patternGridPrefs";
 
 const TAXONOMY: PatternDefDto[] = [
   { id: "regular.jack.minijack", axis: "7k.regular.jack", key: "mj", description: "exactly two notes in one column" },
   { id: "regular.jack.longjack", axis: "7k.regular.jack", key: "lj", description: "three or more notes in one column" },
   { id: "regular.stream.jumpstream", axis: "7k.regular.stream", key: "js", description: "stream with two-note chords" },
+  { id: "ln.release.stair_release", axis: "7k.ln.release", key: "sr", description: "releases that walk across columns" },
 ];
-const [MINIJACK, LONGJACK, JUMPSTREAM] = TAXONOMY as [PatternDefDto, PatternDefDto, PatternDefDto];
+const [MINIJACK, LONGJACK, JUMPSTREAM] = TAXONOMY as [PatternDefDto, PatternDefDto, PatternDefDto, PatternDefDto];
+const ALL_AXES = ["7k.regular.jack", "7k.regular.stream", "7k.ln.release"];
 
 function example(col: number): ChartWindow {
   return {
@@ -88,27 +91,125 @@ function cardNames(): string[] {
     .map((b) => b.getAttribute("aria-label") ?? "");
 }
 
-// Compact pills carry no thumbnail, so a drawn canvas inside a card is the expanded density.
-function thumbnailCount(): number {
+// Axis cards carry their axis id so assertions stay independent of the translated title.
+function expandedAxes(): string[] {
   return screen
     .queryAllByRole("button")
-    .filter((b) => b.hasAttribute("aria-pressed") && b.querySelector("canvas") !== null).length;
+    .filter((b) => b.getAttribute("aria-expanded") === "true")
+    .map((b) => b.getAttribute("data-axis") ?? "");
 }
 
-function alwaysCollapsed(): HTMLElement {
-  return screen.getByRole("checkbox", { name: "Always collapsed" });
+function search(): HTMLElement {
+  return screen.getByRole("searchbox", { name: "Search patterns" });
 }
 
-describe("PatternGrid", () => {
-  it("groups the cards under one heading per axis, in taxonomy order", () => {
+describe("PatternGrid sections", () => {
+  it("splits the axes into RICE and LN master sections, in taxonomy order", () => {
     renderGrid();
 
-    expect(screen.getAllByRole("heading").map((h) => h.textContent)).toEqual(["Jack", "Stream"]);
-    const jack = screen.getByRole("region", { name: "Jack" });
-    expect(within(jack).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual([
+    expect(screen.getAllByRole("heading", { level: 4 }).map((h) => h.textContent)).toEqual(["RICE", "LN"]);
+    const rice = screen.getByRole("region", { name: "RICE" });
+    const ln = screen.getByRole("region", { name: "LN" });
+    const axisLabels = (root: HTMLElement): string[] =>
+      within(root)
+        .getAllByRole("button")
+        .filter((b) => b.hasAttribute("aria-expanded"))
+        .map((b) => b.getAttribute("data-axis") ?? "");
+    expect(axisLabels(rice)).toEqual(["7k.regular.jack", "7k.regular.stream"]);
+    expect(axisLabels(ln)).toEqual(["7k.ln.release"]);
+    expect(within(ln).getByRole("button", { name: "LN release" })).toBeInTheDocument();
+  });
+
+  it("starts with every axis collapsed and no pattern card shown", () => {
+    renderGrid();
+
+    for (const name of ["Jack", "Stream", "LN release"]) {
+      expect(screen.getByRole("button", { name })).toHaveAttribute("aria-expanded", "false");
+    }
+    expect(cardNames()).toEqual([]);
+  });
+
+  it("describes each axis card with its pattern count and how many are selected", () => {
+    renderGrid();
+
+    expect(screen.getByRole("button", { name: "Jack" })).toHaveAccessibleDescription("2 patterns 1 selected");
+    expect(screen.getByRole("button", { name: "Stream" })).toHaveAccessibleDescription("1 pattern");
+  });
+
+  it("opens an axis on click into the panel it controls, and closes it again", async () => {
+    const { user } = renderGrid();
+    const jack = screen.getByRole("button", { name: "Jack" });
+
+    await user.click(jack);
+
+    expect(jack).toHaveAttribute("aria-expanded", "true");
+    const panel = document.getElementById(jack.getAttribute("aria-controls") ?? "");
+    expect(panel).not.toBeNull();
+    expect(within(panel ?? document.body).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual([
       "mj minijack",
       "lj longjack",
     ]);
+    expect(cardNames()).toEqual(["mj minijack", "lj longjack"]);
+
+    await user.click(jack);
+
+    expect(jack).toHaveAttribute("aria-expanded", "false");
+    expect(cardNames()).toEqual([]);
+  });
+
+  it("opens and closes an axis from the keyboard with Enter and Space", async () => {
+    const { user } = renderGrid();
+    const stream = screen.getByRole("button", { name: "Stream" });
+    stream.focus();
+
+    await user.keyboard("{Enter}");
+    expect(stream).toHaveAttribute("aria-expanded", "true");
+
+    await user.keyboard(" ");
+    expect(stream).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("remembers which axes are open across remounts", async () => {
+    const { user, unmount } = renderGrid();
+
+    await user.click(screen.getByRole("button", { name: "Stream" }));
+    unmount();
+    renderGrid();
+
+    expect(expandedAxes()).toEqual(["7k.regular.stream"]);
+    expect(cardNames()).toEqual(["js jumpstream"]);
+  });
+
+  it("expands and collapses every axis at once, and persists it", async () => {
+    const { user, unmount } = renderGrid();
+    const expandAll = screen.getByRole("button", { name: "Expand all" });
+    const collapseAll = screen.getByRole("button", { name: "Collapse all" });
+    expect(collapseAll).toBeDisabled();
+
+    await user.click(expandAll);
+
+    expect(expandedAxes()).toEqual(ALL_AXES);
+    expect(expandAll).toBeDisabled();
+    unmount();
+    const second = renderGrid();
+    expect(expandedAxes()).toEqual(ALL_AXES);
+
+    await second.user.click(screen.getByRole("button", { name: "Collapse all" }));
+
+    expect(expandedAxes()).toEqual([]);
+    expect(cardNames()).toEqual([]);
+  });
+
+  it("has no Always collapsed checkbox any more", () => {
+    renderGrid();
+
+    expect(screen.queryByRole("checkbox")).toBeNull();
+  });
+});
+
+describe("PatternGrid cards", () => {
+  beforeEach(() => {
+    writeOpenAxes(ALL_AXES);
   });
 
   it("marks active patterns as pressed and draws a preview only where an example exists", () => {
@@ -130,56 +231,10 @@ describe("PatternGrid", () => {
     expect(onToggle).toHaveBeenCalledExactlyOnceWith(JUMPSTREAM);
   });
 
-  it.each([
-    ["a name, ignoring case", "JUMP", ["js jumpstream"]],
-    ["a key", "lj", ["lj longjack"]],
-    ["a description", "exactly two", ["mj minijack"]],
-  ])("filters cards by %s", async (_, query, expected) => {
-    const { user } = renderGrid();
-
-    await user.type(screen.getByRole("searchbox", { name: "Search patterns" }), query);
-
-    expect(cardNames()).toEqual(expected);
-  });
-
-  it("hides an axis whose patterns all fail the search", async () => {
-    const { user } = renderGrid();
-
-    await user.type(screen.getByRole("searchbox", { name: "Search patterns" }), "jack");
-
-    expect(screen.getAllByRole("heading").map((h) => h.textContent)).toEqual(["Jack"]);
-  });
-
-  it("shows an empty state whose action clears the search", async () => {
-    const { user } = renderGrid();
-    const search = screen.getByRole("searchbox", { name: "Search patterns" });
-
-    await user.type(search, "zzz");
-
-    expect(cardNames()).toEqual([]);
-    expect(screen.getByText("No pattern matches “zzz”")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Clear search" }));
-    expect(search).toHaveValue("");
-    expect(search).toHaveFocus();
-    expect(cardNames()).toHaveLength(3);
-  });
-
-  it("clears the search on Escape", async () => {
-    const { user } = renderGrid();
-    const search = screen.getByRole("searchbox", { name: "Search patterns" });
-
-    await user.type(search, "mini");
-    await user.keyboard("{Escape}");
-
-    expect(search).toHaveValue("");
-    expect(cardNames()).toHaveLength(3);
-  });
-
   it("opens the enlarged preview with the description when a card takes keyboard focus", async () => {
     const { user } = renderGrid();
+    screen.getByRole("button", { name: "Jack" }).focus();
 
-    await user.tab();
-    await user.tab();
     await user.tab();
     expect(screen.getByRole("button", { name: "mj minijack" })).toHaveFocus();
 
@@ -189,18 +244,9 @@ describe("PatternGrid", () => {
     expect(within(card ?? document.body).getByText("exactly two notes in one column")).toBeInTheDocument();
   });
 
-  it("labels the card with its description for assistive technology", () => {
-    renderGrid();
-
-    expect(screen.getByRole("button", { name: "lj longjack" })).toHaveAccessibleDescription(
-      "three or more notes in one column",
-    );
-  });
-
   it("closes the enlarged preview when focus leaves the card", async () => {
     const { user } = renderGrid();
-    await user.tab();
-    await user.tab();
+    screen.getByRole("button", { name: "Jack" }).focus();
     await user.tab();
     await screen.findByRole("img", { name: "Example of minijack" });
 
@@ -211,6 +257,14 @@ describe("PatternGrid", () => {
     });
   });
 
+  it("labels the card with its description for assistive technology", () => {
+    renderGrid();
+
+    expect(screen.getByRole("button", { name: "lj longjack" })).toHaveAccessibleDescription(
+      "three or more notes in one column",
+    );
+  });
+
   it("forwards its className to the root so the panel can size it", () => {
     const { container } = renderGrid({ className: "panel-fill" });
 
@@ -218,75 +272,74 @@ describe("PatternGrid", () => {
   });
 });
 
-describe("PatternGrid density", () => {
-  it("starts expanded, with thumbnails, and the collapse box unticked", () => {
-    renderGrid();
-
-    expect(thumbnailCount()).toBe(2);
-    expect(alwaysCollapsed()).not.toBeChecked();
-  });
-
-  it("collapses to compact pills while the search has text and expands when it is cleared", async () => {
-    const { user } = renderGrid();
-    const search = screen.getByRole("searchbox", { name: "Search patterns" });
-
-    await user.type(search, "j");
-
-    expect(cardNames()).toEqual(["mj minijack", "lj longjack", "js jumpstream"]);
-    expect(thumbnailCount()).toBe(0);
-    expect(screen.getByRole("button", { name: "mj minijack" })).toHaveAttribute("aria-pressed", "true");
-
-    await user.clear(search);
-
-    expect(thumbnailCount()).toBe(2);
-  });
-
-  it("stays compact with an empty search while Always collapsed is ticked, across remounts", async () => {
-    const { user, unmount } = renderGrid();
-
-    await user.click(alwaysCollapsed());
-
-    expect(alwaysCollapsed()).toBeChecked();
-    expect(cardNames()).toHaveLength(3);
-    expect(thumbnailCount()).toBe(0);
-
-    unmount();
-    renderGrid();
-
-    expect(alwaysCollapsed()).toBeChecked();
-    expect(thumbnailCount()).toBe(0);
-  });
-
-  it("expands again when Always collapsed is unticked", async () => {
+describe("PatternGrid search", () => {
+  it.each([
+    ["a name, ignoring case", "JUMP", ["js jumpstream"]],
+    ["a key", "lj", ["lj longjack"]],
+    ["a description", "exactly two", ["mj minijack"]],
+  ])("opens the matching axes and shows only the cards matching %s", async (_, query, expected) => {
     const { user } = renderGrid();
 
-    await user.click(alwaysCollapsed());
-    await user.click(alwaysCollapsed());
+    await user.type(search(), query);
 
-    expect(thumbnailCount()).toBe(2);
+    expect(cardNames()).toEqual(expected);
   });
 
-  it("still toggles a pattern from a compact pill", async () => {
-    const { onToggle, user } = renderGrid();
-    await user.click(alwaysCollapsed());
-
-    await user.click(screen.getByRole("button", { name: "js jumpstream" }));
-
-    expect(onToggle).toHaveBeenCalledExactlyOnceWith(JUMPSTREAM);
-  });
-
-  it("still opens the enlarged preview when a compact pill takes keyboard focus", async () => {
+  it("hides the axes and the master sections without a match", async () => {
     const { user } = renderGrid();
-    await user.click(alwaysCollapsed());
 
-    await user.tab();
-    expect(screen.getByRole("button", { name: "mj minijack" })).toHaveFocus();
+    await user.type(search(), "jack");
 
-    const preview = await screen.findByRole("img", { name: "Example of minijack" });
-    const card = preview.closest<HTMLElement>("[data-slot=hover-card-content]");
-    expect(within(card ?? document.body).getByText("exactly two notes in one column")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "lj longjack" })).toHaveAccessibleDescription(
-      "three or more notes in one column",
-    );
+    expect(expandedAxes()).toEqual(["7k.regular.jack"]);
+    expect(screen.queryByRole("button", { name: "Stream" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "LN" })).toBeNull();
+    expect(screen.getAllByRole("heading", { level: 4 }).map((h) => h.textContent)).toEqual(["RICE"]);
+  });
+
+  it("restores the viewer's own open state when the search is cleared", async () => {
+    const { user } = renderGrid();
+    await user.click(screen.getByRole("button", { name: "Jack" }));
+
+    await user.type(search(), "stream");
+    expect(expandedAxes()).toEqual(["7k.regular.stream"]);
+    await user.clear(search());
+
+    expect(expandedAxes()).toEqual(["7k.regular.jack"]);
+    expect(cardNames()).toEqual(["mj minijack", "lj longjack"]);
+  });
+
+  it("lets an axis be closed while searching without changing the saved state", async () => {
+    const { user } = renderGrid();
+    await user.type(search(), "two");
+    expect(expandedAxes()).toEqual(["7k.regular.jack", "7k.regular.stream"]);
+
+    await user.click(screen.getByRole("button", { name: "Stream" }));
+
+    expect(cardNames()).toEqual(["mj minijack"]);
+    await user.clear(search());
+    expect(expandedAxes()).toEqual([]);
+  });
+
+  it("shows an empty state whose action clears the search", async () => {
+    const { user } = renderGrid();
+
+    await user.type(search(), "zzz");
+
+    expect(cardNames()).toEqual([]);
+    expect(screen.getByText("No pattern matches “zzz”")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(search()).toHaveValue("");
+    expect(search()).toHaveFocus();
+    expect(screen.getAllByRole("heading", { level: 4 })).toHaveLength(2);
+  });
+
+  it("clears the search on Escape", async () => {
+    const { user } = renderGrid();
+
+    await user.type(search(), "mini");
+    await user.keyboard("{Escape}");
+
+    expect(search()).toHaveValue("");
+    expect(expandedAxes()).toEqual([]);
   });
 });

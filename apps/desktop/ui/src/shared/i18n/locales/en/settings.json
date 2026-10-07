@@ -12,6 +12,25 @@
     "openLogs": "Open logs folder",
     "version": "Version",
     "identity": "Identity",
-    "identityLink": "Choose which names are yours"
+    "identityLink": "Choose which names are yours",
+    "handLayout": {
+      "title": "Hand layout ({{keymode}}K)",
+      "description": "Which hand presses each column. Pattern previews and the playfield draw the hand split from it.",
+      "saved": "Saved",
+      "legend": {
+        "left": "Left hand",
+        "right": "Right hand",
+        "both": "Either hand",
+        "thumb": "Thumb",
+        "split": "Hand split"
+      },
+      "presets": {
+        "k7_313_right_thumb": "3 | 1+3 (right thumb)",
+        "k7_313_left_thumb": "3+1 | 3 (left thumb)",
+        "k7_43": "4 | 3",
+        "k7_34": "3 | 4",
+        "k7_both_thumbs": "3 | 1 | 3 (either thumb)"
+      }
+    }
   }
 }

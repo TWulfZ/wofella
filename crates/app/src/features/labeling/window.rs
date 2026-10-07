@@ -1,4 +1,5 @@
-//! A labelling window within its chart: the chart's span and the `w+`/`w-`/`n`/`p` reshapes.
+//! A labelling window within its chart: the chart's span, the `w+`/`w-`/`n`/`p` reshapes and
+//! the timeline's moves.
 //! Pure, so the sampler, submit and the shells agree on one definition of "inside the chart".
 
 use wolluf_core::TimeUs;
@@ -59,6 +60,16 @@ pub fn reshape(
     })
 }
 
+/// `[t0, t0 + len)` slid inside `span`; a window longer than the chart becomes the chart.
+pub fn move_to(t0: TimeUs, len: TimeUs, span: (TimeUs, TimeUs)) -> (TimeUs, TimeUs) {
+    let (first, end) = span;
+    if len.0 >= end.0 - first.0 {
+        return span;
+    }
+    let start = t0.0.clamp(first.0, end.0 - len.0);
+    (TimeUs(start), TimeUs(start + len.0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -99,5 +110,14 @@ mod tests {
         assert_eq!(go(5_000, 9_000, Reshape::Next), Ok((ms(6_001), ms(10_001))));
         assert_eq!(go(1_000, 5_000, Reshape::Prev), Ok((ms(0), ms(4_000))));
         assert_eq!(go(0, 4_000, Reshape::Prev), Ok((ms(0), ms(4_000))));
+    }
+
+    #[test]
+    fn move_keeps_the_length_inside_the_chart() {
+        let go = |t0: i32, len: i32| move_to(ms(t0), ms(len), SPAN);
+        assert_eq!(go(2_000, 4_000), (ms(2_000), ms(6_000)));
+        assert_eq!(go(-300, 4_000), (ms(0), ms(4_000)));
+        assert_eq!(go(9_000, 4_000), (ms(6_001), ms(10_001)));
+        assert_eq!(go(3_000, 20_000), SPAN);
     }
 }

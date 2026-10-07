@@ -4,8 +4,9 @@ use wolluf_core::ErrorCode;
 
 use super::*;
 use crate::features::labeling::dto::{
-    AnchorDto, LabelSubmitDto, NowPlayingRequestDto, NowPlayingSourceDto, RandomRequestDto,
-    SampleRequestDto, WindowAtRequestDto, WindowOpDto,
+    AnchorDto, ChartTimelineDto, ChartTimelineRequestDto, LabelSubmitDto, MoveWindowRequestDto,
+    NowPlayingRequestDto, NowPlayingSourceDto, RandomRequestDto, SampleRequestDto, SpanDto,
+    WindowAtRequestDto, WindowOpDto,
 };
 use crate::features::library::testkit::{Map, install, osu_text, synced};
 use crate::features::plays::testkit::Fixture;
@@ -74,7 +75,7 @@ async fn library() -> (Fixture, Vec<Map>) {
 async fn pattern_examples_give_one_synthetic_window_per_pattern() {
     let (f, _) = library().await;
     let svc = f.ctx.labeling();
-    let examples = svc.pattern_examples(7).unwrap();
+    let examples = svc.pattern_examples(7, None).await.unwrap();
     let ids: Vec<&str> = examples.iter().map(|e| e.id.as_str()).collect();
     let taxonomy: Vec<String> = svc.taxonomy(7).unwrap().into_iter().map(|p| p.id).collect();
     assert_eq!(ids, taxonomy);
@@ -99,7 +100,7 @@ async fn pattern_examples_give_one_synthetic_window_per_pattern() {
     let inverse = examples.iter().find(|e| e.id == "ln.inverse.gap").unwrap();
     assert!(inverse.window.notes.iter().all(|n| n.end_ms.is_some()));
     assert_eq!(
-        svc.pattern_examples(4).unwrap_err().code,
+        svc.pattern_examples(4, None).await.unwrap_err().code,
         ErrorCode::InvalidInput
     );
 }
@@ -817,6 +818,7 @@ fn chart_facts_drop_name_hints() {
         ln_ratio: 0.0,
         length_ms: 1,
         nps: 1.0,
+        stars: None,
         labels: vec![
             label("name_hint", "hint_axis", "7k.regular.jack"),
             label("road_to_gamma", "jinjin_dan", "gamma_entry"),
@@ -1283,4 +1285,223 @@ async fn now_playing_ignores_replays_without_a_self_identity() {
         None,
         "ADR 0005: another name's replays never stand for the user"
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn windows_carry_the_creator_and_stables_star_rating() {
+    let rated = long_map("rated").rated(4.5);
+    let unrated = long_map("unrated");
+    let (f, _) = synced(&[rated.clone(), unrated.clone()], &[]).await;
+    let svc = f.ctx.labeling();
+    let w = svc.window_at(at(&rated.md5, "1", vec![])).await.unwrap();
+    assert_eq!((w.creator.as_str(), w.stars), ("wolluf", Some(4.5)));
+    let w = svc.window_at(at(&unrated.md5, "1", vec![])).await.unwrap();
+    assert_eq!(w.stars, None);
+    let listed = f.ctx.library().overview(Keymode::K7).await.unwrap();
+    let stars: BTreeSet<String> = listed
+        .iter()
+        .map(|c| format!("{}={:?}", c.title, c.stars))
+        .collect();
+    assert_eq!(
+        stars,
+        ["rated=Some(4.5)".to_owned(), "unrated=None".to_owned()].into()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn move_window_keeps_its_length_inside_the_chart() {
+    let (f, maps) = library().await;
+    let svc = f.ctx.labeling();
+    let md5 = &maps[0].md5;
+    let moved =
+        |anchor: AnchorDto, t0_ms: i32| svc.move_window(MoveWindowRequestDto { anchor, t0_ms });
+    let at_ms = |a: AnchorDto| (a.t0_ms, a.t1_ms);
+    assert_eq!(
+        at_ms(moved(anchor(md5, 1_000, 5_000), 10_000).await.unwrap()),
+        (10_000, 14_000)
+    );
+    assert_eq!(
+        at_ms(moved(anchor(md5, 1_000, 5_000), -500).await.unwrap()),
+        (0, 4_000)
+    );
+    assert_eq!(
+        at_ms(moved(anchor(md5, 1_000, 5_000), 18_000).await.unwrap()),
+        (15_876, 19_876),
+        "the end stops one past the last row"
+    );
+    assert_eq!(
+        at_ms(moved(anchor(md5, 0, 30_000), 2_000).await.unwrap()),
+        (0, 19_876),
+        "a window longer than the chart becomes the chart"
+    );
+    let narrow = AnchorDto {
+        cols: vec![1, 2],
+        ..anchor(md5, 1_000, 5_000)
+    };
+    let recomputed = moved(narrow, 2_000).await.unwrap();
+    assert_eq!(
+        recomputed,
+        AnchorDto {
+            md5: md5.clone(),
+            t0_ms: 2_000,
+            t1_ms: 6_000,
+            cols: ALL_COLS.to_vec(),
+        }
+    );
+    let unknown = moved(anchor(&"0".repeat(32), 0, 4_000), 0).await;
+    assert_eq!(unknown.unwrap_err().code, ErrorCode::NotFound);
+    let bad = moved(anchor("nope", 0, 4_000), 0).await;
+    assert_eq!(bad.unwrap_err().code, ErrorCode::InvalidInput);
+}
+
+fn timeline(md5: &str, buckets: u16) -> ChartTimelineRequestDto {
+    ChartTimelineRequestDto {
+        keymode: 7,
+        md5: md5.to_owned(),
+        buckets,
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn chart_timeline_counts_notes_and_lists_own_labels() {
+    let (f, maps) = library().await;
+    let svc = f.ctx.labeling();
+    let md5 = &maps[0].md5;
+    let empty = svc.chart_timeline(timeline(md5, 4)).await.unwrap();
+    assert_eq!(
+        empty,
+        ChartTimelineDto {
+            first_ms: 0,
+            end_ms: 19_876,
+            density: vec![40, 40, 40, 40],
+            labelled: vec![],
+        }
+    );
+
+    let later = svc
+        .submit(submit(
+            &anchor(md5, 8_000, 12_000),
+            &["regular.stream.roll"],
+        ))
+        .await
+        .unwrap();
+    svc.submit(submit(
+        &anchor(md5, 1_000, 5_000),
+        &["regular.stream.trill"],
+    ))
+    .await
+    .unwrap();
+    let undone = svc
+        .submit(submit(
+            &anchor(md5, 14_000, 18_000),
+            &["regular.stream.roll"],
+        ))
+        .await
+        .unwrap();
+    svc.undo(&undone.id).await.unwrap();
+    svc.submit(submit(
+        &anchor(&maps[1].md5, 0, 4_000),
+        &["regular.stream.roll"],
+    ))
+    .await
+    .unwrap();
+    let _ = later;
+    let full = svc.chart_timeline(timeline(md5, 1)).await.unwrap();
+    assert_eq!(full.density, vec![160]);
+    assert_eq!(
+        full.labelled,
+        vec![
+            SpanDto {
+                t0_ms: 1_000,
+                t1_ms: 5_000
+            },
+            SpanDto {
+                t0_ms: 8_000,
+                t1_ms: 12_000
+            },
+        ]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn chart_timeline_rejects_bad_requests() {
+    let lns = Map::new(
+        "lns",
+        7,
+        osu_text(
+            7,
+            "lns",
+            &[(0, 1_000)],
+            &[(3, 1_000, 3_000), (5, 2_000, 2_500)],
+        ),
+    );
+    let (f, _) = synced(std::slice::from_ref(&lns), &[]).await;
+    let svc = f.ctx.labeling();
+    let t = svc.chart_timeline(timeline(&lns.md5, 2)).await.unwrap();
+    assert_eq!((t.first_ms, t.end_ms), (1_000, 3_001));
+    assert_eq!(t.density, vec![3, 0], "taps and heads count, tails do not");
+    let code = |e: Result<ChartTimelineDto, AppError>| e.unwrap_err().code;
+    assert_eq!(
+        code(svc.chart_timeline(timeline(&lns.md5, 0)).await),
+        ErrorCode::InvalidInput
+    );
+    assert_eq!(
+        code(svc.chart_timeline(timeline(&lns.md5, u16::MAX)).await),
+        ErrorCode::InvalidInput
+    );
+    assert_eq!(
+        code(svc.chart_timeline(timeline(&"0".repeat(32), 4)).await),
+        ErrorCode::NotFound
+    );
+    assert_eq!(
+        code(
+            svc.chart_timeline(ChartTimelineRequestDto {
+                keymode: 4,
+                ..timeline(&lns.md5, 4)
+            })
+            .await
+        ),
+        ErrorCode::InvalidInput
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn pattern_examples_draw_with_the_preferred_hand_layout() {
+    use crate::features::library::dto::HandDto;
+    let (f, _) = library().await;
+    f.ctx
+        .settings()
+        .set_hand_layout(7, "k7.313_left_thumb")
+        .await
+        .unwrap();
+    let examples = f.ctx.labeling().pattern_examples(7, None).await.unwrap();
+    assert!(!examples.is_empty());
+    for ex in &examples {
+        assert_eq!(ex.window.layout.id, "k7.313_left_thumb", "{}", ex.id);
+        assert_eq!(ex.window.layout.columns[3].hand, HandDto::Left, "{}", ex.id);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn pattern_examples_honour_an_explicit_layout_over_the_preference() {
+    let (f, _) = library().await;
+    f.ctx
+        .settings()
+        .set_hand_layout(7, "k7.313_left_thumb")
+        .await
+        .unwrap();
+    let svc = f.ctx.labeling();
+    let examples = svc
+        .pattern_examples(7, Some("k7.313_right_thumb"))
+        .await
+        .unwrap();
+    assert!(
+        examples
+            .iter()
+            .all(|e| e.window.layout.id == "k7.313_right_thumb")
+    );
+    for bad in ["nope", "k4.generic", ""] {
+        let err = svc.pattern_examples(7, Some(bad)).await.unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidInput, "{bad:?}");
+    }
 }

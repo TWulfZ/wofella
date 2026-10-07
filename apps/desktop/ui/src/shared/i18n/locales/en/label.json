@@ -11,6 +11,18 @@
     "window": {
       "duration": "{{seconds}} s"
     },
+    "timeline": {
+      "label": "Chart timeline",
+      "position": "Window position",
+      "valueText": "{{from}} to {{to}}",
+      "labelledCount_one": "{{count}} labelled window on this chart",
+      "labelledCount_other": "{{count}} labelled windows on this chart",
+      "locked": "Undo the label to move a saved window."
+    },
+    "header": {
+      "mappedBy": "mapped by {{creator}}",
+      "stars": "{{stars}} stars"
+    },
     "transport": {
       "play": "Play",
       "pause": "Pause",
@@ -47,7 +59,16 @@
       "noResultsHint": "Search by name, key or description.",
       "clearSearch": "Clear search",
       "preview": "Example of {{name}}",
-      "alwaysCollapsed": "Always collapsed"
+      "expandAll": "Expand all",
+      "collapseAll": "Collapse all",
+      "patternCount_one": "{{count}} pattern",
+      "patternCount_other": "{{count}} patterns",
+      "selectedCount_one": "{{count}} selected",
+      "selectedCount_other": "{{count}} selected",
+      "family": {
+        "regular": "RICE",
+        "ln": "LN"
+      }
     },
     "axis": {
       "regular_jack": "Jack",
@@ -85,16 +106,8 @@
       "needsPattern": "Pick a pattern or No pattern to save.",
       "undoNotNewest": "Only the newest saved label can be undone."
     },
-    "reshape": {
-      "title": "Window",
-      "widen": "Widen window",
-      "narrow": "Narrow window",
-      "earlier": "Shift window earlier",
-      "later": "Shift window later"
-    },
     "error": {
-      "unknown_pattern": "Unknown pattern “{{pattern}}”.",
-      "window_too_short": "The window cannot be shorter than {{minMs}} ms."
+      "unknown_pattern": "Unknown pattern “{{pattern}}”."
     },
     "undone": "Last label undone.",
     "footer": {

@@ -10,12 +10,14 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { type ChartWindow, clampOsuSpeed, DEFAULT_STAGE_PARAMS, Playfield, useLoadedSkin } from "@/features/playfield";
+import { handLayoutQuery } from "@/features/preferences";
 import type { PatternDefDto } from "@/ipc/bindings";
 import { useErrorText } from "@/ipc/errorText";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { AnswerBar, type AnswerFeedback, type AnswerMode } from "./components/AnswerBar";
 import { ChartHeader } from "./components/ChartHeader";
+import { ChartTimeline } from "./components/ChartTimeline";
 import { PanelResizer, usePanelWidth } from "./components/PanelResizer";
 import { PatternGrid } from "./components/PatternGrid";
 import { SessionFooter } from "./components/SessionFooter";
@@ -41,6 +43,8 @@ import {
 } from "./prefs";
 import {
   chartAudioQuery,
+  chartBackgroundQuery,
+  chartTimelineQuery,
   chartWindowQuery,
   labelPatternExamplesQuery,
   labelStatsQuery,
@@ -65,7 +69,7 @@ import {
   undoTarget,
 } from "./session";
 import { selectedSkinFolder, skinOptions } from "./skins";
-import type { Anchor, WindowOp } from "./types";
+import type { Anchor, Span } from "./types";
 
 export interface LabelScreenParams {
   /** Audio heard before the window, so its first notes land in context. */
@@ -76,6 +80,8 @@ export interface LabelScreenParams {
   /** osu! speed until one is chosen, when neither the caller nor the cfg (ManiaSpeed) gives one. */
   defaultOsuSpeed: number;
   loopSplice: LoopSpliceParams;
+  /** Density buckets over the whole chart in the timeline. */
+  timelineBuckets: number;
 }
 
 export const LABEL_SCREEN_PARAMS: LabelScreenParams = {
@@ -84,6 +90,7 @@ export const LABEL_SCREEN_PARAMS: LabelScreenParams = {
   defaultPxPerMs: 1,
   defaultOsuSpeed: 20,
   loopSplice: { fadeMs: 30, gapMs: 150 },
+  timelineBuckets: 240,
 };
 
 // osu!mania's in-game bindings: F3 slower, F4 faster.
@@ -152,6 +159,8 @@ const NO_EXAMPLES: ReadonlyMap<string, ChartWindow> = new Map();
 
 const NO_TAXONOMY: readonly PatternDefDto[] = [];
 
+const NO_SPANS: readonly Span[] = [];
+
 const TEXT_INPUT_TYPES: ReadonlySet<string> = new Set(["text", "search", "number", "email", "url", "tel", "password"]);
 
 function isTextField(target: EventTarget | null): boolean {
@@ -184,16 +193,25 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
   // The entry a save runs against, kept after the save moves past it: an Enter that lands before the next render
   // still holds that entry in its closure, and isPending only flips on that render.
   const actedOn = useRef<HistoryEntry | null>(null);
+  // Only the newest move's reply is applied, so keys pressed faster than the IPC round trip end where the last one aimed.
+  const moveSeq = useRef(0);
+  const [pendingMove, setPendingMove] = useState<{ cursor: number; t0Ms: number } | null>(null);
 
   const taxonomy = useQuery(labelTaxonomyQuery(keymode));
-  const examples = useQuery(labelPatternExamplesQuery(keymode));
+  const handLayout = useQuery(handLayoutQuery(keymode));
+  // Waits for the preference so the window is not fetched twice; an unreadable one draws the profile default.
+  const layoutSettled = !handLayout.isPending;
+  const layoutId = handLayout.data ?? null;
+  const examples = useQuery({ ...labelPatternExamplesQuery(keymode, layoutId), enabled: layoutSettled });
   const stats = useQuery(labelStatsQuery());
-  const { sample, random, nowPlaying, reshape, submit, undo } = useLabelMutations();
+  const { sample, random, nowPlaying, move, submit, undo } = useLabelMutations();
   const entry = currentEntry(state);
   const labelWindow = entry?.window ?? null;
   const anchor: Anchor | null = labelWindow?.anchor ?? null;
-  const chart = useQuery(chartWindowQuery(anchor));
+  const chart = useQuery(chartWindowQuery(layoutSettled ? anchor : null, layoutId));
   const audio = useQuery(chartAudioQuery(anchor?.md5 ?? null));
+  const background = useQuery(chartBackgroundQuery(anchor?.md5 ?? null));
+  const timeline = useQuery(chartTimelineQuery(keymode, anchor?.md5 ?? null, params.timelineBuckets));
   const sampling = isSampling(state);
 
   const sampledKey = useRef<string | null>(null);
@@ -297,11 +315,12 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
     }
   };
 
-  const busy = submit.isPending || reshape.isPending || undo.isPending || random.isPending || nowPlaying.isPending;
+  const busy = submit.isPending || move.isPending || undo.isPending || random.isPending || nowPlaying.isPending;
 
   const save = async (): Promise<void> => {
     const payload = submitPayload(state);
-    if (entry === null || payload === null || actedOn.current === entry) {
+    // During a move the anchor is about to change; saving now would store the window being left.
+    if (entry === null || payload === null || actedOn.current === entry || move.isPending) {
       return;
     }
     actedOn.current = entry;
@@ -335,15 +354,28 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
     }
   };
 
-  const runReshape = async (op: WindowOp): Promise<void> => {
+  const runMove = async (t0Ms: number): Promise<void> => {
     if (labelWindow === null) {
       return;
     }
+    const { cursor } = state;
+    moveSeq.current += 1;
+    const seq = moveSeq.current;
+    setPendingMove({ cursor, t0Ms });
+    setFeedback(null);
     try {
-      const next = await reshape.mutateAsync({ anchor: labelWindow.anchor, op });
-      dispatch({ type: "windowReshaped", anchor: next });
+      const next = await move.mutateAsync({ anchor: labelWindow.anchor, t0Ms });
+      if (seq === moveSeq.current) {
+        dispatch({ type: "windowMoved", cursor, anchor: next });
+      }
     } catch (e) {
-      setFeedback({ tone: "error", text: errorText(e) });
+      if (seq === moveSeq.current) {
+        setFeedback({ tone: "error", text: errorText(e) });
+      }
+    } finally {
+      if (seq === moveSeq.current) {
+        setPendingMove(null);
+      }
     }
   };
 
@@ -475,6 +507,12 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
         : { kind: "edit", skipped: entry.status.kind === "skipped", canSave: canSave(state) };
   const shownAnswer = entry?.status.kind === "saved" ? entry.status.answer : state.answer;
 
+  const timelineWindow: Span | null =
+    anchor === null
+      ? null
+      : pendingMove?.cursor === state.cursor
+        ? { t0Ms: pendingMove.t0Ms, t1Ms: pendingMove.t0Ms + anchor.t1Ms - anchor.t0Ms }
+        : { t0Ms: anchor.t0Ms, t1Ms: anchor.t1Ms };
   const rangeText = anchor === null ? "" : `${formatClock(anchor.t0Ms)}–${formatClock(anchor.t1Ms)}`;
   const durationText =
     anchor === null ? "" : t("label.window.duration", { seconds: ((anchor.t1Ms - anchor.t0Ms) / MS_PER_SECOND).toFixed(1) });
@@ -556,6 +594,24 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
             </div>
           ) : (
             <>
+              {timelineWindow !== null && (
+                <ChartTimeline
+                  span={
+                    timeline.data ?? {
+                      firstMs: chart.data.chartSpan.firstMs,
+                      // The chart window's span ends on the last row; a window may reach one past it.
+                      endMs: chart.data.chartSpan.endMs + 1,
+                    }
+                  }
+                  window={timelineWindow}
+                  density={timeline.data?.density ?? null}
+                  labelled={timeline.data?.labelled ?? NO_SPANS}
+                  locked={entry?.status.kind === "saved"}
+                  onMove={(t0Ms) => {
+                    void runMove(t0Ms);
+                  }}
+                />
+              )}
               <Transport
                 playing={playback.playing}
                 loading={playback.loading}
@@ -577,10 +633,6 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
                   writeZoom(value);
                 }}
                 onSettle={releaseFocus}
-                onReshape={(op) => {
-                  void runReshape(op);
-                }}
-                reshapeDisabled={busy || entry?.status.kind === "saved"}
               />
               <SkinPicker
                 options={skinOptions(skinList.data, keymode)}
@@ -630,7 +682,9 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
           }}
           className="flex min-h-0 shrink-0 flex-col gap-4 overflow-y-auto pr-2 pl-1 [scrollbar-gutter:stable]"
         >
-          {entry !== null && <ChartHeader window={entry.window} origin={entry.origin} />}
+          {entry !== null && (
+            <ChartHeader window={entry.window} origin={entry.origin} background={background.data ?? null} />
+          )}
 
           <section aria-label={t("label.patterns")} className="flex flex-col gap-2 pb-4">
             <h3 className="sr-only">{t("label.patterns")}</h3>

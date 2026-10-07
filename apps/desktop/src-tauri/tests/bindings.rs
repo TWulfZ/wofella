@@ -59,7 +59,6 @@ mod bindings {
             "SkinDto",
             "labelTaxonomy",
             "labelSample",
-            "labelReshape",
             "labelSubmit",
             "labelUndo",
             "labelPatternExamples",
@@ -73,6 +72,18 @@ mod bindings {
             "NowPlayingRequestDto",
             "NowPlayingDto",
             "NowPlayingSourceDto",
+            "labelMoveWindow",
+            "MoveWindowRequestDto",
+            "labelChartTimeline",
+            "ChartTimelineRequestDto",
+            "ChartTimelineDto",
+            "SpanDto",
+            "chartBackground",
+            "ChartImageDto",
+            "settingsHandLayouts",
+            "HandLayoutDto",
+            "settingsGetHandLayout",
+            "settingsSetHandLayout",
             "AliasRowDto",
             "job-progress",
             "IpcError",
@@ -81,6 +92,8 @@ mod bindings {
         }
         // The UI answers with taxonomy ids; only the CLI resolves typed keys.
         assert!(!first.contains("labelResolvePatterns"));
+        // Window moves go through label_window_at / label_random; only the CLI reshapes.
+        assert!(!first.contains("labelReshape"));
     }
 
     /// `number` loses precision above 2^53, so a 64-bit DTO field must break the export.

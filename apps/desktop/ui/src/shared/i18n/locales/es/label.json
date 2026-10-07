@@ -11,6 +11,18 @@
     "window": {
       "duration": "{{seconds}} s"
     },
+    "timeline": {
+      "label": "Línea de tiempo del mapa",
+      "position": "Posición de la ventana",
+      "valueText": "{{from}} a {{to}}",
+      "labelledCount_one": "{{count}} ventana etiquetada en este mapa",
+      "labelledCount_other": "{{count}} ventanas etiquetadas en este mapa",
+      "locked": "Deshaz la etiqueta para mover una ventana guardada."
+    },
+    "header": {
+      "mappedBy": "mapeado por {{creator}}",
+      "stars": "{{stars}} estrellas"
+    },
     "transport": {
       "play": "Reproducir",
       "pause": "Pausar",
@@ -47,7 +59,16 @@
       "noResultsHint": "Busca por nombre, tecla o descripción.",
       "clearSearch": "Borrar búsqueda",
       "preview": "Ejemplo de {{name}}",
-      "alwaysCollapsed": "Siempre contraído"
+      "expandAll": "Expandir todo",
+      "collapseAll": "Contraer todo",
+      "patternCount_one": "{{count}} patrón",
+      "patternCount_other": "{{count}} patrones",
+      "selectedCount_one": "{{count}} seleccionado",
+      "selectedCount_other": "{{count}} seleccionados",
+      "family": {
+        "regular": "RICE",
+        "ln": "LN"
+      }
     },
     "axis": {
       "regular_jack": "Jack",
@@ -85,16 +106,8 @@
       "needsPattern": "Elige un patrón o Sin patrón para guardar.",
       "undoNotNewest": "Solo se puede deshacer la etiqueta guardada más reciente."
     },
-    "reshape": {
-      "title": "Ventana",
-      "widen": "Ensanchar ventana",
-      "narrow": "Estrechar ventana",
-      "earlier": "Mover la ventana antes",
-      "later": "Mover la ventana después"
-    },
     "error": {
-      "unknown_pattern": "Patrón desconocido: “{{pattern}}”.",
-      "window_too_short": "La ventana no puede durar menos de {{minMs}} ms."
+      "unknown_pattern": "Patrón desconocido: “{{pattern}}”."
     },
     "undone": "Se deshizo la última etiqueta.",
     "footer": {

@@ -1,5 +1,6 @@
 //! Chart decoders (D8 extension axis: osu! now, other games later, architecture §9.5).
 
+pub mod events;
 pub mod osu;
 
 pub use osu::OsuDecoder;

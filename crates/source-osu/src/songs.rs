@@ -53,7 +53,7 @@ impl SongFileError {
     }
 }
 
-fn stays_inside(path: &Path) -> bool {
+pub(crate) fn stays_inside(path: &Path) -> bool {
     path.components()
         .all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
 }

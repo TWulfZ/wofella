@@ -74,6 +74,7 @@ mod tests {
             ln_ratio: 0.0,
             length_ms: 1,
             nps: 1.0,
+            stars: None,
             labels: Vec::new(),
         }
     }

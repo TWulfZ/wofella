@@ -1,25 +1,33 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PATTERN_GRID_PREFS, readAlwaysCollapsed, writeAlwaysCollapsed } from "./patternGridPrefs";
+import { PATTERN_GRID_PREFS, readOpenAxes, writeOpenAxes } from "./patternGridPrefs";
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe("pattern grid prefs", () => {
-  it("defaults to not collapsed", () => {
-    expect(readAlwaysCollapsed()).toBe(false);
+  it("defaults to no open axis", () => {
+    expect([...readOpenAxes()]).toEqual([]);
   });
 
-  it("round-trips the always-collapsed choice", () => {
-    writeAlwaysCollapsed(true);
-    expect(readAlwaysCollapsed()).toBe(true);
-    writeAlwaysCollapsed(false);
-    expect(readAlwaysCollapsed()).toBe(false);
+  it("round-trips the open axes", () => {
+    writeOpenAxes(["7k.regular.jack", "7k.ln.release"]);
+    expect([...readOpenAxes()]).toEqual(["7k.regular.jack", "7k.ln.release"]);
+    writeOpenAxes([]);
+    expect([...readOpenAxes()]).toEqual([]);
   });
 
-  it("reads anything but the stored true as not collapsed", () => {
-    localStorage.setItem(PATTERN_GRID_PREFS.alwaysCollapsedKey, "yes");
-    expect(readAlwaysCollapsed()).toBe(false);
+  it.each([
+    ["not JSON", "{"],
+    ["not an array", '{"7k.regular.jack":true}'],
+  ])("reads %s as no open axis", (_, stored) => {
+    localStorage.setItem(PATTERN_GRID_PREFS.openAxesKey, stored);
+    expect([...readOpenAxes()]).toEqual([]);
+  });
+
+  it("drops entries that are not axis ids", () => {
+    localStorage.setItem(PATTERN_GRID_PREFS.openAxesKey, '["7k.regular.jack", 3, null]');
+    expect([...readOpenAxes()]).toEqual(["7k.regular.jack"]);
   });
 
   it("reads the default and drops writes when storage throws", () => {
@@ -31,9 +39,9 @@ describe("pattern grid prefs", () => {
         throw new Error("blocked");
       },
     });
-    expect(readAlwaysCollapsed()).toBe(false);
+    expect([...readOpenAxes()]).toEqual([]);
     expect(() => {
-      writeAlwaysCollapsed(true);
+      writeOpenAxes(["7k.regular.jack"]);
     }).not.toThrow();
   });
 });

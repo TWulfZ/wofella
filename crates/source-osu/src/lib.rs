@@ -12,6 +12,7 @@ mod process;
 pub mod replay_dir;
 pub mod skins;
 pub mod snapshot;
+pub mod song_image;
 pub mod songs;
 mod stable;
 #[cfg(any(test, feature = "test-support"))]

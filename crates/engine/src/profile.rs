@@ -2,7 +2,7 @@
 //! defaults. Profiles are data; a keymode without one is not indexed.
 
 use wolluf_chart::Layout;
-use wolluf_chart::layout::DEFAULT_K7;
+use wolluf_chart::layout::{DEFAULT_K7, preset_ids};
 use wolluf_core::Keymode;
 
 use crate::taxonomy::{self, PatternDef};
@@ -25,6 +25,16 @@ impl KeymodeProfile {
         Layout::by_id(self.default_layout)
             .filter(|l| l.keymode() == self.keymode)
             .unwrap_or_else(|| Layout::default_for(self.keymode))
+    }
+
+    /// The presets a user may choose for this keymode, the profile's default first.
+    pub fn layouts(&self) -> Vec<Layout> {
+        let default = self.layout();
+        let others: Vec<Layout> = preset_ids()
+            .filter(|id| *id != default.id())
+            .filter_map(|id| self.layout_by_id(id))
+            .collect();
+        std::iter::once(default).chain(others).collect()
     }
 
     /// A user-chosen preset, only if it belongs to this profile's keymode.
@@ -91,6 +101,23 @@ mod tests {
         );
         assert!(k7.layout_by_id("k4.generic").is_none());
         assert!(k7.layout_by_id("nope").is_none());
+    }
+
+    #[test]
+    fn layouts_lists_the_presets_of_the_profile_keymode_default_first() {
+        let k7 = Registry::builtin().profile(Keymode::K7).unwrap();
+        let ids: Vec<String> = k7.layouts().iter().map(|l| l.id().to_owned()).collect();
+        assert_eq!(
+            ids,
+            [
+                "k7.313_right_thumb",
+                "k7.313_left_thumb",
+                "k7.43",
+                "k7.34",
+                "k7.both_thumbs"
+            ]
+        );
+        assert!(k7.layouts().iter().all(|l| l.keymode() == Keymode::K7));
     }
 
     #[test]

@@ -11,3 +11,5 @@ pub mod taxonomy;
 pub mod window;
 
 pub use error::EngineError;
+/// app may not depend on chart (D1), so the pure `[Events]` read reaches it through here.
+pub use wolluf_chart::decode::events::background_name;

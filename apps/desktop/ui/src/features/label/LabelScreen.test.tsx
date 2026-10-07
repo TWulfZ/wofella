@@ -4,9 +4,11 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   AnchorDto,
+  ChartTimelineRequestDto,
   ChartWindowDto,
   LabelStatsDto,
   LabelWindowDto,
+  MoveWindowRequestDto,
   PatternDefDto,
   PatternExampleDto,
   SampleRequestDto,
@@ -16,6 +18,7 @@ import type {
 } from "@/ipc/bindings";
 import { type CommandHandlers, type MockCall, mockCommands, mockIpcError } from "@/ipc/mocks";
 import { renderWithRouter } from "@/shared/testing/renderWithRouter";
+import { writeOpenAxes } from "./components/patternGridPrefs";
 import { LabelScreen, type LabelScreenProps } from "./LabelScreen";
 import { LABEL_PREFS } from "./prefs";
 import { skinKeys } from "./queries";
@@ -31,14 +34,28 @@ const ANCHOR_B: AnchorDto = { md5: "b".repeat(32), t0Ms: 20_000, t1Ms: 24_000, c
 const ANCHOR_C: AnchorDto = { md5: "c".repeat(32), t0Ms: 40_000, t1Ms: 44_000, cols: [1, 2, 3, 4, 5, 6, 7] };
 
 function labelWindow(anchor: AnchorDto, title: string): LabelWindowDto {
-  return { anchor, title, artist: "Artist", version: "Insane", level: "dan:7", stratum: "dan_07/nps_2", played: true };
+  return {
+    anchor,
+    title,
+    artist: "Artist",
+    version: "Insane",
+    creator: "Mapper",
+    stars: 4.5,
+    level: "dan:7",
+    stratum: "dan_07/nps_2",
+    played: true,
+  };
 }
 
 const WINDOW_A = labelWindow(ANCHOR_A, "Alpha Song");
 const WINDOW_B = labelWindow(ANCHOR_B, "Beta Song");
 const WINDOW_C = labelWindow(ANCHOR_C, "Gamma Song");
 
-function chartWindow(md5: string, fromMs: number, toMs: number): ChartWindowDto {
+const CHART_SPAN = { firstMs: 0, endMs: 90_000 };
+const RIGHT_THUMB = "k7.313_right_thumb";
+const LEFT_THUMB = "k7.313_left_thumb";
+
+function chartWindow(md5: string, fromMs: number, toMs: number, layoutId: string | null = null): ChartWindowDto {
   return {
     md5,
     keymode: 7,
@@ -47,13 +64,13 @@ function chartWindow(md5: string, fromMs: number, toMs: number): ChartWindowDto 
     notes: [{ tMs: fromMs, col: 3, endMs: null }],
     timing: [{ tMs: 0, kind: "red", beatLenMs: 300, meter: 4, sv: null }],
     layout: {
-      id: "k7.313_right_thumb",
+      id: layoutId ?? RIGHT_THUMB,
       columns: ["left", "left", "left", "right", "right", "right", "right"].map((hand) => ({
         hand: hand as "left" | "right",
         finger: "index" as const,
       })),
     },
-    chartSpan: { firstMs: 0, endMs: 90_000 },
+    chartSpan: CHART_SPAN,
     audioFilename: "audio.mp3",
   };
 }
@@ -176,6 +193,8 @@ class NoopResizeObserver {
 }
 
 beforeEach(() => {
+  // Axis cards start collapsed; these tests drive the pattern cards, so every axis starts open.
+  writeOpenAxes(TAXONOMY.map((pattern) => pattern.axis));
   FakeAudioContext.created = 0;
   FakeAudioContext.closed = 0;
   FakeAudioContext.sources = [];
@@ -222,7 +241,8 @@ function renderScreen(
     labelPatternExamples: () => EXAMPLES,
     labelStats: () => STATS,
     labelSample: (args) => windows[(args["req"] as SampleRequestDto).round] ?? null,
-    chartWindow: (args) => chartWindow(String(args["md5"]), Number(args["fromMs"]), Number(args["toMs"])),
+    chartWindow: (args) =>
+      chartWindow(String(args["md5"]), Number(args["fromMs"]), Number(args["toMs"]), args["layoutId"] as string | null),
     chartAudio: () => ({ mime: "audio/mpeg", base64: "SUQz" }),
     labelSubmit: () => {
       eventSeq++;
@@ -233,11 +253,23 @@ function renderScreen(
     labelNowPlaying: () => null,
     skinList: () => NO_SKINS,
     skinGet: (args) => skinDto(String(args["folder"]), Number(args["keymode"])),
-    labelReshape: (args) => {
-      const anchor = args["anchor"] as AnchorDto;
-      const half = (anchor.t1Ms - anchor.t0Ms) / 2;
-      return { ...anchor, t0Ms: anchor.t0Ms + half, t1Ms: anchor.t1Ms + half };
+    labelMoveWindow: (args) => {
+      const { anchor, t0Ms } = args["req"] as MoveWindowRequestDto;
+      const length = anchor.t1Ms - anchor.t0Ms;
+      const t0 = Math.min(Math.max(t0Ms, CHART_SPAN.firstMs), CHART_SPAN.endMs - length);
+      return { ...anchor, t0Ms: t0, t1Ms: t0 + length };
     },
+    labelChartTimeline: (args) => {
+      const { buckets } = args["req"] as ChartTimelineRequestDto;
+      return {
+        firstMs: CHART_SPAN.firstMs,
+        endMs: CHART_SPAN.endMs,
+        density: Array.from({ length: buckets }, (_, i) => i % 5),
+        labelled: [],
+      };
+    },
+    chartBackground: () => null,
+    settingsGetHandLayout: () => RIGHT_THUMB,
     ...extra,
   });
   ({ queryClient } = renderWithRouter(<LabelScreen keymode={7} seed="42" {...props} />, { path: "/label" }));
@@ -254,6 +286,15 @@ function answerBar(): HTMLElement {
 
 function inBar(name: string): HTMLElement {
   return within(answerBar()).getByRole("button", { name });
+}
+
+function timelineSlider(): HTMLElement {
+  return screen.getByRole("slider", { name: "Window position" });
+}
+
+/** The timeline shows once the window's chart is drawn, after the header. */
+async function timelineShown(): Promise<HTMLElement> {
+  return screen.findByRole("slider", { name: "Window position" });
 }
 
 function toolbar(): HTMLElement {
@@ -313,7 +354,7 @@ describe("LabelScreen", () => {
       { keymode: 7, seed: "42", round: 0, windowMs: null, scale: null, levelMin: null, levelMax: null, exclude: [] },
     ]);
     await waitFor(() => {
-      expect(argsOf(calls, "chart_window")).toEqual([{ md5: ANCHOR_A.md5, fromMs: 1000, toMs: 5000, layoutId: null }]);
+      expect(argsOf(calls, "chart_window")).toEqual([{ md5: ANCHOR_A.md5, fromMs: 1000, toMs: 5000, layoutId: RIGHT_THUMB }]);
     });
     expect(await screen.findByTestId("playfield")).toContainHTML("<canvas");
     expect(screen.getByText("00:01.000–00:05.000")).toBeInTheDocument();
@@ -335,7 +376,7 @@ describe("LabelScreen", () => {
     });
     expect(within(patterns).getByRole("button", { name: "mj minijack" }).querySelector("canvas")).not.toBeNull();
     expect(within(patterns).getByRole("button", { name: "lj longjack" }).querySelector("canvas")).toBeNull();
-    expect(argsOf(calls, "label_pattern_examples")).toEqual([{ keymode: 7 }]);
+    expect(argsOf(calls, "label_pattern_examples")).toEqual([{ keymode: 7, layoutId: RIGHT_THUMB }]);
   });
 
   it("has no free-text answer: no Answer textbox, and printable keys outside a field run nothing", async () => {
@@ -370,7 +411,7 @@ describe("LabelScreen", () => {
     });
     await roundLoaded();
     await waitFor(() => {
-      expect(argsOf(calls, "label_pattern_examples")).toEqual([{ keymode: 7 }]);
+      expect(argsOf(calls, "label_pattern_examples")).toEqual([{ keymode: 7, layoutId: RIGHT_THUMB }]);
     });
     await settle();
 
@@ -880,13 +921,14 @@ describe("LabelScreen", () => {
     expect(pressed("No pattern")).toBe("false");
   });
 
-  it("keeps the answer and flags across a reshape and resets them on the next window", async () => {
+  it("keeps the answer and flags across a timeline move and resets them on the next window", async () => {
     const calls = renderScreen();
     await roundLoaded();
     await userEvent.click(screen.getByRole("button", { name: "js jumpstream" }));
     await userEvent.click(inBar("Mixed"));
 
-    await userEvent.click(screen.getByRole("button", { name: "Shift window later" }));
+    (await timelineShown()).focus();
+    await userEvent.keyboard("{ArrowRight}{ArrowRight}");
     expect(await screen.findByText("00:03.000–00:07.000")).toBeInTheDocument();
     expect(chips()).toEqual(["regular.stream.jumpstream"]);
     expect(pressed("Mixed")).toBe("true");
@@ -920,26 +962,175 @@ describe("LabelScreen", () => {
     ]);
   });
 
-  it("reshapes with the window buttons and refetches the window", async () => {
+  it("has no widen, narrow or shift window buttons any more", async () => {
+    renderScreen();
+    await roundLoaded();
+    await screen.findByRole("button", { name: "Play" });
+    expect(screen.queryByRole("group", { name: "Window" })).toBeNull();
+    for (const name of ["Widen window", "Narrow window", "Shift window earlier", "Shift window later"]) {
+      expect(screen.queryByRole("button", { name })).toBeNull();
+    }
+  });
+
+  it("moves the window from the timeline keyboard, reloading the playfield and audio section without a new sample", async () => {
     const calls = renderScreen();
     await roundLoaded();
-    const window = await screen.findByRole("group", { name: "Window" });
-    expect(within(window).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual([
-      "Widen window",
-      "Narrow window",
-      "Shift window earlier",
-      "Shift window later",
-    ]);
+    const slider = await timelineShown();
+    expect(slider).toHaveAttribute("aria-valuenow", "1000");
+    expect(slider).toHaveAttribute("aria-valuetext", "00:01 to 00:05");
 
-    await userEvent.click(within(window).getByRole("button", { name: "Shift window later" }));
+    slider.focus();
+    await userEvent.keyboard("{PageUp}");
 
-    expect(await screen.findByText("00:03.000–00:07.000")).toBeInTheDocument();
-    expect(argsOf(calls, "label_reshape")).toEqual([{ anchor: ANCHOR_A, op: "next" }]);
+    expect(await screen.findByText("00:06.000–00:10.000")).toBeInTheDocument();
+    expect(argsOf(calls, "label_move_window")).toEqual([{ req: { anchor: ANCHOR_A, t0Ms: 6000 } }]);
     await waitFor(() => {
-      expect(argsOf(calls, "chart_window").at(-1)).toEqual({ md5: ANCHOR_A.md5, fromMs: 3000, toMs: 7000, layoutId: null });
+      expect(argsOf(calls, "chart_window").at(-1)).toEqual({
+        md5: ANCHOR_A.md5,
+        fromMs: 6000,
+        toMs: 10_000,
+        layoutId: RIGHT_THUMB,
+      });
     });
+    expect(timelineSlider()).toHaveAttribute("aria-valuenow", "6000");
     expect(sampleRequests(calls)).toHaveLength(1);
     expect(argsOf(calls, "chart_audio")).toHaveLength(1);
+    expect(argsOf(calls, "label_chart_timeline")).toEqual([{ req: { keymode: 7, md5: ANCHOR_A.md5, buckets: 240 } }]);
+  });
+
+  it("moves the window to a click on the timeline, centred on it, committed on release", async () => {
+    const calls = renderScreen();
+    await roundLoaded();
+    await timelineShown();
+    await waitFor(() => {
+      expect(argsOf(calls, "label_chart_timeline")).toHaveLength(1);
+    });
+    await settle();
+    // 900 px for the 90 s chart: 1 px is 100 ms.
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(DOMRect.fromRect({ x: 0, width: 900 }));
+    const track = screen.getByTestId("timeline-track");
+    fireEvent.pointerDown(track, { clientX: 450, button: 0, pointerId: 1 });
+    expect(argsOf(calls, "label_move_window")).toEqual([]);
+    fireEvent.pointerUp(window, { clientX: 450, pointerId: 1 });
+
+    expect(await screen.findByText("00:43.000–00:47.000")).toBeInTheDocument();
+    expect(argsOf(calls, "label_move_window")).toEqual([{ req: { anchor: ANCHOR_A, t0Ms: 43_000 } }]);
+  });
+
+  it("keeps the window and words the error when a move fails", async () => {
+    renderScreen([WINDOW_A, WINDOW_B], { labelMoveWindow: () => mockIpcError("NOT_FOUND") });
+    await roundLoaded();
+    (await timelineShown()).focus();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(await within(answerBar()).findByRole("alert")).toBeInTheDocument();
+    expect(screen.getByText("00:01.000–00:05.000")).toBeInTheDocument();
+    expect(timelineSlider()).toHaveAttribute("aria-valuenow", "1000");
+  });
+
+  it("shades the own labelled windows and refetches the timeline after a save and an undo", async () => {
+    const labelled: AnchorDto[] = [];
+    const calls = renderScreen([WINDOW_A, WINDOW_B], {
+      labelSubmit: (args) => {
+        labelled.push((args["req"] as { anchor: AnchorDto }).anchor);
+        return { id: "01EVENT1" };
+      },
+      labelUndo: () => {
+        labelled.pop();
+        return null;
+      },
+      labelChartTimeline: (args) => {
+        const { md5, buckets } = args["req"] as ChartTimelineRequestDto;
+        return {
+          firstMs: CHART_SPAN.firstMs,
+          endMs: CHART_SPAN.endMs,
+          density: Array.from({ length: buckets }, () => 1),
+          labelled: labelled.filter((a) => a.md5 === md5).map(({ t0Ms, t1Ms }) => ({ t0Ms, t1Ms })),
+        };
+      },
+    });
+    const timelineCallsFor = (md5: string) =>
+      argsOf(calls, "label_chart_timeline").filter((a) => (a["req"] as ChartTimelineRequestDto).md5 === md5).length;
+    await roundLoaded();
+    expect(await screen.findByText("0 labelled windows on this chart")).toBeInTheDocument();
+    expect(timelineCallsFor(ANCHOR_A.md5)).toBe(1);
+
+    await saveNoPattern();
+    await roundLoaded("Beta Song");
+    await clickTool("Previous");
+    await roundLoaded();
+    await timelineShown();
+    expect(await screen.findByText("1 labelled window on this chart")).toBeInTheDocument();
+    expect(timelineCallsFor(ANCHOR_A.md5)).toBe(2);
+    expect(timelineSlider()).toHaveAttribute("aria-disabled", "true");
+
+    await userEvent.click(inBar("Undo"));
+    expect(await screen.findByText("0 labelled windows on this chart")).toBeInTheDocument();
+    expect(timelineCallsFor(ANCHOR_A.md5)).toBe(3);
+    expect(timelineSlider()).not.toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("does not move a saved window from the timeline", async () => {
+    const calls = renderScreen();
+    await roundLoaded();
+    await saveNoPattern();
+    await roundLoaded("Beta Song");
+    await clickTool("Previous");
+    await roundLoaded();
+    (await timelineShown()).focus();
+    await userEvent.keyboard("{ArrowRight}");
+    await settle();
+    expect(argsOf(calls, "label_move_window")).toEqual([]);
+  });
+
+  it("shows the chart's background and star rating in the header, fetched by md5", async () => {
+    const calls = renderScreen([WINDOW_A, WINDOW_B], {
+      chartBackground: () => ({ mime: "image/png", base64: "iVBORw0KGgo=", width: 1920, height: 1080 }),
+    });
+    await roundLoaded();
+    expect(screen.getByText("mapped by Mapper")).toBeInTheDocument();
+    expect(screen.getByTestId("star-rating")).toHaveTextContent("4.50");
+    await waitFor(() => {
+      expect(document.querySelector("header img")).toHaveAttribute("src", "data:image/png;base64,iVBORw0KGgo=");
+    });
+    expect(argsOf(calls, "chart_background")).toEqual([{ md5: ANCHOR_A.md5 }]);
+  });
+
+  it("falls back to the gradient header when the background cannot be read", async () => {
+    renderScreen([WINDOW_A, WINDOW_B], { chartBackground: () => mockIpcError("INTERNAL") });
+    await roundLoaded();
+    await settle();
+    expect(screen.getByTestId("header-fallback")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("draws the window and the examples with the preferred hand layout, again when it changes", async () => {
+    const calls = renderScreen([WINDOW_A, WINDOW_B], { settingsGetHandLayout: () => LEFT_THUMB });
+    await roundLoaded();
+    await waitFor(() => {
+      expect(argsOf(calls, "chart_window")).toEqual([{ md5: ANCHOR_A.md5, fromMs: 1000, toMs: 5000, layoutId: LEFT_THUMB }]);
+    });
+    expect(argsOf(calls, "settings_get_hand_layout")).toEqual([{ keymode: 7 }]);
+    expect(argsOf(calls, "label_pattern_examples")).toHaveLength(1);
+
+    act(() => {
+      queryClient?.setQueryData(["settings", "handLayout", 7], RIGHT_THUMB);
+    });
+
+    await waitFor(() => {
+      expect(argsOf(calls, "chart_window").at(-1)).toEqual({ md5: ANCHOR_A.md5, fromMs: 1000, toMs: 5000, layoutId: RIGHT_THUMB });
+    });
+    await waitFor(() => {
+      expect(argsOf(calls, "label_pattern_examples")).toHaveLength(2);
+    });
+  });
+
+  it("falls back to the profile's default layout when the preference cannot be read", async () => {
+    const calls = renderScreen([WINDOW_A, WINDOW_B], { settingsGetHandLayout: () => mockIpcError("INTERNAL") });
+    await roundLoaded();
+    await waitFor(() => {
+      expect(argsOf(calls, "chart_window")).toEqual([{ md5: ANCHOR_A.md5, fromMs: 1000, toMs: 5000, layoutId: null }]);
+    });
+    expect(await screen.findByTestId("playfield")).toContainHTML("<canvas");
   });
 
   it("words a failed save and keeps the window", async () => {

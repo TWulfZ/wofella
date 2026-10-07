@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use wolluf_core::ChartMd5;
-use wolluf_engine::window::{ChartWindow, ColumnFinger, ColumnHand, TimingLine};
+use wolluf_engine::window::{ChartWindow, ColumnFinger, ColumnHand, TimingLine, WindowColumn};
 
 /// Label bounds are inclusive, and any label criterion keeps only charts with a matching
 /// label, ordered by scale and level; without one the order is by md5.
@@ -46,6 +46,8 @@ pub struct LibraryChartDto {
     pub ln_ratio: f64,
     pub length_ms: u32,
     pub nps: f64,
+    /// stable's cached no-mod star rating; `None` until stable has computed it.
+    pub stars: Option<f32>,
     pub labels: Vec<ChartLabelDto>,
 }
 
@@ -218,6 +220,19 @@ pub struct ChartAudioDto {
     pub base64: String,
 }
 
+/// The chart's `[Events]` background from its set folder, for the webview to show as a `data:`
+/// URL; the bytes decided the type and size.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ChartImageDto {
+    /// `image/png` or `image/jpeg`.
+    pub mime: String,
+    /// RFC 4648 with padding.
+    pub base64: String,
+    pub width: u32,
+    pub height: u32,
+}
+
 impl ChartWindowDto {
     pub(crate) fn from_window(md5: ChartMd5, from_ms: i32, to_ms: i32, w: ChartWindow) -> Self {
         Self {
@@ -237,24 +252,7 @@ impl ChartWindowDto {
             timing: w.timing.into_iter().map(timing_dto).collect(),
             layout: LayoutDto {
                 id: w.layout_id,
-                columns: w
-                    .columns
-                    .into_iter()
-                    .map(|c| ColumnDto {
-                        hand: match c.hand {
-                            ColumnHand::Left => HandDto::Left,
-                            ColumnHand::Right => HandDto::Right,
-                            ColumnHand::Both => HandDto::Both,
-                        },
-                        finger: match c.finger {
-                            ColumnFinger::Pinky => FingerDto::Pinky,
-                            ColumnFinger::Ring => FingerDto::Ring,
-                            ColumnFinger::Middle => FingerDto::Middle,
-                            ColumnFinger::Index => FingerDto::Index,
-                            ColumnFinger::Thumb => FingerDto::Thumb,
-                        },
-                    })
-                    .collect(),
+                columns: w.columns.into_iter().map(column_dto).collect(),
             },
             chart_span: ChartSpanDto {
                 first_ms: w.span.first_ms,
@@ -262,6 +260,23 @@ impl ChartWindowDto {
             },
             audio_filename: w.audio_filename,
         }
+    }
+}
+
+pub(crate) fn column_dto(c: WindowColumn) -> ColumnDto {
+    ColumnDto {
+        hand: match c.hand {
+            ColumnHand::Left => HandDto::Left,
+            ColumnHand::Right => HandDto::Right,
+            ColumnHand::Both => HandDto::Both,
+        },
+        finger: match c.finger {
+            ColumnFinger::Pinky => FingerDto::Pinky,
+            ColumnFinger::Ring => FingerDto::Ring,
+            ColumnFinger::Middle => FingerDto::Middle,
+            ColumnFinger::Index => FingerDto::Index,
+            ColumnFinger::Thumb => FingerDto::Thumb,
+        },
     }
 }
 

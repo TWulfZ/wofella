@@ -108,11 +108,52 @@ pub struct LabelWindowDto {
     pub title: String,
     pub artist: String,
     pub version: String,
+    pub creator: String,
+    /// stable's cached no-mod star rating; `None` until stable has computed it.
+    pub stars: Option<f32>,
     /// `scale:level` of the label that placed the chart in its stratum.
     pub level: Option<String>,
     /// e.g. `dan_07/nps_2`; display only, never persisted.
     pub stratum: String,
     pub played: bool,
+}
+
+/// `anchor` moved to start at `t0Ms`, keeping its length.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MoveWindowRequestDto {
+    pub anchor: AnchorDto,
+    pub t0_ms: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ChartTimelineRequestDto {
+    pub keymode: u8,
+    pub md5: String,
+    pub buckets: u16,
+}
+
+/// A whole chart at a glance: where its notes are and which windows the user labelled.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ChartTimelineDto {
+    /// The first row.
+    pub first_ms: i32,
+    /// One past the last row: the latest a window may end.
+    pub end_ms: i32,
+    /// Notes (taps and LN heads) per equal slice of `[firstMs, endMs)`, earliest first.
+    pub density: Vec<u16>,
+    /// The self profile's labels on this chart that are not undone, by start.
+    pub labelled: Vec<SpanDto>,
+}
+
+/// `[t0Ms, t1Ms)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SpanDto {
+    pub t0_ms: i32,
+    pub t1_ms: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]

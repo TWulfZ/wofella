@@ -37,7 +37,10 @@ use crate::jobs::{ItemError, ItemResult, Job, JobCtx, JobFuture, JobSummary};
 
 pub const CATALOG_STAGE: StageId = StageId::from_static("catalog");
 /// Bump when the catalog rows derived from one osu!.db change (spec 003 "Versioned stages").
-pub const CATALOG_VERSION: u32 = 2;
+pub const CATALOG_VERSION: u32 = 3;
+/// osu!.db lists star ratings per ruleset: osu!, taiko, catch, mania.
+const MANIA_STAR_RATINGS: usize = 3;
+const NO_MODS: i32 = 0;
 const CHART_ARCHIVE_STAGE: StageId = StageId::from_static("chart_archive");
 /// Bump when the rule deciding "this chart cannot be archived" changes.
 const CHART_ARCHIVE_VERSION: u32 = 1;
@@ -181,6 +184,10 @@ fn catalog_row(md5: wolluf_core::ChartMd5, b: &OsuDbBeatmap) -> CatalogChart {
         od: f64::from(b.overall_difficulty),
         hp: f64::from(b.hp_drain),
         length_ms: u32::try_from(b.total_time_ms).unwrap_or(0),
+        stars: b.star_ratings[MANIA_STAR_RATINGS]
+            .iter()
+            .find(|r| r.mods == NO_MODS)
+            .map(|r| r.stars),
     }
 }
 
@@ -1082,6 +1089,32 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(row.status, DerivationStatus::Ok);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn catalog_keeps_stables_no_mod_mania_star_rating() {
+        let (rated, unrated) = (md5_hex(b"rated"), md5_hex(b"unrated"));
+        let db = OsuDbBuilder::new()
+            .beatmap(
+                BeatmapBuilder::mania(&rated, 7)
+                    .star_rating(3, 64, 6.5)
+                    .star_rating(0, 0, 2.0)
+                    .star_rating(3, 0, 4.75)
+                    .build(),
+            )
+            .beatmap(
+                BeatmapBuilder::mania(&unrated, 7)
+                    .star_rating(3, 64, 6.5)
+                    .build(),
+            )
+            .encode();
+        let f = Fixture::new(&FakeInstall::new().osu_db(db)).await;
+        f.sync().await;
+        let stars: BTreeMap<String, Option<f64>> = catalog(&f)
+            .into_iter()
+            .map(|c| (c.md5.to_string(), c.stars))
+            .collect();
+        assert_eq!(stars, [(rated, Some(4.75)), (unrated, None)].into());
     }
 
     #[tokio::test(flavor = "multi_thread")]

@@ -3,8 +3,6 @@
 
 export type ThumbSide = "left" | "right";
 
-export type WindowOp = "widen" | "narrow" | "next" | "prev";
-
 export interface Anchor {
   md5: string;
   t0Ms: number;
@@ -18,7 +16,16 @@ export interface LabelWindow {
   title: string;
   artist: string;
   version: string;
+  creator: string;
+  /** stable's cached no-mod star rating; null until stable has computed it. */
+  stars: number | null;
   level: string | null;
   stratum: string;
   played: boolean;
+}
+
+/** `[t0Ms, t1Ms)` of a chart, without its columns. */
+export interface Span {
+  t0Ms: number;
+  t1Ms: number;
 }

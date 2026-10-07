@@ -6,6 +6,7 @@ use std::path::Path;
 
 use tokio::sync::broadcast::error::RecvError;
 use wolluf_core::{ChartMd5, ErrorCode, Keymode, TimeUs, VersionKey};
+use wolluf_engine::background_name;
 use wolluf_engine::labels::{scale as label_scale, source as label_source};
 use wolluf_engine::profile::Registry;
 use wolluf_engine::render::{RenderOpts, RowMark, render_window};
@@ -13,7 +14,10 @@ use wolluf_engine::rows_blob::decode_rows;
 use wolluf_engine::stage::chart_parse::parse_chart;
 use wolluf_engine::taxonomy;
 use wolluf_engine::window::chart_window;
-use wolluf_source_osu::songs::{SongFileError, read_chart_verified, read_song_file};
+use wolluf_source_osu::song_image::{SongImageError, SongImageLimits, read_song_image};
+use wolluf_source_osu::songs::{
+    ChartReadError, SongFileError, read_chart_verified, read_song_file,
+};
 use wolluf_store::repo::cache::{
     CatalogChart, ChartLabel, LabelFilter, ParsedSummary, SegmentRow, catalog_chart,
     chart_label as label_repo, chart_parsed, segment as segment_repo,
@@ -23,7 +27,7 @@ use wolluf_store::{Conn, DbHandle, StoreError};
 use super::LibraryParams;
 use super::chart_audio::mime_of;
 use super::dto::{
-    ChartAudioDto, ChartDetailDto, ChartLabelDto, ChartWindowDto, HintAgreementDto,
+    ChartAudioDto, ChartDetailDto, ChartImageDto, ChartLabelDto, ChartWindowDto, HintAgreementDto,
     LibraryChartDto, LibraryFilterDto, PatternCountDto, ScaleCountDto, SegmentDto,
 };
 use super::index::{IndexLibraryJob, Keys, Segmenters};
@@ -42,6 +46,8 @@ const UNKNOWN_KEY: &str = "?";
 pub struct ChartRows {
     pub keymode: Keymode,
     pub times: Vec<TimeUs>,
+    /// Notes starting on each row of `times` (taps and LN heads).
+    pub notes: Vec<u8>,
 }
 
 pub struct LibraryService<'a> {
@@ -275,6 +281,57 @@ impl<'a> LibraryService<'a> {
         .await
     }
 
+    /// The chart's `[Events]` background, read only from its own set folder in Songs (ADR 0018,
+    /// ADR 0019). `None` when the chart names none, or the file is missing, not a PNG or JPEG,
+    /// or above the cap: the header then falls back to plain colours.
+    pub async fn chart_background(&self, md5: &str) -> Result<Option<ChartImageDto>, AppError> {
+        let md5 = parse_md5(md5)?;
+        let limits = SongImageLimits {
+            max_bytes: self.params.max_background_bytes,
+            max_dir_entries: self.params.max_background_dir_entries,
+            max_depth: self.params.max_background_depth,
+        };
+        self.blocking(move |dbs, keys| {
+            let (chart, parsed) = dbs.cache.read(|c| {
+                Ok((
+                    catalog_chart::get(c, md5)?,
+                    chart_parsed::exists(c, md5, keys.parse)?,
+                ))
+            })?;
+            let chart = chart.filter(|_| parsed).ok_or_else(|| not_found(md5))?;
+            let install = catalog_install(&dbs.user, &dbs.cache)?.ok_or_else(|| not_found(md5))?;
+            let songs = songs_dir(&install.root_path);
+            let rel = Path::new(&chart.path);
+            // The `.osu` is re-read rather than stored: media never enters the parse key.
+            let osu = match read_chart_verified(&songs, rel, md5) {
+                Ok(bytes) => bytes,
+                Err(ChartReadError::Io { kind }) => {
+                    return Err(AppError::internal(format!("chart {md5}: {kind:?}")));
+                }
+                Err(_) => return Ok(None),
+            };
+            let Some(name) = background_name(&osu) else {
+                return Ok(None);
+            };
+            match read_song_image(&songs, rel, &name, &limits) {
+                Ok(image) => Ok(Some(ChartImageDto {
+                    mime: image.kind.mime().to_owned(),
+                    base64: base64::encode(&image.bytes),
+                    width: image.width,
+                    height: image.height,
+                })),
+                Err(SongImageError::Io { kind }) => {
+                    Err(AppError::internal(format!("background of {md5}: {kind:?}")))
+                }
+                Err(e) => {
+                    tracing::debug!(%md5, error = %e, "no chart background");
+                    Ok(None)
+                }
+            }
+        })
+        .await
+    }
+
     /// The chart's segments under its profile's default layout, in time order; `NOT_FOUND`
     /// unless the chart is parsed.
     pub async fn segments(&self, md5: &str) -> Result<Vec<SegmentDto>, AppError> {
@@ -366,6 +423,11 @@ impl<'a> LibraryService<'a> {
             Ok(ChartRows {
                 keymode: chart.keymode(),
                 times: chart.rows().iter().map(|r| r.t).collect(),
+                notes: chart
+                    .rows()
+                    .iter()
+                    .map(|r| u8::try_from(r.tap.len() + r.ln_head.len()).unwrap_or(u8::MAX))
+                    .collect(),
             })
         })
         .await
@@ -610,6 +672,8 @@ fn chart_dto(
         ln_ratio: parsed.ln_ratio,
         length_ms: parsed.length_ms,
         nps: nps(parsed),
+        // Display only: f32 keeps far more precision than the two decimals shown.
+        stars: chart.stars.map(|s| s as f32),
         labels: labels.into_iter().map(label_dto).collect(),
     }
 }
@@ -1230,7 +1294,10 @@ mod tests {
             );
         }
 
-        let capped = LibraryService::new(&f.ctx).with_params(LibraryParams { max_audio_bytes: 9 });
+        let capped = LibraryService::new(&f.ctx).with_params(LibraryParams {
+            max_audio_bytes: 9,
+            ..LibraryParams::default()
+        });
         let err = capped.chart_audio(&big.md5).await.unwrap_err();
         assert_eq!(err.code, ErrorCode::UnsupportedFormat);
         assert_eq!(err.message_key, keys::CHART_AUDIO_TOO_LARGE);
@@ -1248,6 +1315,105 @@ mod tests {
         );
         assert_eq!(
             svc.chart_audio("../audio.mp3").await.unwrap_err().code,
+            ErrorCode::InvalidInput
+        );
+    }
+
+    /// A chart whose `[Events]` names `background`; the title keeps the md5 unique.
+    fn with_background(title: &str, background: &str) -> Map {
+        let bytes = String::from_utf8(osu_text(7, title, &[(0, 1_000)], &[]))
+            .unwrap()
+            .replace(
+                "[TimingPoints]",
+                &format!("[Events]\n0,0,{background},0,0\n\n[TimingPoints]"),
+            )
+            .into_bytes();
+        Map::new(title, 7, bytes)
+    }
+
+    fn png(width: u32, height: u32) -> Vec<u8> {
+        let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
+        out.extend_from_slice(&13u32.to_be_bytes());
+        out.extend_from_slice(b"IHDR");
+        out.extend_from_slice(&width.to_be_bytes());
+        out.extend_from_slice(&height.to_be_bytes());
+        out.extend_from_slice(&[8, 6, 0, 0, 0]);
+        out
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn chart_background_returns_the_sniffed_image_as_base64() {
+        let quoted = with_background("quoted", "\"BG.png\"").nested_in("Normal");
+        let nested = with_background("nested", "\"assets\\bg.png\"");
+        let maps = [quoted.clone(), nested.clone()];
+        let (f, _) = synced(&maps, &[]).await;
+        f.write(songs_file(&quoted, "bg.PNG"), &png(2, 1));
+        f.write(songs_file(&nested, "Assets/BG.png"), &png(1920, 1080));
+        let svc = f.ctx.library();
+        let image = svc.chart_background(&quoted.md5).await.unwrap().unwrap();
+        assert_eq!(
+            image,
+            ChartImageDto {
+                mime: "image/png".into(),
+                base64: base64::encode(&png(2, 1)),
+                width: 2,
+                height: 1,
+            }
+        );
+        let image = svc.chart_background(&nested.md5).await.unwrap().unwrap();
+        assert_eq!((image.width, image.height), (1920, 1080));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn chart_background_is_none_when_absent_unsupported_or_too_large() {
+        let none = Map::new("none", 7, osu_text(7, "none", &[(0, 1_000)], &[]));
+        let gone = with_background("gone", "bg.png");
+        let climbing = with_background("climbing", "../secret.png");
+        let webp = with_background("webp", "bg.webp");
+        let big = with_background("big", "bg.png");
+        let maps = [
+            none.clone(),
+            gone.clone(),
+            climbing.clone(),
+            webp.clone(),
+            big.clone(),
+        ];
+        let (f, _) = synced(&maps, &[]).await;
+        f.write("Songs/secret.png", &png(1, 1));
+        f.write(
+            songs_file(&webp, "bg.webp"),
+            b"RIFF\x00\x00\x00\x00WEBPVP8 ",
+        );
+        f.write(songs_file(&big, "bg.png"), &png(1, 1));
+        let svc = f.ctx.library();
+        for map in [&none, &gone, &climbing, &webp] {
+            assert_eq!(
+                svc.chart_background(&map.md5).await.unwrap(),
+                None,
+                "{}",
+                map.title
+            );
+        }
+        assert!(svc.chart_background(&big.md5).await.unwrap().is_some());
+        let capped = LibraryService::new(&f.ctx).with_params(LibraryParams {
+            max_background_bytes: 8,
+            ..LibraryParams::default()
+        });
+        assert_eq!(capped.chart_background(&big.md5).await.unwrap(), None);
+        assert_eq!(
+            LibraryParams::default().max_background_bytes,
+            12 * 1024 * 1024,
+            "the shipped cap"
+        );
+        assert_eq!(
+            svc.chart_background(&"0".repeat(32))
+                .await
+                .unwrap_err()
+                .code,
+            ErrorCode::NotFound
+        );
+        assert_eq!(
+            svc.chart_background("../bg.png").await.unwrap_err().code,
             ErrorCode::InvalidInput
         );
     }
@@ -1456,6 +1622,7 @@ mod tests {
                 TimeUs::from_ms(1_500)
             ]
         );
+        assert_eq!(rows.notes, [2, 1, 0], "taps and LN heads, never tails");
         let unknown = f.ctx.library().row_times(ChartMd5([0; 16])).await;
         assert_eq!(unknown.unwrap_err().code, ErrorCode::NotFound);
     }

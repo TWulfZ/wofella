@@ -118,20 +118,25 @@ pub fn chart_window(chart: &Chart, layout: &Layout, from_ms: i32, to_ms: i32) ->
         notes,
         timing,
         layout_id: layout.id().to_owned(),
-        columns: layout
-            .columns()
-            .iter()
-            .map(|&(hand, finger)| WindowColumn {
-                hand: column_hand(hand),
-                finger: column_finger(finger),
-            })
-            .collect(),
+        columns: layout_columns(layout),
         span: ChartSpan {
             first_ms: rows.first().map_or(0, |r| ms_i32(r.t)),
             end_ms: rows.last().map_or(0, |r| ms_i32(r.t)),
         },
         audio_filename: (!audio.is_empty()).then(|| audio.to_owned()),
     }
+}
+
+/// One per column, leftmost first: what a playfield needs of a layout without a chart.
+pub fn layout_columns(layout: &Layout) -> Vec<WindowColumn> {
+    layout
+        .columns()
+        .iter()
+        .map(|&(hand, finger)| WindowColumn {
+            hand: column_hand(hand),
+            finger: column_finger(finger),
+        })
+        .collect()
 }
 
 fn timing_line(t: TimeUs, kind: TimingKind) -> TimingLine {
@@ -336,6 +341,7 @@ mod tests {
         let w = chart_window(&sample(), &left, 0, 1);
         assert_eq!(w.layout_id, "k7.313_left_thumb");
         assert_eq!(w.columns[3].hand, ColumnHand::Left);
+        assert_eq!(layout_columns(&left), w.columns);
     }
 
     #[test]

@@ -10,3 +10,11 @@ export function formatClock(ms: number): string {
   const millis = abs % MS_PER_SECOND;
   return `${sign}${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(millis).padStart(3, "0")}`;
 }
+
+/** `mm:ss`, for the coarse positions of the chart timeline. */
+export function formatMinSec(ms: number): string {
+  const abs = Math.abs(Math.trunc(ms));
+  const minutes = Math.floor(abs / MS_PER_MINUTE);
+  const seconds = Math.floor(abs / MS_PER_SECOND) % 60;
+  return `${ms < 0 ? "-" : ""}${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}

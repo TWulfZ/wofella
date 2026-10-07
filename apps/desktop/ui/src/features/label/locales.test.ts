@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { localeFiles } from "@/shared/i18n/resources";
 
 // The labeling service emits these as message keys, so a missing one would show the raw key.
-const SERVICE_ERROR_KEYS = ["unknown_pattern", "window_too_short"] as const;
+const SERVICE_ERROR_KEYS = ["unknown_pattern"] as const;
 
 describe("label locale files", () => {
   it.each(["en", "es"] as const)("word the labeling service errors in %s", (language) => {

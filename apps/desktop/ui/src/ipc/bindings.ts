@@ -35,13 +35,15 @@ export const commands = {
 	title: string,
 	artist: string,
 	version: string,
+	creator: string,
+	/**  stable's cached no-mod star rating; `None` until stable has computed it. */
+	stars: number | null,
 	/**  `scale:level` of the label that placed the chart in its stratum. */
 	level: string | null,
 	/**  e.g. `dan_07/nps_2`; display only, never persisted. */
 	stratum: string,
 	played: boolean,
 } | null, IpcError>(__TAURI_INVOKE("label_sample", { req })),
-	labelReshape: (anchor: AnchorDto, op: WindowOpDto) => typedError<AnchorDto, IpcError>(__TAURI_INVOKE("label_reshape", { anchor, op })),
 	labelSubmit: (req: LabelSubmitDto) => typedError<LabelEventDto, IpcError>(__TAURI_INVOKE("label_submit", { req })),
 	labelUndo: (eventId: string) => typedError<null, IpcError>(__TAURI_INVOKE("label_undo", { eventId })),
 	labelStats: () => typedError<LabelStatsDto, IpcError>(__TAURI_INVOKE("label_stats")),
@@ -51,8 +53,11 @@ export const commands = {
 	skinList: () => typedError<SkinListDto, IpcError>(__TAURI_INVOKE("skin_list")),
 	/**  One skin's `[Mania]` block and images for `keymode`; the webview sends only the folder name. */
 	skinGet: (folder: string, keymode: number) => typedError<SkinDto, IpcError>(__TAURI_INVOKE("skin_get", { folder, keymode })),
-	/**  One synthetic preview per pattern of the keymode, in taxonomy order. */
-	labelPatternExamples: (keymode: number) => typedError<PatternExampleDto[], IpcError>(__TAURI_INVOKE("label_pattern_examples", { keymode })),
+	/**
+	 *  One synthetic preview per pattern of the keymode, in taxonomy order. `layout_id` `None` draws
+	 *  with the stored preference.
+	 */
+	labelPatternExamples: (keymode: number, layoutId: string | null) => typedError<PatternExampleDto[], IpcError>(__TAURI_INVOKE("label_pattern_examples", { keymode, layoutId })),
 	/**
 	 *  A free window inside the given chart; `NOT_FOUND` for a chart the catalog has not parsed,
 	 *  `CONFLICT` when none of its windows is free.
@@ -64,6 +69,9 @@ export const commands = {
 	title: string,
 	artist: string,
 	version: string,
+	creator: string,
+	/**  stable's cached no-mod star rating; `None` until stable has computed it. */
+	stars: number | null,
 	/**  `scale:level` of the label that placed the chart in its stratum. */
 	level: string | null,
 	/**  e.g. `dan_07/nps_2`; display only, never persisted. */
@@ -75,6 +83,25 @@ export const commands = {
 	window: LabelWindowDto,
 	source: NowPlayingSourceDto,
 } | null, IpcError>(__TAURI_INVOKE("label_now_playing", { req })),
+	/**  The window moved to start at `t0Ms`, same length, kept inside the chart. */
+	labelMoveWindow: (req: MoveWindowRequestDto) => typedError<AnchorDto, IpcError>(__TAURI_INVOKE("label_move_window", { req })),
+	/**  Note density over the whole chart and the user's labelled windows on it. */
+	labelChartTimeline: (req: ChartTimelineRequestDto) => typedError<ChartTimelineDto, IpcError>(__TAURI_INVOKE("label_chart_timeline", { req })),
+	/**  The chart's `[Events]` background; `None` when it names none or the file cannot be shown. */
+	chartBackground: (md5: string) => typedError<{
+	/**  `image/png` or `image/jpeg`. */
+	mime: string,
+	/**  RFC 4648 with padding. */
+	base64: string,
+	width: number,
+	height: number,
+} | null, IpcError>(__TAURI_INVOKE("chart_background", { md5 })),
+	/**  The keymode's column layout presets, the profile's default first. */
+	settingsHandLayouts: (keymode: number) => typedError<HandLayoutDto[], IpcError>(__TAURI_INVOKE("settings_hand_layouts", { keymode })),
+	/**  The chosen layout preset id, else the profile's default. */
+	settingsGetHandLayout: (keymode: number) => typedError<string, IpcError>(__TAURI_INVOKE("settings_get_hand_layout", { keymode })),
+	/**  `INVALID_INPUT` unless `layoutId` is a preset of the keymode. */
+	settingsSetHandLayout: (keymode: number, layoutId: string) => typedError<null, IpcError>(__TAURI_INVOKE("settings_set_hand_layout", { keymode, layoutId })),
 };
 
 /** Events */
@@ -141,10 +168,41 @@ export type ChartAudioDto = {
 	base64: string,
 };
 
+/**
+ *  The chart's `[Events]` background from its set folder, for the webview to show as a `data:`
+ *  URL; the bytes decided the type and size.
+ */
+export type ChartImageDto = {
+	/**  `image/png` or `image/jpeg`. */
+	mime: string,
+	/**  RFC 4648 with padding. */
+	base64: string,
+	width: number,
+	height: number,
+};
+
 /**  The first and the last row of the chart (LN tails included); `0, 0` without rows. */
 export type ChartSpanDto = {
 	firstMs: number,
 	endMs: number,
+};
+
+/**  A whole chart at a glance: where its notes are and which windows the user labelled. */
+export type ChartTimelineDto = {
+	/**  The first row. */
+	firstMs: number,
+	/**  One past the last row: the latest a window may end. */
+	endMs: number,
+	/**  Notes (taps and LN heads) per equal slice of `[firstMs, endMs)`, earliest first. */
+	density: number[],
+	/**  The self profile's labels on this chart that are not undone, by start. */
+	labelled: SpanDto[],
+};
+
+export type ChartTimelineRequestDto = {
+	keymode: number,
+	md5: string,
+	buckets: number,
 };
 
 /**  What a playfield draws for `[fromMs, toMs]` of one chart. No segments: labelling is blind. */
@@ -205,6 +263,13 @@ export type FingerDto = "pinky" | "ring" | "middle" | "index" | "thumb";
 export type HandDto = "left" | "right" | 
 /**  Either thumb may take it. */
 "both";
+
+/**  A column layout preset: which hand and finger press each column. */
+export type HandLayoutDto = {
+	id: string,
+	/**  One per column, leftmost first. */
+	columns: ColumnDto[],
+};
 
 /**
  *  IndexLibrary counters. `failedItems` keeps the name every summary shares, which the job
@@ -355,6 +420,9 @@ export type LabelWindowDto = {
 	title: string,
 	artist: string,
 	version: string,
+	creator: string,
+	/**  stable's cached no-mod star rating; `None` until stable has computed it. */
+	stars: number | null,
 	/**  `scale:level` of the label that placed the chart in its stratum. */
 	level: string | null,
 	/**  e.g. `dan_07/nps_2`; display only, never persisted. */
@@ -410,6 +478,12 @@ export type MatchKindDto = "equal" | "prefix";
 export type MatchSourceDto = "cfg_username" | "linked_account";
 
 export type MergeModeDto = "merged" | "separate";
+
+/**  `anchor` moved to start at `t0Ms`, keeping its length. */
+export type MoveWindowRequestDto = {
+	anchor: AnchorDto,
+	t0Ms: number,
+};
 
 /**  lazer's values; the wiki's 0/1/2 disagree and are unverified (research 06). */
 export type NoteBodyStyleDto = "stretch" | "repeat_top" | "repeat_bottom" | "repeat_top_and_bottom";
@@ -579,6 +653,12 @@ export type SkinListDto = {
 	maniaSpeedBpmScale: boolean | null,
 };
 
+/**  `[t0Ms, t1Ms)`. */
+export type SpanDto = {
+	t0Ms: number,
+	t1Ms: number,
+};
+
 export type SyncPlaysStartDto = {
 	installId: number,
 };
@@ -628,8 +708,6 @@ export type WindowAtRequestDto = {
 	windowMs: number | null,
 	exclude: AnchorDto[],
 };
-
-export type WindowOpDto = "widen" | "narrow" | "next" | "prev";
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {

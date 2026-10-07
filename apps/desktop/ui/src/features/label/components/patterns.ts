@@ -34,3 +34,28 @@ export function matchesSearch(pattern: PatternDefDto, needle: string): boolean {
     field.toLowerCase().includes(needle),
   );
 }
+
+export interface FamilyGroup {
+  /** `regular` (RICE) or `ln` for 7K; any other family keeps its own section. */
+  family: string;
+  axes: AxisGroup[];
+}
+
+/** `7k.ln.release` → `ln`: RICE and LN are master sections whatever the keymode. */
+export function axisFamily(axis: string): string {
+  return axis.split(".")[1] ?? axis;
+}
+
+export function groupByFamily(groups: readonly AxisGroup[]): FamilyGroup[] {
+  const families: FamilyGroup[] = [];
+  for (const group of groups) {
+    const family = axisFamily(group.axis);
+    const existing = families.find((f) => f.family === family);
+    if (existing === undefined) {
+      families.push({ family, axes: [group] });
+    } else {
+      existing.axes.push(group);
+    }
+  }
+  return families;
+}

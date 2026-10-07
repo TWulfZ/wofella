@@ -137,7 +137,7 @@ describe("SectionPlayer", () => {
     ]);
   });
 
-  it("keeps the decoded buffer across a reshape of the same chart and restarts the loop playing", async () => {
+  it("keeps the decoded buffer across a window move within the same chart and restarts the loop playing", async () => {
     const { player, contexts, decodes } = harness();
     player.setSection("a", DATA, LOOP);
     player.play();

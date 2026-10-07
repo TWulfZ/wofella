@@ -294,14 +294,6 @@ mod commands_smoke {
 
         let anchor =
             json!({ "md5": CHART_MD5, "t0Ms": 0, "t1Ms": 2_000, "cols": [1, 2, 3, 4, 5, 6, 7] });
-        let next = h
-            .invoke("label_reshape", json!({ "anchor": anchor, "op": "next" }))
-            .unwrap();
-        assert_eq!(
-            (next["t0Ms"].clone(), next["t1Ms"].clone()),
-            (json!(1_000), json!(3_000))
-        );
-
         let event = h
             .invoke(
                 "label_submit",
@@ -327,6 +319,90 @@ mod commands_smoke {
             .invoke("label_undo", json!({ "eventId": "not a ulid" }))
             .unwrap_err();
         assert_eq!(err["code"], json!("INVALID_INPUT"), "{err}");
+    }
+
+    #[test]
+    fn label_polish_commands_answer() {
+        let h = synced();
+        let anchor = json!({ "md5": CHART_MD5, "t0Ms": 0, "t1Ms": 2_000, "cols": [1, 2, 3] });
+        let moved = h
+            .invoke(
+                "label_move_window",
+                json!({ "req": { "anchor": anchor, "t0Ms": 4_000 } }),
+            )
+            .unwrap();
+        assert_eq!(
+            moved,
+            json!({ "md5": CHART_MD5, "t0Ms": 2_501, "t1Ms": 4_501, "cols": [1, 2, 3, 4, 5, 6, 7] })
+        );
+        let timeline = h
+            .invoke(
+                "label_chart_timeline",
+                json!({ "req": { "keymode": 7, "md5": CHART_MD5, "buckets": 2 } }),
+            )
+            .unwrap();
+        assert_eq!(
+            timeline,
+            json!({ "firstMs": 0, "endMs": 4_501, "density": [19, 14], "labelled": [] })
+        );
+        let sampled = h
+            .invoke(
+                "label_sample",
+                json!({ "req": {
+                    "keymode": 7, "seed": "1", "round": 0, "windowMs": 2_000, "scale": null,
+                    "levelMin": null, "levelMax": null, "exclude": [],
+                } }),
+            )
+            .unwrap();
+        assert!(sampled["creator"].is_string(), "{sampled}");
+        assert!(
+            sampled.as_object().unwrap().contains_key("stars"),
+            "{sampled}"
+        );
+        assert_eq!(
+            h.invoke("chart_background", json!({ "md5": CHART_MD5 }))
+                .unwrap(),
+            Value::Null,
+            "the chart names no background"
+        );
+
+        let layouts = h
+            .invoke("settings_hand_layouts", json!({ "keymode": 7 }))
+            .unwrap();
+        assert_eq!(layouts.as_array().unwrap().len(), 5, "{layouts}");
+        assert_eq!(layouts[0]["id"], json!("k7.313_right_thumb"));
+        assert_eq!(
+            layouts[0]["columns"][3],
+            json!({ "hand": "right", "finger": "thumb" })
+        );
+        let get = |h: &Harness| {
+            h.invoke("settings_get_hand_layout", json!({ "keymode": 7 }))
+                .unwrap()
+        };
+        assert_eq!(get(&h), json!("k7.313_right_thumb"));
+        h.invoke(
+            "settings_set_hand_layout",
+            json!({ "keymode": 7, "layoutId": "k7.313_left_thumb" }),
+        )
+        .unwrap();
+        assert_eq!(get(&h), json!("k7.313_left_thumb"));
+        let err = h
+            .invoke(
+                "settings_set_hand_layout",
+                json!({ "keymode": 7, "layoutId": "nope" }),
+            )
+            .unwrap_err();
+        assert_eq!(err["code"], json!("INVALID_INPUT"), "{err}");
+        let examples = h
+            .invoke(
+                "label_pattern_examples",
+                json!({ "keymode": 7, "layoutId": null }),
+            )
+            .unwrap();
+        assert_eq!(
+            examples[0]["window"]["layout"]["id"],
+            json!("k7.313_left_thumb")
+        );
     }
 
     #[test]

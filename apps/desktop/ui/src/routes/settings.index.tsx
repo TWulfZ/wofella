@@ -2,6 +2,7 @@ import { useMutation, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Settings as SettingsIcon, UserRound } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { HandLayoutCard } from "@/features/preferences";
 import { setupStatusQuery } from "@/features/setup";
 import { commands } from "@/ipc/bindings";
 import { call } from "@/ipc/client";
@@ -35,7 +36,7 @@ function SettingsPage() {
   return (
     <>
       <PageHeader icon={SettingsIcon} title={t("settings.title")} description={t("settings.subtitle")} />
-      <div className="mx-auto w-full max-w-5xl px-6 py-6">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-6">
         <Card className="py-0">
           <CardContent>
             <dl className="divide-y">
@@ -100,6 +101,8 @@ function SettingsPage() {
             </dl>
           </CardContent>
         </Card>
+        {/* The MVP keymode; 4K adds its own card once its profile has layout presets. */}
+        <HandLayoutCard keymode={7} />
       </div>
     </>
   );

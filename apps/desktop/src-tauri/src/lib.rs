@@ -58,7 +58,6 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::chart::chart_window,
             commands::label::label_taxonomy,
             commands::label::label_sample,
-            commands::label::label_reshape,
             commands::label::label_submit,
             commands::label::label_undo,
             commands::label::label_stats,
@@ -69,6 +68,12 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::label::label_window_at,
             commands::label::label_random,
             commands::label::label_now_playing,
+            commands::label::label_move_window,
+            commands::label::label_chart_timeline,
+            commands::chart::chart_background,
+            commands::settings::settings_hand_layouts,
+            commands::settings::settings_get_hand_layout,
+            commands::settings::settings_set_hand_layout,
         ])
 }
 

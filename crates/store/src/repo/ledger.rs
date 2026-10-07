@@ -738,6 +738,26 @@ pub mod settings {
         )?;
         Ok(())
     }
+
+    /// The layout preset id chosen for a keymode; ids are validated by the caller, which owns
+    /// the presets.
+    pub fn hand_layout(conn: Conn<'_>, keymode: u8) -> Result<Option<String>, StoreError> {
+        let key = hand_layout_key(keymode);
+        match get(conn, &key)? {
+            None => Ok(None),
+            Some(serde_json::Value::String(id)) => Ok(Some(id)),
+            Some(other) => Err(StoreError::InvalidData(format!("{key} = {other}"))),
+        }
+    }
+
+    pub fn set_hand_layout(tx: &Tx<'_>, keymode: u8, layout_id: &str) -> Result<(), StoreError> {
+        set(tx, &hand_layout_key(keymode), &serde_json::json!(layout_id))
+    }
+
+    /// Persisted: never renamed.
+    fn hand_layout_key(keymode: u8) -> String {
+        format!("playfield.hand_layout.{keymode}k")
+    }
 }
 
 pub mod meta {
@@ -1276,6 +1296,32 @@ pub(crate) mod tests {
         meta::set(&tx, "k", "v1").unwrap();
         meta::set(&tx, "k", "v2").unwrap();
         assert_eq!(meta::get(tx.conn(), "k").unwrap().as_deref(), Some("v2"));
+    }
+
+    #[test]
+    fn hand_layout_setting_is_kept_per_keymode() {
+        let mut conn = migrated();
+        let tx = tx(&mut conn);
+        assert_eq!(settings::hand_layout(tx.conn(), 7).unwrap(), None);
+        settings::set_hand_layout(&tx, 7, "k7.313_left_thumb").unwrap();
+        settings::set_hand_layout(&tx, 4, "k4.generic").unwrap();
+        assert_eq!(
+            settings::hand_layout(tx.conn(), 7).unwrap().as_deref(),
+            Some("k7.313_left_thumb")
+        );
+        assert_eq!(
+            settings::get(tx.conn(), "playfield.hand_layout.7k").unwrap(),
+            Some(serde_json::json!("k7.313_left_thumb"))
+        );
+        settings::set(&tx, "playfield.hand_layout.7k", &serde_json::json!(3)).unwrap();
+        assert!(matches!(
+            settings::hand_layout(tx.conn(), 7),
+            Err(StoreError::InvalidData(_))
+        ));
+        assert_eq!(
+            settings::hand_layout(tx.conn(), 4).unwrap().as_deref(),
+            Some("k4.generic")
+        );
     }
 
     #[test]

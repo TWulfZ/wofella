@@ -23,6 +23,7 @@ use crate::features::labeling::LabelingService;
 use crate::features::library::LibraryService;
 use crate::features::players::PlayersService;
 use crate::features::plays::PlaysService;
+use crate::features::settings::SettingsService;
 use crate::features::setup::SetupService;
 use crate::features::skins::SkinsService;
 use crate::jobs::{JobRunner, JobService};
@@ -365,6 +366,10 @@ impl AppContext {
 
     pub fn skins(&self) -> SkinsService<'_> {
         SkinsService::new(self)
+    }
+
+    pub fn settings(&self) -> SettingsService<'_> {
+        SettingsService::new(self)
     }
 
     /// Reads the system environment (and `reg.exe` on WSL) at each call; shells that need a

@@ -12,6 +12,25 @@
     "openLogs": "Abrir carpeta de logs",
     "version": "Versión",
     "identity": "Identidad",
-    "identityLink": "Elige qué nombres son tuyos"
+    "identityLink": "Elige qué nombres son tuyos",
+    "handLayout": {
+      "title": "Distribución de manos ({{keymode}}K)",
+      "description": "Qué mano pulsa cada columna. Las vistas previas de patrones y el playfield dibujan la separación de manos a partir de ella.",
+      "saved": "Guardado",
+      "legend": {
+        "left": "Mano izquierda",
+        "right": "Mano derecha",
+        "both": "Cualquier mano",
+        "thumb": "Pulgar",
+        "split": "Separación de manos"
+      },
+      "presets": {
+        "k7_313_right_thumb": "3 | 1+3 (pulgar derecho)",
+        "k7_313_left_thumb": "3+1 | 3 (pulgar izquierdo)",
+        "k7_43": "4 | 3",
+        "k7_34": "3 | 4",
+        "k7_both_thumbs": "3 | 1 | 3 (cualquier pulgar)"
+      }
+    }
   }
 }

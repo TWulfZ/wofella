@@ -5,5 +5,6 @@ pub mod labeling;
 pub mod library;
 pub mod players;
 pub mod plays;
+pub mod settings;
 pub mod setup;
 pub mod skins;

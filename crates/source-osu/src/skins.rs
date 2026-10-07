@@ -339,13 +339,13 @@ fn dir_error(e: io::Error) -> SkinError {
 }
 
 #[derive(Debug, Clone)]
-struct Entry {
+pub(crate) struct Entry {
     name: String,
     lower: String,
 }
 
 /// Sorted so that resolution does not depend on the file system's listing order.
-fn list_dir(dir: &Path, cap: usize) -> io::Result<(Vec<Entry>, bool)> {
+pub(crate) fn list_dir(dir: &Path, cap: usize) -> io::Result<(Vec<Entry>, bool)> {
     let mut entries = Vec::new();
     let mut truncated = false;
     for (n, entry) in fs::read_dir(dir)?.enumerate() {
@@ -367,7 +367,7 @@ fn list_dir(dir: &Path, cap: usize) -> io::Result<(Vec<Entry>, bool)> {
 
 /// File names compare case-insensitively as on NTFS; on a case-sensitive file system the exact
 /// spelling wins over other spellings.
-fn matching<'a>(entries: &'a [Entry], wanted: &str) -> Vec<&'a str> {
+pub(crate) fn matching<'a>(entries: &'a [Entry], wanted: &str) -> Vec<&'a str> {
     let lower = wanted.to_lowercase();
     let exact = entries.iter().filter(|e| e.name == wanted);
     let folded = entries
@@ -655,7 +655,7 @@ impl<'p> Resolver<'p> {
 
 /// The webview decodes only PNG and JPEG here, while stable also loads other formats saved under
 /// a `.png` name (the pilot has 22.7 MB TIFF LN bodies), so the bytes decide, not the extension.
-fn sniff(bytes: &[u8]) -> Result<(ImageKind, u32, u32), SkinDiagCode> {
+pub(crate) fn sniff(bytes: &[u8]) -> Result<(ImageKind, u32, u32), SkinDiagCode> {
     let (kind, size) = if bytes.starts_with(PNG_SIGNATURE) {
         (ImageKind::Png, png_size(bytes))
     } else if bytes.starts_with(JPEG_SOI) {

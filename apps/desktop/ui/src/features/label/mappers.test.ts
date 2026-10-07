@@ -67,6 +67,8 @@ describe("toLabelWindow", () => {
       title: "Title",
       artist: "Artist",
       version: "Insane",
+      creator: "Mapper",
+      stars: 4.52,
       level: "dan:7",
       stratum: "dan_07/nps_2",
       played: true,

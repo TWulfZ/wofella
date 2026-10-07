@@ -5,6 +5,7 @@ pub mod chart;
 pub mod jobs;
 pub mod label;
 pub mod players;
+pub mod settings;
 pub mod setup;
 pub mod skin;
 
