@@ -45,13 +45,14 @@
       "undo": "Deshacer",
       "open": "Abrir en la pantalla Etiquetar",
       "playedAt": "Jugado {{when}}",
-      "stars": "{{stars}} estrellas",
       "toLabel": "Por etiquetar",
       "labelledGroup": "Etiquetados",
       "playCount": "×{{count}}",
       "timesPlayed_one": "Jugado una vez",
       "timesPlayed_other": "Jugado {{count}} veces",
-      "noTaxonomy": "No se pudo cargar la lista de patrones, así que aquí no se pueden etiquetar mapas."
+      "noTaxonomy": "No se pudo cargar la lista de patrones, así que aquí no se pueden etiquetar mapas.",
+      "pickerTitle": "Patrón dominante de {{title}}",
+      "pickerDescription": "Elige el patrón del que están hechas sus partes densas. Busca por nombre, o acota con rice, ln o un eje como tech."
     },
     "ranking": {
       "title": "Clasificación",

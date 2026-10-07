@@ -297,6 +297,29 @@ describe("PatternGrid search", () => {
     expect(cardNames()).toEqual(expected);
   });
 
+  it.each([
+    ["a family", "ln", ["7k.ln.release"], ["sr stair release"]],
+    ["a family in Spanish words", "notas largas", ["7k.ln.release"], ["sr stair release"]],
+    ["a family and an axis", "rice jack", ["7k.regular.jack"], ["mj minijack", "lj longjack"]],
+    ["an axis and a word", "stream jump", ["7k.regular.stream"], ["js jumpstream"]],
+  ])("opens only the axes of %s", async (_, query, axes, cards) => {
+    const { user } = renderGrid();
+
+    await user.type(search(), query);
+
+    expect(expandedAxes()).toEqual(axes);
+    expect(cardNames()).toEqual(cards);
+  });
+
+  it("shows the empty state for a family and an axis that never meet", async () => {
+    const { user } = renderGrid();
+
+    await user.type(search(), "ln jack");
+
+    expect(cardNames()).toEqual([]);
+    expect(screen.getByText("No pattern matches “ln jack”")).toBeInTheDocument();
+  });
+
   it("hides the axes and the master sections without a match", async () => {
     const { user } = renderGrid();
 

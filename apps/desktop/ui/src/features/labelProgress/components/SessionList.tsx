@@ -1,9 +1,16 @@
-import type { UseQueryResult } from "@tanstack/react-query";
+import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Check, ExternalLink, Star, Undo2 } from "lucide-react";
+import { Check, ExternalLink, Undo2 } from "lucide-react";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { HoldButton, PatternPicker, patternName } from "@/features/label";
+import {
+  backgroundDataUrl,
+  chartBackgroundQuery,
+  HoldButton,
+  PatternGridPicker,
+  patternName,
+  StarRating,
+} from "@/features/label";
 import type { PatternDefDto, SessionPlayDto, SessionPlaysDto } from "@/ipc/bindings";
 import { useErrorText } from "@/ipc/errorText";
 import { formatDateTime, formatRelative } from "@/shared/format";
@@ -13,7 +20,13 @@ import { Button, buttonVariants } from "@/shared/ui/button";
 import { sessionCountsText } from "../countText";
 import { type SessionMap, sessionMapCounts, sessionMaps } from "../model";
 import { useSessionLabelMutations } from "../queries";
+import { useNearViewport } from "../useNearViewport";
 import { QueryAlert } from "./QueryAlert";
+
+export interface SessionThumbnailParams {
+  /** How far outside the viewport a row starts loading its image, so it is there by the time it scrolls in. */
+  rootMargin: string;
+}
 
 /** The answer being built: one taxonomy pattern or "no clear pattern" (ADR 0020), never a set. */
 type Draft = { kind: "pattern"; id: string } | { kind: "none" } | null;
@@ -24,13 +37,42 @@ interface SessionRowProps {
   taxonomy: readonly PatternDefDto[];
   holdMs: number;
   nowMs: number;
+  thumbnail: SessionThumbnailParams;
+}
+
+function MapThumbnail({ md5, params }: { md5: string; params: SessionThumbnailParams }) {
+  const [ref, near] = useNearViewport<HTMLDivElement>(params.rootMargin);
+  const background = useQuery(chartBackgroundQuery(near ? md5 : null));
+  const src = backgroundDataUrl(background.data);
+  // Fixed box, so the image arriving or failing moves nothing.
+  return (
+    <div
+      ref={ref}
+      aria-hidden
+      data-testid="session-thumb"
+      className="ring-border relative h-14 w-24 shrink-0 overflow-hidden rounded-md ring-1"
+    >
+      {src === null ? (
+        <div data-testid="session-thumb-fallback" className="from-osu-pink/35 via-osu-purple/25 to-osu-blue/35 size-full bg-linear-to-br" />
+      ) : (
+        <img
+          data-testid="session-thumb-image"
+          src={src}
+          alt=""
+          draggable={false}
+          decoding="async"
+          className="size-full object-cover motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200"
+        />
+      )}
+    </div>
+  );
 }
 
 function answerText(pattern: string | null, noPatternText: string): string {
   return pattern === null ? noPatternText : patternName(pattern);
 }
 
-function SessionRow({ map, keymode, taxonomy, holdMs, nowMs }: SessionRowProps) {
+function SessionRow({ map, keymode, taxonomy, holdMs, nowMs, thumbnail }: SessionRowProps) {
   const play: SessionPlayDto = map.newest;
   const { t, i18n } = useTranslation();
   const errorText = useErrorText();
@@ -68,121 +110,117 @@ function SessionRow({ map, keymode, taxonomy, holdMs, nowMs }: SessionRowProps) 
     }
   };
 
-  const shownPattern = draft?.kind === "pattern" ? draft.id : null;
+  // Untouched, the row shows its saved answer, so reopening the picker starts from it.
+  const shownPattern = draft === null ? (play.label?.pattern ?? null) : draft.kind === "pattern" ? draft.id : null;
   const choiceText = shownPattern === null ? t("labelProgress.session.choose") : patternName(shownPattern);
   return (
-    <li aria-labelledby={titleId} className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0">
-      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-        <span id={titleId} className="min-w-0 truncate font-medium">
-          {play.title}
-        </span>
-        <Badge variant="secondary" className="max-w-48 truncate">
-          {play.version}
-        </Badge>
-        {play.stars !== null && (
-          <span
-            aria-label={t("labelProgress.session.stars", { stars: play.stars.toFixed(2) })}
-            role="img"
-            className="text-osu-yellow inline-flex items-center gap-1 text-xs font-semibold tabular-nums"
-          >
-            <Star aria-hidden="true" className="size-3 fill-current" />
-            <span aria-hidden="true">{play.stars.toFixed(2)}</span>
+    <li aria-labelledby={titleId} className="flex gap-3 py-3 first:pt-0 last:pb-0">
+      <MapThumbnail md5={play.md5} params={thumbnail} />
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <span id={titleId} className="min-w-0 truncate font-medium">
+            {play.title}
           </span>
-        )}
-        {map.playCount > 1 && (
-          <span className="text-muted-foreground text-xs font-semibold tabular-nums">
-            <span aria-hidden="true">{t("labelProgress.session.playCount", { count: map.playCount })}</span>
-            <span className="sr-only">{t("labelProgress.session.timesPlayed", { count: map.playCount })}</span>
-          </span>
-        )}
-        <time dateTime={play.playedAt} title={formatDateTime(play.playedAt, i18n.language)} className="text-muted-foreground text-xs">
-          {t("labelProgress.session.playedAt", { when: formatRelative(play.playedAt, nowMs, i18n.language) })}
-        </time>
-        <span className="ml-auto">
-          {play.label === null ? (
-            <Badge variant="outline" className="border-osu-yellow/40 text-osu-yellow">
-              {t("labelProgress.session.pending")}
-            </Badge>
-          ) : (
-            <Badge variant="default" className="capitalize">
-              <Check aria-hidden="true" />
-              {answerText(play.label.pattern, noPatternText)}
-            </Badge>
+          <Badge variant="secondary" className="max-w-48 truncate">
+            {play.version}
+          </Badge>
+          {play.stars !== null && <StarRating stars={play.stars} />}
+          {map.playCount > 1 && (
+            <span className="text-muted-foreground text-xs font-semibold tabular-nums">
+              <span aria-hidden="true">{t("labelProgress.session.playCount", { count: map.playCount })}</span>
+              <span className="sr-only">{t("labelProgress.session.timesPlayed", { count: map.playCount })}</span>
+            </span>
           )}
-        </span>
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <PatternPicker
-          taxonomy={taxonomy}
-          single
-          side="bottom"
-          disabled={busy || taxonomy.length === 0}
-          isChosen={(pattern) => pattern.id === shownPattern}
-          onPick={(pattern) => {
-            setDraft({ kind: "pattern", id: pattern.id });
-          }}
-          trigger={{
-            // The visible choice is part of the name (WCAG 2.5.3), so it is heard and can be spoken to.
-            label: t("labelProgress.session.chooseFor", { title: play.title, choice: choiceText }),
-            text: shownPattern === null ? choiceText : <span className="capitalize">{choiceText}</span>,
-          }}
-        />
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          aria-pressed={draft?.kind === "none"}
-          aria-describedby={titleId}
-          disabled={busy}
-          onClick={() => {
-            setDraft((current) => (current?.kind === "none" ? null : { kind: "none" }));
-          }}
-          className="aria-pressed:border-primary aria-pressed:bg-primary/15 aria-pressed:text-primary"
-        >
-          {noPatternText}
-        </Button>
-        <HoldButton
-          label={t("labelProgress.session.save")}
-          icon={<Check aria-hidden="true" />}
-          holdMs={holdMs}
-          describedBy={titleId}
-          disabled={draft === null || busy}
-          onConfirm={() => {
-            void save();
-          }}
-        />
-        {play.label !== null && (
+          <time dateTime={play.playedAt} title={formatDateTime(play.playedAt, i18n.language)} className="text-muted-foreground text-xs">
+            {t("labelProgress.session.playedAt", { when: formatRelative(play.playedAt, nowMs, i18n.language) })}
+          </time>
+          <span className="ml-auto">
+            {play.label === null ? (
+              <Badge variant="outline" className="border-osu-yellow/40 text-osu-yellow">
+                {t("labelProgress.session.pending")}
+              </Badge>
+            ) : (
+              <Badge variant="default" className="capitalize">
+                <Check aria-hidden="true" />
+                {answerText(play.label.pattern, noPatternText)}
+              </Badge>
+            )}
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <PatternGridPicker
+            keymode={keymode}
+            taxonomy={taxonomy}
+            disabled={busy || taxonomy.length === 0}
+            chosen={shownPattern}
+            onChoose={(pattern) => {
+              setDraft({ kind: "pattern", id: pattern.id });
+            }}
+            title={t("labelProgress.session.pickerTitle", { title: play.title })}
+            description={t("labelProgress.session.pickerDescription")}
+            trigger={{
+              // The visible choice is part of the name (WCAG 2.5.3), so it is heard and can be spoken to.
+              label: t("labelProgress.session.chooseFor", { title: play.title, choice: choiceText }),
+              text: shownPattern === null ? choiceText : <span className="capitalize">{choiceText}</span>,
+            }}
+          />
           <Button
             type="button"
-            variant="ghost"
+            variant="outline"
             size="sm"
-            disabled={busy}
+            aria-pressed={draft?.kind === "none"}
             aria-describedby={titleId}
+            disabled={busy}
             onClick={() => {
-              if (play.label !== null) {
-                void runUndo(play.label.eventId);
-              }
+              setDraft((current) => (current?.kind === "none" ? null : { kind: "none" }));
             }}
+            className="aria-pressed:border-primary aria-pressed:bg-primary/15 aria-pressed:text-primary"
           >
-            <Undo2 aria-hidden="true" />
-            {t("labelProgress.session.undo")}
+            {noPatternText}
           </Button>
+          <HoldButton
+            label={t("labelProgress.session.save")}
+            icon={<Check aria-hidden="true" />}
+            holdMs={holdMs}
+            describedBy={titleId}
+            disabled={draft === null || busy}
+            onConfirm={() => {
+              void save();
+            }}
+          />
+          {play.label !== null && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              aria-describedby={titleId}
+              onClick={() => {
+                if (play.label !== null) {
+                  void runUndo(play.label.eventId);
+                }
+              }}
+            >
+              <Undo2 aria-hidden="true" />
+              {t("labelProgress.session.undo")}
+            </Button>
+          )}
+          <Link
+            to="/label"
+            search={(prev) => ({ ...prev, chart: play.md5 })}
+            aria-describedby={titleId}
+            className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "ml-auto")}
+          >
+            <ExternalLink aria-hidden="true" />
+            {t("labelProgress.session.open")}
+          </Link>
+        </div>
+        {error !== null && (
+          <p role="alert" className="text-destructive text-sm">
+            {error}
+          </p>
         )}
-        <Link
-          to="/label"
-          search={(prev) => ({ ...prev, chart: play.md5 })}
-          aria-describedby={titleId}
-          className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "ml-auto")}
-        >
-          <ExternalLink aria-hidden="true" />
-          {t("labelProgress.session.open")}
-        </Link>
       </div>
-      {error !== null && (
-        <p role="alert" className="text-destructive text-sm">
-          {error}
-        </p>
-      )}
     </li>
   );
 }
@@ -220,15 +258,16 @@ interface SessionListProps {
   taxonomyFailure?: { error: unknown; retry: () => void } | undefined;
   holdMs: number;
   nowMs: number;
+  thumbnail: SessionThumbnailParams;
 }
 
-export function SessionList({ keymode, session, taxonomy, taxonomyFailure, holdMs, nowMs }: SessionListProps) {
+export function SessionList({ keymode, session, taxonomy, taxonomyFailure, holdMs, nowMs, thumbnail }: SessionListProps) {
   const { t } = useTranslation();
   const headingId = useId();
   const plays = session.data?.plays;
   const counts = plays === undefined ? undefined : sessionMapCounts(plays);
   const maps = plays === undefined ? undefined : sessionMaps(plays);
-  const row = { keymode, taxonomy, holdMs, nowMs };
+  const row = { keymode, taxonomy, holdMs, nowMs, thumbnail };
   return (
     <section aria-labelledby={headingId} className="bg-card ring-border flex flex-col gap-4 rounded-xl p-5 shadow-lg shadow-black/20 ring-1">
       <div className="flex flex-wrap items-start justify-between gap-2">

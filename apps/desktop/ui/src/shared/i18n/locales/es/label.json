@@ -114,9 +114,9 @@
     "patterns": "Patrones",
     "patternGrid": {
       "search": "Buscar patrones",
-      "searchPlaceholder": "Nombre, tecla o descripción",
+      "searchPlaceholder": "Nombre, tecla, rice/ln o un eje",
       "noResults": "Ningún patrón coincide con «{{query}}»",
-      "noResultsHint": "Busca por nombre, tecla o descripción.",
+      "noResultsHint": "Busca por nombre, tecla o descripción, o acota con rice, ln o un eje como tech.",
       "clearSearch": "Borrar búsqueda",
       "preview": "Ejemplo de {{name}}",
       "expandAll": "Expandir todo",
@@ -128,6 +128,9 @@
       "family": {
         "regular": "RICE",
         "ln": "LN"
+      },
+      "familyAliases": {
+        "ln": "nota larga, notas largas"
       }
     },
     "axis": {

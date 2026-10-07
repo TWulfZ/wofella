@@ -22,7 +22,10 @@ export {
 export type { Anchor, LabelWindow, Span, ThumbSide } from "./types";
 export { AxisIcon } from "./components/axisIcons";
 export { familyAccent } from "./components/PatternGrid";
-export { PatternPicker } from "./components/PatternPicker";
+export { PatternGridPicker } from "./components/PatternGridPicker";
+export { StarRating } from "./components/StarRating";
+export { backgroundDataUrl } from "./components/ChartHeader";
+export { difficultyColour } from "./starColour";
 export { HOLD_BUTTON_PARAMS, HoldButton } from "./components/HoldButton";
 export { axisKey, groupByAxis, groupByFamily, patternName } from "./components/patterns";
 export { LABEL_SCREEN_PARAMS, LabelScreen, type LabelScreenParams, type LabelScreenProps } from "./LabelScreen";

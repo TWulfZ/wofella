@@ -45,13 +45,14 @@
       "undo": "Undo",
       "open": "Open in Label screen",
       "playedAt": "Played {{when}}",
-      "stars": "{{stars}} stars",
       "toLabel": "To label",
       "labelledGroup": "Labelled",
       "playCount": "×{{count}}",
       "timesPlayed_one": "Played once",
       "timesPlayed_other": "Played {{count}} times",
-      "noTaxonomy": "The pattern list could not be loaded, so maps cannot be labelled here."
+      "noTaxonomy": "The pattern list could not be loaded, so maps cannot be labelled here.",
+      "pickerTitle": "Dominant pattern of {{title}}",
+      "pickerDescription": "Choose the pattern its dense parts are made of. Search by name, or narrow with rice, ln or an axis such as tech."
     },
     "ranking": {
       "title": "Ranking",

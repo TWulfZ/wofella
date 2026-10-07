@@ -11,6 +11,7 @@ import type {
 import { type CommandHandlers, type MockCall, mockCommands, mockIpcError } from "@/ipc/mocks";
 import { renderWithRouter } from "@/shared/testing/renderWithRouter";
 import { i18n } from "@/shared/i18n";
+import { difficultyColour, labelKeys } from "@/features/label";
 import { LABEL_PROGRESS_PARAMS, LabelProgressPage } from "./LabelProgressPage";
 
 const HOLD_MS = 40;
@@ -104,8 +105,50 @@ class NoopResizeObserver {
   }
 }
 
+// Rows ask for their thumbnail only once revealed; nothing is revealed unless a test says so.
+class MockIntersectionObserver {
+  static instances: MockIntersectionObserver[] = [];
+  readonly targets = new Set<Element>();
+  readonly callback: IntersectionObserverCallback;
+  readonly options: IntersectionObserverInit | undefined;
+  constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+    this.callback = callback;
+    this.options = options;
+    MockIntersectionObserver.instances.push(this);
+  }
+  observe(target: Element): void {
+    this.targets.add(target);
+  }
+  unobserve(target: Element): void {
+    this.targets.delete(target);
+  }
+  disconnect(): void {
+    this.targets.clear();
+  }
+  takeRecords(): IntersectionObserverEntry[] {
+    return [];
+  }
+}
+
+function reveal(target: Element): void {
+  act(() => {
+    for (const observer of MockIntersectionObserver.instances.filter((o) => o.targets.has(target))) {
+      observer.callback(
+        [{ target, isIntersecting: true } as IntersectionObserverEntry],
+        observer as unknown as IntersectionObserver,
+      );
+    }
+  });
+}
+
+function observed(target: Element): boolean {
+  return MockIntersectionObserver.instances.some((o) => o.targets.has(target));
+}
+
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", NoopResizeObserver);
+  MockIntersectionObserver.instances = [];
+  vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
 });
 
 afterEach(() => {
@@ -119,6 +162,9 @@ function renderPage(extra: CommandHandlers = {}) {
     sessionPlays: () => SESSION,
     sessionLabelSubmit: () => ({ id: "01NEW" }),
     sessionLabelUndo: () => null,
+    chartBackground: () => null,
+    settingsGetHandLayout: () => "k7.313_right_thumb",
+    labelPatternExamples: () => [],
     ...extra,
   });
   const rendered = renderWithRouter(
@@ -327,10 +373,12 @@ describe("LabelProgressPage", () => {
     expect(within(alpha).getByRole("button", { name: "No clear pattern" })).toHaveAccessibleDescription("Alpha Song");
     expect(within(alpha).getByRole("link", { name: "Open in Label screen" })).toHaveAccessibleDescription("Alpha Song");
     await userEvent.click(within(alpha).getByRole("button", { name: "Dominant pattern of Alpha Song: Choose pattern" }));
-    const search = await screen.findByRole("combobox", { name: "Find a pattern" });
-    await userEvent.type(search, "long");
-    await userEvent.click(screen.getByRole("option", { name: /longjack/ }));
-    expect(screen.queryByRole("combobox", { name: "Find a pattern" })).not.toBeInTheDocument();
+    const picker = await screen.findByRole("dialog", { name: "Dominant pattern of Alpha Song" });
+    await userEvent.type(within(picker).getByRole("searchbox", { name: "Search patterns" }), "long");
+    await userEvent.click(within(picker).getByRole("button", { name: "lj longjack" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
     expect(within(alpha).getByRole("button", { name: "Dominant pattern of Alpha Song: longjack" })).toHaveTextContent("longjack");
     await hold(within(alpha).getByRole("button", { name: "Save" }));
     await waitFor(() => {
@@ -341,6 +389,123 @@ describe("LabelProgressPage", () => {
     await waitFor(() => {
       expect(argsOf(calls, "session_plays")).toHaveLength(2);
     });
+  });
+
+  it("chooses from the pattern grid with the keyboard, shows the choice pressed and leaves on Escape unchanged", async () => {
+    const { calls } = renderPage();
+    const alpha = await row("Alpha Song");
+    const choose = within(alpha).getByRole("button", { name: "Dominant pattern of Alpha Song: Choose pattern" });
+    await userEvent.click(choose);
+    let picker = await screen.findByRole("dialog", { name: "Dominant pattern of Alpha Song" });
+    await userEvent.type(within(picker).getByRole("searchbox", { name: "Search patterns" }), "rice jack");
+    within(picker).getByRole("button", { name: "mj minijack" }).focus();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    const chosen = within(alpha).getByRole("button", { name: "Dominant pattern of Alpha Song: minijack" });
+    expect(chosen).toHaveFocus();
+
+    await userEvent.click(chosen);
+    picker = await screen.findByRole("dialog", { name: "Dominant pattern of Alpha Song" });
+    await userEvent.type(within(picker).getByRole("searchbox", { name: "Search patterns" }), "jack");
+    expect(within(picker).getByRole("button", { name: "mj minijack" })).toHaveAttribute("aria-pressed", "true");
+    await userEvent.clear(within(picker).getByRole("searchbox", { name: "Search patterns" }));
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(within(alpha).getByRole("button", { name: "Dominant pattern of Alpha Song: minijack" })).toBeInTheDocument();
+    await hold(within(alpha).getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(argsOf(calls, "session_label_submit")).toHaveLength(1);
+    });
+    expect(argsOf(calls, "session_label_submit")[0]?.["req"]).toEqual({
+      keymode: 7,
+      md5: A,
+      playId: PLAY_A.playId,
+      pattern: "7k.regular.jack.minijack",
+    });
+  });
+
+  it("shows a labelled map's saved pattern as its current choice, pressed in the picker", async () => {
+    renderPage();
+    const beta = await row("Beta Song");
+    const choose = within(beta).getByRole("button", { name: "Dominant pattern of Beta Song: minijack" });
+    expect(choose).toHaveTextContent("minijack");
+    expect(within(beta).getByRole("button", { name: "Save" })).toBeDisabled();
+
+    await userEvent.click(choose);
+    const picker = await screen.findByRole("dialog", { name: "Dominant pattern of Beta Song" });
+
+    expect(await within(picker).findByRole("button", { name: "mj minijack" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("loads a map's thumbnail only once its row nears the viewport, over a fallback that keeps the size", async () => {
+    const { calls } = renderPage({
+      chartBackground: ({ md5 }) => (md5 === A ? { mime: "image/png", base64: "QUJD", width: 1920, height: 1080 } : null),
+    });
+    const alpha = await row("Alpha Song");
+    const beta = await row("Beta Song");
+    const alphaThumb = within(alpha).getByTestId("session-thumb");
+    expect(observed(alphaThumb)).toBe(true);
+    expect(within(alphaThumb).queryByRole("img")).toBeNull();
+    expect(within(alphaThumb).getByTestId("session-thumb-fallback")).toBeInTheDocument();
+    expect(argsOf(calls, "chart_background")).toHaveLength(0);
+
+    reveal(alphaThumb);
+
+    const image = await within(alphaThumb).findByTestId("session-thumb-image");
+    expect(image).toHaveAttribute("src", "data:image/png;base64,QUJD");
+    expect(image).toHaveAttribute("alt", "");
+    expect(observed(alphaThumb)).toBe(false);
+    expect(argsOf(calls, "chart_background")).toEqual([{ md5: A }]);
+
+    const betaThumb = within(beta).getByTestId("session-thumb");
+    reveal(betaThumb);
+    await waitFor(() => {
+      expect(argsOf(calls, "chart_background")).toEqual([{ md5: A }, { md5: B }]);
+    });
+    expect(within(betaThumb).queryByTestId("session-thumb-image")).toBeNull();
+    expect(within(betaThumb).getByTestId("session-thumb-fallback")).toBeInTheDocument();
+    expect(betaThumb.className).toEqual(alphaThumb.className);
+  });
+
+  it("drops a thumbnail's full-size image once the page is left, as the Label screen does", async () => {
+    const { queryClient, router } = renderPage({
+      chartBackground: () => ({ mime: "image/png", base64: "QUJD", width: 1920, height: 1080 }),
+    });
+    const alpha = await row("Alpha Song");
+    reveal(within(alpha).getByTestId("session-thumb"));
+    await within(alpha).findByTestId("session-thumb-image");
+    expect(queryClient.getQueryCache().find({ queryKey: labelKeys.chartBackground(A) })).toBeDefined();
+
+    await userEvent.click(within(alpha).getByRole("link", { name: "Open in Label screen" }));
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/label");
+    });
+
+    await waitFor(() => {
+      expect(queryClient.getQueryCache().find({ queryKey: labelKeys.chartBackground(A) })).toBeUndefined();
+    });
+  });
+
+  it("keeps the fallback when the thumbnail fails to load", async () => {
+    renderPage({ chartBackground: () => mockIpcError("INTERNAL") });
+    const thumb = within(await row("Alpha Song")).getByTestId("session-thumb");
+    reveal(thumb);
+    await waitFor(() => {
+      expect(within(thumb).getByTestId("session-thumb-fallback")).toBeInTheDocument();
+    });
+    expect(within(thumb).queryByTestId("session-thumb-image")).toBeNull();
+  });
+
+  it("shows the star rating in osu!'s difficulty colour, as the Label screen's map card", async () => {
+    renderPage();
+    const alpha = await row("Alpha Song");
+    const stars = within(alpha).getByRole("img", { name: "4.21 stars" });
+    expect(stars).toHaveTextContent("4.21");
+    expect(stars).toHaveStyle({ backgroundColor: difficultyColour(4.21) });
   });
 
   it("saves No clear pattern as a null pattern, exclusive with a picked one", async () => {

@@ -9,7 +9,7 @@ import { ActivityChart } from "./components/ActivityChart";
 import { AxisBars } from "./components/AxisBars";
 import { RankingCard } from "./components/RankingCard";
 import { RecentLabels } from "./components/RecentLabels";
-import { SessionList } from "./components/SessionList";
+import { SessionList, type SessionThumbnailParams } from "./components/SessionList";
 import { StatCards } from "./components/StatCards";
 import { axisBars } from "./model";
 import { labelProgressQuery, localUtcOffsetMin, sessionPlaysQuery } from "./queries";
@@ -21,12 +21,14 @@ export interface LabelProgressParams {
   activityDays: number;
   /** How often "played 5 minutes ago" and the local day are re-read while the page stays open. */
   clockTickMs: number;
+  thumbnail: SessionThumbnailParams;
 }
 
 export const LABEL_PROGRESS_PARAMS: LabelProgressParams = {
   holdMs: HOLD_BUTTON_PARAMS.defaultHoldMs,
   activityDays: 30,
   clockTickMs: 60_000,
+  thumbnail: { rootMargin: "200px" },
 };
 
 export interface LabelProgressPageProps {
@@ -97,6 +99,7 @@ export function LabelProgressPage({ keymode, params = LABEL_PROGRESS_PARAMS, now
           taxonomyFailure={taxonomyFailure}
           holdMs={params.holdMs}
           nowMs={nowMs}
+          thumbnail={params.thumbnail}
         />
         <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
           <AxisBars

@@ -163,7 +163,8 @@ export function chartBackgroundQuery(md5: string | null) {
     queryKey: labelKeys.chartBackground(md5 ?? ""),
     queryFn: md5 === null ? skipToken : () => call(commands.chartBackground(md5)),
     staleTime: Infinity,
-    // An image is MBs of base64; Previous refetches it rather than keeping every chart's.
+    // An image is MBs of base64, so it goes once nothing shows it: Previous refetches it, and the session list's
+    // thumbnails hold only the rows already shown while that page is open (full size until a downscaled command exists).
     gcTime: 0,
   });
 }

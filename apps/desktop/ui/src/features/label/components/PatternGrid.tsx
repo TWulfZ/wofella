@@ -18,6 +18,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/shared/ui/hover
 import { AxisIcon } from "./axisIcons";
 import { readOpenAxes, writeOpenAxes } from "./patternGridPrefs";
 import { type AxisGroup, axisKey, groupByAxis, groupByFamily, matchesSearch, patternName } from "./patterns";
+import { usePatternSearch } from "./usePatternSearch";
 
 export interface PatternGridParams {
   /** Long enough that sweeping the pointer across the grid does not flash a card per cell. */
@@ -128,10 +129,11 @@ export function PatternGrid({ taxonomy, examples, isActive, onToggle, className,
   const rootRef = useRef<HTMLDivElement>(null);
   const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
   const focusSerial = useRef(0);
-  const needle = query.trim().toLowerCase();
-  const searching = needle !== "";
+  const parseSearch = usePatternSearch(taxonomy);
+  const tokens = parseSearch(query);
+  const searching = tokens.length > 0;
   const fullAxes = new Map(groupByAxis(taxonomy).map((group) => [group.axis, group.patterns]));
-  const groups = groupByAxis(taxonomy.filter((pattern) => matchesSearch(pattern, needle)));
+  const groups = groupByAxis(taxonomy.filter((pattern) => matchesSearch(pattern, tokens)));
   const families = groupByFamily(groups);
   const visibleAxes = groups.map((group) => group.axis);
 
@@ -183,7 +185,7 @@ export function PatternGrid({ taxonomy, examples, isActive, onToggle, className,
       if (pattern === undefined) {
         return;
       }
-      if (searching && matchesSearch(pattern, needle)) {
+      if (searching && matchesSearch(pattern, tokens)) {
         const reopened = new Set(closedWhileSearching);
         reopened.delete(pattern.axis);
         setClosedWhileSearching(reopened);

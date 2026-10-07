@@ -6,6 +6,7 @@ import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
 import { axisKey, matchesSearch, patternName } from "./patterns";
+import { usePatternSearch } from "./usePatternSearch";
 
 /** A labelled button showing the current choice, in place of the "+" that adds to a set. */
 export interface PatternPickerTrigger {
@@ -41,8 +42,9 @@ export function PatternPicker({
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const listId = useId();
-  const needle = query.trim().toLowerCase();
-  const matches = taxonomy.filter((pattern) => matchesSearch(pattern, needle));
+  const parseSearch = usePatternSearch(taxonomy);
+  const tokens = parseSearch(query);
+  const matches = taxonomy.filter((pattern) => matchesSearch(pattern, tokens));
   const activeIndex = Math.min(active, Math.max(matches.length - 1, 0));
   const activePattern = matches[activeIndex];
   const optionId = (index: number): string => `${listId}-option-${index}`;

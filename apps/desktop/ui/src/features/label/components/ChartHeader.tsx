@@ -1,4 +1,4 @@
-import { ChartColumnBig, Check, Copy, ExternalLink, Maximize2, SkipForward, Star, Trophy, Undo2 } from "lucide-react";
+import { ChartColumnBig, Check, Copy, ExternalLink, Maximize2, SkipForward, Trophy, Undo2 } from "lucide-react";
 import { type ComponentType, type ReactNode, type RefObject, type SVGProps, useEffect, useEffectEvent, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@/ipc/opener";
@@ -9,8 +9,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Popover, PopoverAnchor, PopoverContent } from "@/shared/ui/popover";
 import { formatMinSec } from "../format";
 import type { WindowOrigin } from "../session";
-import { difficultyColour, starTextColour } from "../starColour";
 import type { LabelWindow } from "../types";
+import { StarRating } from "./StarRating";
 import { BpmIcon, LengthIcon, LongNoteCountIcon, NoteCountIcon } from "./statIcons";
 
 export const CHART_HEADER_PARAMS = {
@@ -97,23 +97,6 @@ export interface ChartHeaderProps {
   onBlockSize?: ((px: number) => void) | undefined;
   /** Labelling progress shown from the counters; without it the counters stay a plain list. */
   countersDetails?: ReactNode;
-}
-
-function StarRating({ stars }: { stars: number }) {
-  const { t } = useTranslation();
-  const shown = stars.toFixed(2);
-  return (
-    <span
-      role="img"
-      aria-label={t("label.header.stars", { stars: shown })}
-      data-testid="star-rating"
-      style={{ backgroundColor: difficultyColour(stars), color: starTextColour(stars) }}
-      className="inline-flex h-5 shrink-0 items-center gap-1 rounded-full px-2 text-xs font-bold tabular-nums"
-    >
-      <Star aria-hidden className="size-3 fill-current" />
-      {shown}
-    </span>
-  );
 }
 
 /** Drops float noise from the f32 IPC values (7.5 stays 7.5, 7.4999 becomes 7.5). */

@@ -114,9 +114,9 @@
     "patterns": "Patterns",
     "patternGrid": {
       "search": "Search patterns",
-      "searchPlaceholder": "Name, key or description",
+      "searchPlaceholder": "Name, key, rice/ln or an axis",
       "noResults": "No pattern matches “{{query}}”",
-      "noResultsHint": "Search by name, key or description.",
+      "noResultsHint": "Search by name, key or description, or narrow with rice, ln or an axis such as tech.",
       "clearSearch": "Clear search",
       "preview": "Example of {{name}}",
       "expandAll": "Expand all",
@@ -128,6 +128,9 @@
       "family": {
         "regular": "RICE",
         "ln": "LN"
+      },
+      "familyAliases": {
+        "ln": "long note, long notes"
       }
     },
     "axis": {
