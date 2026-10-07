@@ -68,6 +68,40 @@ async fn library() -> (Fixture, Vec<Map>) {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn pattern_examples_give_one_synthetic_window_per_pattern() {
+    let (f, _) = library().await;
+    let svc = f.ctx.labeling();
+    let examples = svc.pattern_examples(7).unwrap();
+    let ids: Vec<&str> = examples.iter().map(|e| e.id.as_str()).collect();
+    let taxonomy: Vec<String> = svc.taxonomy(7).unwrap().into_iter().map(|p| p.id).collect();
+    assert_eq!(ids, taxonomy);
+    for ex in &examples {
+        let w = &ex.window;
+        assert_eq!(
+            (w.md5.as_str(), w.keymode, w.layout.id.as_str()),
+            ("00000000000000000000000000000000", 7, "k7.313_right_thumb"),
+            "{}",
+            ex.id
+        );
+        assert_eq!(w.audio_filename, None);
+        assert!(w.from_ms < w.to_ms, "{}", ex.id);
+        assert!(
+            w.notes
+                .iter()
+                .any(|n| w.from_ms <= n.t_ms && n.t_ms <= w.to_ms),
+            "{}",
+            ex.id
+        );
+    }
+    let inverse = examples.iter().find(|e| e.id == "ln.inverse.gap").unwrap();
+    assert!(inverse.window.notes.iter().all(|n| n.end_ms.is_some()));
+    assert_eq!(
+        svc.pattern_examples(4).unwrap_err().code,
+        ErrorCode::InvalidInput
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn taxonomy_lists_the_keymode_patterns() {
     let (f, _) = library().await;
     let svc = f.ctx.labeling();

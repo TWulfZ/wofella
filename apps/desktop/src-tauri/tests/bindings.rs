@@ -63,6 +63,8 @@ mod bindings {
             "labelReshape",
             "labelSubmit",
             "labelUndo",
+            "labelPatternExamples",
+            "PatternExampleDto",
             "labelStats",
             "AliasRowDto",
             "job-progress",

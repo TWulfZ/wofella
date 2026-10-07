@@ -1,6 +1,7 @@
 //! Registry, keymode profiles and the versioned derivation stages (architecture §3, §5.5).
 
 pub mod error;
+pub mod examples;
 pub mod labels;
 pub mod profile;
 pub mod render;

@@ -12,7 +12,7 @@ use wolluf_engine::render::{RenderOpts, RowMark, render_window};
 use wolluf_engine::rows_blob::decode_rows;
 use wolluf_engine::stage::chart_parse::parse_chart;
 use wolluf_engine::taxonomy;
-use wolluf_engine::window::{ChartWindow, ColumnFinger, ColumnHand, TimingLine, chart_window};
+use wolluf_engine::window::chart_window;
 use wolluf_source_osu::songs::{SongFileError, read_chart_verified, read_song_file};
 use wolluf_store::repo::cache::{
     CatalogChart, ChartLabel, LabelFilter, ParsedSummary, SegmentRow, catalog_chart,
@@ -23,9 +23,8 @@ use wolluf_store::{Conn, DbHandle, StoreError};
 use super::LibraryParams;
 use super::chart_audio::mime_of;
 use super::dto::{
-    ChartAudioDto, ChartDetailDto, ChartLabelDto, ChartSpanDto, ChartWindowDto, ColumnDto,
-    FingerDto, HandDto, HintAgreementDto, LayoutDto, LibraryChartDto, LibraryFilterDto, NoteDto,
-    PatternCountDto, ScaleCountDto, SegmentDto, TimingDto, TimingKindDto,
+    ChartAudioDto, ChartDetailDto, ChartLabelDto, ChartWindowDto, HintAgreementDto,
+    LibraryChartDto, LibraryFilterDto, PatternCountDto, ScaleCountDto, SegmentDto,
 };
 use super::index::{IndexLibraryJob, Keys, Segmenters};
 use crate::base64;
@@ -226,7 +225,7 @@ impl<'a> LibraryService<'a> {
                     .ok_or_else(|| AppError::invalid_input().with_arg("layoutId", id))?,
             };
             let window = chart_window(&chart, &layout, from_ms, to_ms);
-            Ok(window_dto(md5, from_ms, to_ms, window))
+            Ok(ChartWindowDto::from_window(md5, from_ms, to_ms, window))
         })
         .await
     }
@@ -525,74 +524,6 @@ fn segment_dtos(
             strength: r.strength,
         })
         .collect())
-}
-
-fn window_dto(md5: ChartMd5, from_ms: i32, to_ms: i32, w: ChartWindow) -> ChartWindowDto {
-    ChartWindowDto {
-        md5: md5.to_string(),
-        keymode: w.keymode,
-        from_ms,
-        to_ms,
-        notes: w
-            .notes
-            .into_iter()
-            .map(|n| NoteDto {
-                t_ms: n.t_ms,
-                col: n.col,
-                end_ms: n.end_ms,
-            })
-            .collect(),
-        timing: w.timing.into_iter().map(timing_dto).collect(),
-        layout: LayoutDto {
-            id: w.layout_id,
-            columns: w
-                .columns
-                .into_iter()
-                .map(|c| ColumnDto {
-                    hand: match c.hand {
-                        ColumnHand::Left => HandDto::Left,
-                        ColumnHand::Right => HandDto::Right,
-                        ColumnHand::Both => HandDto::Both,
-                    },
-                    finger: match c.finger {
-                        ColumnFinger::Pinky => FingerDto::Pinky,
-                        ColumnFinger::Ring => FingerDto::Ring,
-                        ColumnFinger::Middle => FingerDto::Middle,
-                        ColumnFinger::Index => FingerDto::Index,
-                        ColumnFinger::Thumb => FingerDto::Thumb,
-                    },
-                })
-                .collect(),
-        },
-        chart_span: ChartSpanDto {
-            first_ms: w.span.first_ms,
-            end_ms: w.span.end_ms,
-        },
-        audio_filename: w.audio_filename,
-    }
-}
-
-fn timing_dto(line: TimingLine) -> TimingDto {
-    match line {
-        TimingLine::Red {
-            t_ms,
-            beat_len_ms,
-            meter,
-        } => TimingDto {
-            t_ms,
-            kind: TimingKindDto::Red,
-            beat_len_ms: Some(beat_len_ms),
-            meter: Some(meter),
-            sv: None,
-        },
-        TimingLine::Green { t_ms, sv } => TimingDto {
-            t_ms,
-            kind: TimingKindDto::Green,
-            beat_len_ms: None,
-            meter: None,
-            sv: Some(sv),
-        },
-    }
 }
 
 fn ms_i32(t: TimeUs) -> i32 {

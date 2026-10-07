@@ -53,6 +53,8 @@ export const commands = {
 	skinList: () => typedError<SkinListDto, IpcError>(__TAURI_INVOKE("skin_list")),
 	/**  One skin's `[Mania]` block and images for `keymode`; the webview sends only the folder name. */
 	skinGet: (folder: string, keymode: number) => typedError<SkinDto, IpcError>(__TAURI_INVOKE("skin_get", { folder, keymode })),
+	/**  One synthetic preview per pattern of the keymode, in taxonomy order. */
+	labelPatternExamples: (keymode: number) => typedError<PatternExampleDto[], IpcError>(__TAURI_INVOKE("label_pattern_examples", { keymode })),
 };
 
 /** Events */
@@ -406,6 +408,12 @@ export type PatternDefDto = {
 	/**  Short key for typing labels. */
 	key: string,
 	description: string,
+};
+
+/**  A synthetic chart that shows one pattern; `window.fromMs..=toMs` is the span to draw. */
+export type PatternExampleDto = {
+	id: string,
+	window: ChartWindowDto,
 };
 
 export type ProfileEntryDto = {

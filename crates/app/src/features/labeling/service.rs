@@ -9,9 +9,11 @@ use serde::Serialize;
 use wolluf_core::{
     ChartMd5, ColMask, Keymode, PatternId, ProfileId, SegmentAnchor, TimeUs, UnixUs,
 };
+use wolluf_engine::examples;
 use wolluf_engine::labels::source as label_source;
 use wolluf_engine::profile::{KeymodeProfile, Registry};
 use wolluf_engine::taxonomy;
+use wolluf_engine::window::chart_window;
 use wolluf_store::repo::labels::{
     GoldAnswer, GoldLabel, NewGoldLabel, NewUndo, ThumbPref, append_gold_label, append_undo,
     gold_labels,
@@ -24,14 +26,14 @@ use wolluf_store::StoreError;
 
 use super::dto::{
     AnchorDto, CountDto, LabelEventDto, LabelExportDto, LabelStatsDto, LabelSubmitDto,
-    LabelWindowDto, PatternDefDto, SampleRequestDto, ThumbPrefDto, WindowOpDto,
+    LabelWindowDto, PatternDefDto, PatternExampleDto, SampleRequestDto, ThumbPrefDto, WindowOpDto,
 };
 use super::keys;
 use super::sampler::{self, Assignment, ChartFacts, LevelFilter, LevelLabel, Pool, SamplerParams};
 use super::window::{self, Reshape};
 use crate::context::{AppContext, blocking_join_error};
 use crate::errors::AppError;
-use crate::features::library::dto::LibraryChartDto;
+use crate::features::library::dto::{ChartWindowDto, LibraryChartDto};
 use crate::jobs::to_system_time;
 
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -39,6 +41,8 @@ const US_PER_MS: i64 = 1_000;
 const UNKNOWN_STRATUM: &str = "unknown";
 const FLAG_MIXED: &str = "mixed";
 const FLAG_UNSURE: &str = "unsure";
+/// Examples are not library charts; zeros keep the window DTO without naming one.
+const SYNTHETIC_MD5: ChartMd5 = ChartMd5([0; 16]);
 
 pub struct LabelingService<'a> {
     ctx: &'a AppContext,
@@ -79,6 +83,23 @@ impl<'a> LabelingService<'a> {
                 axis: p.axis.to_string(),
                 key: p.key.to_owned(),
                 description: p.description.to_owned(),
+            })
+            .collect())
+    }
+
+    /// One synthetic chart per pattern, so previews never show library content (ADR 0018).
+    pub fn pattern_examples(&self, keymode: u8) -> Result<Vec<PatternExampleDto>, AppError> {
+        let profile = labelled_profile(keymode)?;
+        let layout = profile.layout();
+        Ok(examples::for_keymode(profile.keymode)
+            .into_iter()
+            .map(|ex| {
+                let (from_ms, to_ms) = ex.display_ms;
+                let window = chart_window(&ex.chart, &layout, from_ms, to_ms);
+                PatternExampleDto {
+                    id: ex.id.to_string(),
+                    window: ChartWindowDto::from_window(SYNTHETIC_MD5, from_ms, to_ms, window),
+                }
             })
             .collect())
     }

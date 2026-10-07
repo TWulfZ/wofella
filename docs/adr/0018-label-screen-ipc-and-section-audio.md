@@ -38,3 +38,8 @@ Constraints that already hold:
 - Files above the cap get no audio, and the screen falls back to a silent playfield.
 - A future streaming need (long previews, F4 drill playback) revisits the custom scheme option. Supersede this ADR then rather than adding a second audio path beside it.
 - Any feature that compares audio time with chart time must handle the encoder-delay offset above.
+
+## Amendment 2026-10-06: pattern previews
+- New command `label_pattern_examples(keymode) -> PatternExampleDto[]`, appended to the `label_*` group. Each item is a pattern id plus a `ChartWindowDto` of a synthetic chart built in `wolluf_engine::examples`, with a zero md5 and no audio. The UI draws it as a static preview on the pattern cards.
+- The examples are synthetic on purpose. Real library snippets or engine segments would show the labeller what the engine thinks of real charts, which breaks the blind rule above.
+- An engine test pins each example to its own pattern: the segment at the middle of its display span must have the example's id as primary, or as a secondary tag for the tag-only ids. A rule change that stops recognising an example fails CI rather than showing a misleading preview.

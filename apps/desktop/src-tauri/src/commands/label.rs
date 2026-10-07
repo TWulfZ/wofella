@@ -1,7 +1,7 @@
 use wolluf_app::errors::IpcError;
 use wolluf_app::features::labeling::dto::{
     AnchorDto, LabelEventDto, LabelStatsDto, LabelSubmitDto, LabelWindowDto, PatternDefDto,
-    SampleRequestDto, WindowOpDto,
+    PatternExampleDto, SampleRequestDto, WindowOpDto,
 };
 
 use super::Ctx;
@@ -12,6 +12,17 @@ use crate::error::to_ipc;
 #[tracing::instrument(skip_all)]
 pub async fn label_taxonomy(ctx: Ctx<'_>, keymode: u8) -> Result<Vec<PatternDefDto>, IpcError> {
     ctx.labeling().taxonomy(keymode).map_err(to_ipc)
+}
+
+/// One synthetic preview per pattern of the keymode, in taxonomy order.
+#[tauri::command]
+#[specta::specta]
+#[tracing::instrument(skip_all)]
+pub async fn label_pattern_examples(
+    ctx: Ctx<'_>,
+    keymode: u8,
+) -> Result<Vec<PatternExampleDto>, IpcError> {
+    ctx.labeling().pattern_examples(keymode).map_err(to_ipc)
 }
 
 /// `None` when no chart has a free window left.

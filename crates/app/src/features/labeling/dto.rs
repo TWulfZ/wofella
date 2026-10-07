@@ -3,6 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::features::library::dto::ChartWindowDto;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PatternDefDto {
@@ -11,6 +13,14 @@ pub struct PatternDefDto {
     /// Short key for typing labels.
     pub key: String,
     pub description: String,
+}
+
+/// A synthetic chart that shows one pattern; `window.fromMs..=toMs` is the span to draw.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PatternExampleDto {
+    pub id: String,
+    pub window: ChartWindowDto,
 }
 
 /// `[t0Ms, t1Ms)` of one chart.
