@@ -1,5 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
-import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -8,6 +8,7 @@ import type {
   LabelStatsDto,
   LabelWindowDto,
   PatternDefDto,
+  PatternExampleDto,
   SampleRequestDto,
   SkinDto,
   SkinEntryDto,
@@ -54,6 +55,14 @@ function chartWindow(md5: string, fromMs: number, toMs: number): ChartWindowDto 
     audioFilename: "audio.mp3",
   };
 }
+
+const EXAMPLE_MD5 = "0".repeat(32);
+
+// Longjack has no example, so its card keeps the placeholder.
+const EXAMPLES: PatternExampleDto[] = [
+  { id: "regular.jack.minijack", window: chartWindow(EXAMPLE_MD5, 0, 1500) },
+  { id: "regular.stream.jumpstream", window: chartWindow(EXAMPLE_MD5, 0, 1900) },
+];
 
 const NO_SKINS: SkinListDto = { skins: [], current: null, maniaSpeed: null, maniaSpeedBpmScale: null };
 
@@ -208,6 +217,7 @@ function renderScreen(
   let eventSeq = 0;
   const calls = mockCommands({
     labelTaxonomy: () => TAXONOMY,
+    labelPatternExamples: () => EXAMPLES,
     labelStats: () => STATS,
     labelSample: (args) => windows[(args["req"] as SampleRequestDto).round] ?? null,
     chartWindow: (args) => chartWindow(String(args["md5"]), Number(args["fromMs"]), Number(args["toMs"])),
@@ -282,6 +292,51 @@ describe("LabelScreen", () => {
     expect(screen.getByText("Played")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "js jumpstream" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByText("Gold set: 37")).toBeInTheDocument();
+  });
+
+  it("shows a card per pattern in the Patterns region, drawing its synthetic example", async () => {
+    const calls = renderScreen();
+    await roundLoaded();
+
+    const patterns = screen.getByRole("region", { name: "Patterns" });
+    const jumpstream = await within(patterns).findByRole("button", { name: "js jumpstream" });
+    await waitFor(() => {
+      expect(jumpstream.querySelector("canvas")).not.toBeNull();
+    });
+    expect(within(patterns).getByRole("button", { name: "mj minijack" }).querySelector("canvas")).not.toBeNull();
+    expect(within(patterns).getByRole("button", { name: "lj longjack" }).querySelector("canvas")).toBeNull();
+    expect(argsOf(calls, "label_pattern_examples")).toEqual([{ keymode: 7 }]);
+  });
+
+  it("filters the cards from the pattern search without typing into the answer", async () => {
+    renderScreen();
+    await roundLoaded();
+    await userEvent.type(answerBox(), "mj");
+
+    await userEvent.type(screen.getByRole("searchbox", { name: "Search patterns" }), "jump");
+
+    expect(screen.getByRole("button", { name: "js jumpstream" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "mj minijack" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "lj longjack" })).toBeNull();
+    expect(screen.getByRole("searchbox", { name: "Search patterns" })).toHaveValue("jump");
+    expect(answerBox()).toHaveValue("mj");
+  });
+
+  it("still labels with the cards when the pattern examples fail", async () => {
+    const calls = renderScreen([WINDOW_A, WINDOW_B], {
+      labelPatternExamples: () => mockIpcError("INTERNAL"),
+    });
+    await roundLoaded();
+    await waitFor(() => {
+      expect(argsOf(calls, "label_pattern_examples")).toEqual([{ keymode: 7 }]);
+    });
+    await settle();
+
+    const jumpstream = screen.getByRole("button", { name: "js jumpstream" });
+    expect(jumpstream.querySelector("canvas")).toBeNull();
+    await userEvent.click(jumpstream);
+    expect(answerBox()).toHaveValue("js");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("submits the clicked chips and flags on Enter", async () => {

@@ -40,6 +40,14 @@
       "decodeFailed": "This chart's audio could not be decoded, so the window plays without sound."
     },
     "patterns": "Patterns",
+    "patternGrid": {
+      "search": "Search patterns",
+      "searchPlaceholder": "Name, key or description",
+      "noResults": "No pattern matches “{{query}}”",
+      "noResultsHint": "Search by name, key or description.",
+      "clearSearch": "Clear search",
+      "preview": "Example of {{name}}"
+    },
     "axis": {
       "regular_jack": "Jack",
       "regular_tech": "Tech",

@@ -12,6 +12,7 @@ export {
 export { COLUMN_COLORS, columnColor, PLAYFIELD_COLORS } from "./colors";
 export { decodeBase64Audio } from "./decodeAudio";
 export { DEFAULT_PLAYFIELD_THEME, draw, type Draw2D, type DrawView, drawSkinned, type PlayfieldTheme } from "./draw";
+export { PatternPreview, type PatternPreviewProps } from "./PatternPreview";
 export { Playfield, type PlayfieldProps } from "./Playfield";
 export {
   DEFAULT_PLAYFIELD_PARAMS,

@@ -40,6 +40,14 @@
       "decodeFailed": "No se pudo decodificar el audio de este mapa, así que la ventana se reproduce sin sonido."
     },
     "patterns": "Patrones",
+    "patternGrid": {
+      "search": "Buscar patrones",
+      "searchPlaceholder": "Nombre, tecla o descripción",
+      "noResults": "Ningún patrón coincide con «{{query}}»",
+      "noResultsHint": "Busca por nombre, tecla o descripción.",
+      "clearSearch": "Borrar búsqueda",
+      "preview": "Ejemplo de {{name}}"
+    },
     "axis": {
       "regular_jack": "Jack",
       "regular_tech": "Tech",

@@ -10,6 +10,7 @@ import {
   type WindowOpDto,
 } from "@/ipc/bindings";
 import { call } from "@/ipc/client";
+import type { ChartWindow } from "@/features/playfield";
 import { qk } from "@/shared/queryKeys";
 import { toChartWindow, toLabelWindow } from "./mappers";
 import type { Anchor } from "./types";
@@ -17,6 +18,7 @@ import type { Anchor } from "./types";
 export const labelKeys = {
   all: qk("labels"),
   taxonomy: (keymode: number) => qk("labels", "taxonomy", keymode),
+  patternExamples: (keymode: number) => qk("labels", "patternExamples", keymode),
   stats: () => qk("labels", "stats"),
   chartWindow: (md5: string, fromMs: number, toMs: number) => qk("labels", "chartWindow", md5, fromMs, toMs),
   chartAudio: (md5: string) => qk("labels", "chartAudio", md5),
@@ -104,6 +106,17 @@ export function labelTaxonomyQuery(keymode: number) {
   return queryOptions({
     queryKey: labelKeys.taxonomy(keymode),
     queryFn: () => call(commands.labelTaxonomy(keymode)),
+    staleTime: Infinity,
+  });
+}
+
+export function labelPatternExamplesQuery(keymode: number) {
+  return queryOptions({
+    queryKey: labelKeys.patternExamples(keymode),
+    queryFn: async (): Promise<ReadonlyMap<string, ChartWindow>> => {
+      const examples = await call(commands.labelPatternExamples(keymode));
+      return new Map(examples.map(({ id, window }) => [id, toChartWindow(window)]));
+    },
     staleTime: Infinity,
   });
 }

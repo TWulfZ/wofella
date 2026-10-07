@@ -19,6 +19,7 @@ export {
   chartAudioQuery,
   chartWindowQuery,
   labelKeys,
+  labelPatternExamplesQuery,
   labelStatsQuery,
   labelTaxonomyQuery,
   SKIN_QUERY_PARAMS,

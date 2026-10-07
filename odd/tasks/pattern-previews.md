@@ -31,12 +31,14 @@ In the Label screen every pattern is a card in a grid with a mini playfield of a
 ## Tasks
 - [x] T1 — Engine `examples` module (26 examples, row builder with optional red line, display span) + detection test. Acceptance: first criterion. Route: delegated (writer: engine module + tests). Tier: medium. Commit: feat(engine): serve a synthetic example chart per pattern
 - [x] T2 — `label_pattern_examples` command + DTO + bindings; ADR 0018 amendment (synthetic examples keep labelling blind). Acceptance: second criterion. Route: delegated with T1 (same writer ran `cargo xtask bindings` as single owner in the workflow). Tier: medium. Commit: feat(engine): serve a synthetic example chart per pattern
-- [ ] T3 — `PatternPreview` static canvas + hover-card wrapper + pattern card grid with search, wired into the Label screen. Acceptance: third and fourth criteria. Route: delegated (UI writer; 2+ non-trivial files). Tier: medium. Commit: —
+- [x] T3 — `PatternPreview` static canvas + hover-card wrapper + pattern card grid with search, wired into the Label screen. Acceptance: third and fourth criteria. Route: delegated (UI writer + wiring writer). Tier: medium. Commit: feat(ui): pick patterns from a card grid with live previews
 - [ ] T4 — Close: full gates, Windows build for the pilot, remove this document. Route: inline. Tier: medium. Commit: —
 
 ## Progress
 - 2026-10-06 T1+T2 (workflow wf_e34fa9df-793, backend writer): RED `examples_cover_the_taxonomy_exactly_once`, `every_example_is_detected_as_its_own_pattern`, `pattern_examples_give_one_synthetic_window_per_pattern` → GREEN; 26 examples pass under default params without rule changes. Verifier: all criteria met; corrections applied by the parent: keymode dispatch moved to `examples::for_keymode` (D5) with a per-profile coverage test, DTO mapping moved to `ChartWindowDto::from_window` (D12), validation layout taken from the registry profile, bindings name list extended, ADR 0018 amendment. Gates: fmt ok, clippy ok, check-layers 0 violations, stage-lock ok, `cargo nextest run --workspace` 962 passed / 19 skipped, bindings drift none.
 - 2026-10-06 Finding (out of scope, not fixed): the backend writer saw a short higher-priority candidate split a long lower-priority section into sub-minimum runs that are all withdrawn, leaving no segment (seen with short rolls inside delay, short brackets inside handstream). Needs its own investigation.
 
+- 2026-10-06 T3 (UI writer + wiring writer): RED PatternPreview 3/3 and PatternGrid 12/12 against stubs, 3 new LabelScreen tests → GREEN. PatternChips removed (helpers in `components/patterns.ts`); i18n keys under `label.patternGrid.*` because `label.patterns` is already a string. Gates: tsc ok, lint ok, `pnpm -C apps/desktop/ui test` 45 files / 414 tests passed. Not covered: hover (focus is tested; Radix hover is not exercised in jsdom).
+
 ## Next step
-Run the T1+T2 backend writer and the T3 UI writer in one workflow (disjoint write sets); the parent regenerates bindings and wires the query.
+T4: push the branch as a draft PR, hand the pilot the `desktop-windows` portable exe, then the full gate block and `git rm` this document.

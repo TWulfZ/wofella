@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { LabelScreen, labelStatsQuery, labelTaxonomyQuery } from "@/features/label";
+import { LabelScreen, labelPatternExamplesQuery, labelStatsQuery, labelTaxonomyQuery } from "@/features/label";
 import { DEFAULT_KEYMODE } from "@/features/players";
 
 export const Route = createFileRoute("/label")({
@@ -8,6 +8,8 @@ export const Route = createFileRoute("/label")({
     Promise.all([
       context.queryClient.query(labelTaxonomyQuery(deps.keymode)),
       context.queryClient.query(labelStatsQuery()),
+      // Without examples the cards show placeholders, so a failure must not turn into the route's error page.
+      context.queryClient.query(labelPatternExamplesQuery(deps.keymode)).catch(() => undefined),
     ]),
   component: LabelPage,
 });

@@ -153,6 +153,7 @@ function render(audio: Audio, strict: boolean, params: LabelScreenParams = LABEL
   const windows = [labelWindow(ANCHOR_A, "Alpha"), labelWindow(ANCHOR_B, "Beta")];
   mockCommands({
     labelTaxonomy: () => [],
+    labelPatternExamples: () => [],
     labelStats: () => STATS,
     labelSample: (args) => windows[(args["req"] as SampleRequestDto).round] ?? null,
     chartWindow: (args) => chartWindow(String(args["md5"]), Number(args["fromMs"]), Number(args["toMs"])),

@@ -11,7 +11,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { clampOsuSpeed, DEFAULT_STAGE_PARAMS, Playfield, useLoadedSkin } from "@/features/playfield";
+import { type ChartWindow, clampOsuSpeed, DEFAULT_STAGE_PARAMS, Playfield, useLoadedSkin } from "@/features/playfield";
 import type { PatternDefDto } from "@/ipc/bindings";
 import { useErrorText } from "@/ipc/errorText";
 import { Button } from "@/shared/ui/button";
@@ -19,7 +19,7 @@ import { type AnswerError, parseAnswer } from "./answer";
 import { ActionBar, type Action } from "./components/ActionBar";
 import { ChartHeader } from "./components/ChartHeader";
 import { FlagToggles } from "./components/FlagToggles";
-import { PatternChips } from "./components/PatternChips";
+import { PatternGrid } from "./components/PatternGrid";
 import { SessionFooter } from "./components/SessionFooter";
 import { SkinPicker } from "./components/SkinPicker";
 import { Transport } from "./components/Transport";
@@ -44,6 +44,7 @@ import {
 import {
   chartAudioQuery,
   chartWindowQuery,
+  labelPatternExamplesQuery,
   labelStatsQuery,
   labelTaxonomyQuery,
   skinListQuery,
@@ -156,6 +157,9 @@ function useSectionPlayer(createContext: () => ClosableAudioContext, splice: Loo
   return player;
 }
 
+// A failed fetch shows the still placeholders of an id with no example, not loading pulses forever.
+const NO_EXAMPLES: ReadonlyMap<string, ChartWindow> = new Map();
+
 const TEXT_INPUT_TYPES: ReadonlySet<string> = new Set(["text", "search", "number", "email", "url", "tel", "password"]);
 
 function isTextField(target: EventTarget | null): boolean {
@@ -184,6 +188,7 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
   const actedOn = useRef<LabelWindow | null>(null);
 
   const taxonomy = useQuery(labelTaxonomyQuery(keymode));
+  const examples = useQuery(labelPatternExamplesQuery(keymode));
   const stats = useQuery(labelStatsQuery());
   const { sample, resolve, reshape, submit, undo } = useLabelMutations(keymode);
   const labelWindow = state.window;
@@ -687,8 +692,9 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
           ) : taxonomy.data === undefined ? (
             <p className="text-muted-foreground text-sm">{t("common.loading")}</p>
           ) : (
-            <PatternChips
+            <PatternGrid
               taxonomy={taxonomy.data}
+              examples={examples.isError ? NO_EXAMPLES : examples.data}
               isActive={(pattern) => isPatternActive(draft, pattern)}
               onToggle={onChip}
             />
