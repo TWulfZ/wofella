@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   type CSSProperties,
   type MouseEvent,
+  type ReactNode,
   useEffect,
   useEffectEvent,
   useReducer,
@@ -137,6 +138,10 @@ export interface LabelScreenProps {
   params?: LabelScreenParams;
   /** Used until a speed is chosen here, ahead of the cfg ManiaSpeed. */
   defaultOsuSpeed?: number;
+  /** md5 of a chart to open first, ahead of the plan (the session list's "Open in Label screen"). */
+  openChart?: string | null;
+  /** Shown from the map card's counters. */
+  countersDetails?: ReactNode;
 }
 
 function newSeed(): string {
@@ -144,19 +149,22 @@ function newSeed(): string {
 }
 
 export function LabelScreen(props: LabelScreenProps) {
-  const { keymode, seed, createAudioContext, params = LABEL_SCREEN_PARAMS } = props;
+  const { keymode, seed, createAudioContext, params = LABEL_SCREEN_PARAMS, countersDetails } = props;
   const defaultOsuSpeed = props.defaultOsuSpeed ?? null;
-  const [session, setSession] = useState(() => ({ id: 0, seed: seed ?? newSeed() }));
+  // The handed-over chart opens with the first session only; New session starts from the plan.
+  const [session, setSession] = useState(() => ({ id: 0, seed: seed ?? newSeed(), openChart: props.openChart ?? null }));
   return (
     <LabelSession
       key={session.id}
       keymode={keymode}
       seed={session.seed}
+      openChart={session.openChart}
+      countersDetails={countersDetails}
       createAudioContext={createAudioContext ?? (() => new AudioContext())}
       params={params}
       defaultOsuSpeed={defaultOsuSpeed}
       onRestart={() => {
-        setSession((s) => ({ id: s.id + 1, seed: newSeed() }));
+        setSession((s) => ({ id: s.id + 1, seed: newSeed(), openChart: null }));
       }}
     />
   );
@@ -168,6 +176,8 @@ interface LabelSessionProps {
   createAudioContext: () => ClosableAudioContext;
   params: LabelScreenParams;
   defaultOsuSpeed: number | null;
+  openChart: string | null;
+  countersDetails: ReactNode;
   onRestart: () => void;
 }
 
@@ -233,7 +243,8 @@ function gutterBackdrop(background: string | null, headerPx: number | null): CSS
   };
 }
 
-function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpeed, onRestart }: LabelSessionProps) {
+function LabelSession(props: LabelSessionProps) {
+  const { keymode, seed, createAudioContext, params, defaultOsuSpeed, openChart, countersDetails, onRestart } = props;
   const { t } = useTranslation();
   const errorText = useErrorText();
   const [state, dispatch] = useReducer(sessionReducer, seed, initialSession);
@@ -261,7 +272,7 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
   const layoutId = handLayout.data ?? null;
   const examples = useQuery({ ...labelPatternExamplesQuery(keymode, layoutId), enabled: layoutSettled });
   const stats = useQuery(labelStatsQuery());
-  const { sample, random, nowPlaying, move, resize, submit, undo } = useLabelMutations();
+  const { sample, random, nowPlaying, windowAt, move, resize, submit, undo } = useLabelMutations();
   const entry = currentEntry(state);
   const labelWindow = entry?.window ?? null;
   const anchor: Anchor | null = labelWindow?.anchor ?? null;
@@ -272,10 +283,36 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
   const timeline = useQuery(chartTimelineQuery(keymode, anchor?.md5 ?? null, params.timelineBuckets));
   const sampling = isSampling(state);
 
+  // The plan waits for the handed-over chart, so it is the session's first window either way.
+  const [opening, setOpening] = useState(openChart !== null);
+  const openRequested = useRef(false);
+  const openWindowAt = windowAt.mutate;
+  const openFailed = useEffectEvent((e: unknown) => {
+    setNotice({ tone: "error", text: errorText(e) });
+  });
+  useEffect(() => {
+    if (openChart === null || openRequested.current) {
+      return;
+    }
+    openRequested.current = true;
+    openWindowAt(
+      { keymode, md5: openChart, seed, windowMs: null, exclude: [] },
+      {
+        onSuccess: (next) => {
+          dispatch({ type: "windowLoaded", window: next, origin: { kind: "session" } });
+        },
+        onError: openFailed,
+        onSettled: () => {
+          setOpening(false);
+        },
+      },
+    );
+  }, [openChart, keymode, seed, openWindowAt]);
+
   const sampledKey = useRef<string | null>(null);
   const sampleWindow = sample.mutate;
   useEffect(() => {
-    if (!isSampling(state)) {
+    if (opening || !isSampling(state)) {
       return;
     }
     const key = `${state.round}:${sampleAttempt}`;
@@ -294,7 +331,7 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
         },
       },
     );
-  }, [state, keymode, sampleAttempt, sampleWindow]);
+  }, [state, keymode, sampleAttempt, sampleWindow, opening]);
 
   const player = useSectionPlayer(createAudioContext, params.loopSplice);
   const playback = useSyncExternalStore(player.subscribe, player.getSnapshot);
@@ -855,6 +892,7 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
               }}
               scrollRoot={patternScroll}
               onBlockSize={setHeaderPx}
+              countersDetails={countersDetails}
             />
           )}
           <div className="flex flex-1 flex-col gap-4 pt-3 pr-2 pl-1">

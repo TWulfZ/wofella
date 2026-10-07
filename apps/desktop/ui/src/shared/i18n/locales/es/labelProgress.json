@@ -1,0 +1,85 @@
+{
+  "labelProgress": {
+    "title": "Progreso del etiquetado",
+    "subtitle": "Tu conjunto gold y los mapas que jugaste en esta sesión",
+    "unavailable": "No disponible por ahora.",
+    "stats": {
+      "label": "Totales",
+      "gold": "Etiquetas gold",
+      "goldHint": "Ventanas a ciegas de tu conjunto gold",
+      "session": "Mapas de sesión etiquetados",
+      "sessionHint": "Mapas que nombraste después de jugarlos",
+      "today": "Etiquetado hoy",
+      "todayHint": "{{gold}} gold, {{session}} de sesión"
+    },
+    "axes": {
+      "title": "Etiquetas gold por patrón",
+      "description": "Ventanas por eje y patrón. Una ventana con dos patrones cuenta en ambos.",
+      "value": "{{name}}: {{count}}",
+      "noPattern": "Sin patrón claro: {{count}}"
+    },
+    "activity": {
+      "title": "Últimos {{days}} días",
+      "gold": "Gold",
+      "session": "Sesión",
+      "summary": "Últimos {{days}} días: {{gold}} y {{session}}, en {{active}}.",
+      "empty": "Nada etiquetado en los últimos {{days}} días.",
+      "day": "{{day}}: {{gold}} gold, {{session}} de sesión"
+    },
+    "recent": {
+      "title": "Etiquetas gold recientes",
+      "empty": "Aún no hay etiquetas gold. Etiqueta ventanas en la pantalla Etiquetar para formar tu conjunto gold.",
+      "unknownMap": "El mapa ya no está en la biblioteca",
+      "noPattern": "Sin patrón claro"
+    },
+    "session": {
+      "title": "Esta sesión",
+      "description": "Cada mapa que terminaste en osu! desde que se abrió wolluf. Nombra su patrón dominante: el de sus partes densas.",
+      "counts": "{{labelled}} · {{pending}}",
+      "empty": "Juega un mapa en osu! con wolluf abierto y aparecerá aquí, listo para etiquetar.",
+      "pending": "Pendiente",
+      "noPattern": "Sin patrón claro",
+      "choose": "Elegir patrón",
+      "chooseFor": "Patrón dominante de {{title}}: {{choice}}",
+      "save": "Guardar",
+      "undo": "Deshacer",
+      "open": "Abrir en la pantalla Etiquetar",
+      "playedAt": "Jugado {{when}}",
+      "stars": "{{stars}} estrellas",
+      "toLabel": "Por etiquetar",
+      "labelledGroup": "Etiquetados",
+      "playCount": "×{{count}}",
+      "timesPlayed_one": "Jugado una vez",
+      "timesPlayed_other": "Jugado {{count}} veces",
+      "noTaxonomy": "No se pudo cargar la lista de patrones, así que aquí no se pueden etiquetar mapas."
+    },
+    "ranking": {
+      "title": "Clasificación",
+      "badge": "Próximamente",
+      "body": "Más adelante podrás comparar con otros jugadores cuánto aportas al conjunto de etiquetas compartido. Todavía no se comparte nada: tus etiquetas se quedan en este ordenador."
+    },
+    "summary": {
+      "title": "Progreso del etiquetado",
+      "gold": "Conjunto gold",
+      "today": "Etiquetado hoy",
+      "session": "Esta sesión",
+      "sessionValue": "{{labelled}}, {{pending}}",
+      "pendingMaps": "Esperando etiqueta",
+      "more_one": "y {{count}} más",
+      "more_other": "y {{count}} más",
+      "link": "Ver progreso"
+    },
+    "count": {
+      "labelled_one": "{{count}} etiquetado",
+      "labelled_other": "{{count}} etiquetados",
+      "pending_one": "{{count}} pendiente",
+      "pending_other": "{{count}} pendientes",
+      "goldLabels_one": "{{count}} etiqueta gold",
+      "goldLabels_other": "{{count}} etiquetas gold",
+      "sessionMaps_one": "{{count}} mapa de sesión",
+      "sessionMaps_other": "{{count}} mapas de sesión",
+      "days_one": "{{count}} día",
+      "days_other": "{{count}} días"
+    }
+  }
+}

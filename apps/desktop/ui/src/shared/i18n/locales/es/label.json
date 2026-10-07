@@ -57,7 +57,8 @@
       "copyMd5": "Copiar MD5",
       "copied": "MD5 copiado",
       "copyFailed": "No se pudo copiar el MD5",
-      "openFailed": "No se pudo abrir la web de osu!"
+      "openFailed": "No se pudo abrir la web de osu!",
+      "progress": "Progreso del etiquetado"
     },
     "transport": {
       "play": "Reproducir",
@@ -181,7 +182,8 @@
     "origin": {
       "random": "Elección al azar",
       "osuWindow": "Desde osu!",
-      "lastReplay": "Última jugada"
+      "lastReplay": "Última jugada",
+      "session": "Jugado en esta sesión"
     },
     "toolbar": {
       "label": "Ventanas",

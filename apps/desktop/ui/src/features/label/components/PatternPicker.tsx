@@ -1,5 +1,5 @@
-import { Check, Plus, Search } from "lucide-react";
-import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import { Check, ChevronDown, Plus, Search } from "lucide-react";
+import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { PatternDefDto } from "@/ipc/bindings";
 import { cn } from "@/shared/lib/utils";
@@ -7,15 +7,33 @@ import { Button } from "@/shared/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
 import { axisKey, matchesSearch, patternName } from "./patterns";
 
-interface PatternPickerProps {
+/** A labelled button showing the current choice, in place of the "+" that adds to a set. */
+export interface PatternPickerTrigger {
+  label: string;
+  text: ReactNode;
+}
+
+export interface PatternPickerProps {
   taxonomy: readonly PatternDefDto[];
   isChosen: (pattern: PatternDefDto) => boolean;
   onPick: (pattern: PatternDefDto) => void;
   disabled: boolean;
+  /** One choice: a pick closes the list. */
+  single?: boolean;
+  trigger?: PatternPickerTrigger;
+  side?: "top" | "bottom";
 }
 
 /** The only way besides the grid to put a pattern in the answer: a filter over the taxonomy, never free text. */
-export function PatternPicker({ taxonomy, isChosen, onPick, disabled }: PatternPickerProps) {
+export function PatternPicker({
+  taxonomy,
+  isChosen,
+  onPick,
+  disabled,
+  single = false,
+  trigger,
+  side = "top",
+}: PatternPickerProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -53,6 +71,10 @@ export function PatternPicker({ taxonomy, isChosen, onPick, disabled }: PatternP
 
   const pick = (pattern: PatternDefDto): void => {
     onPick(pattern);
+    if (single) {
+      onOpenChange(false);
+      return;
+    }
     setQuery("");
     setActive(0);
     inputRef.current?.focus();
@@ -77,19 +99,26 @@ export function PatternPicker({ taxonomy, isChosen, onPick, disabled }: PatternP
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="icon-lg"
-          aria-label={t("label.answer.add")}
-          disabled={disabled}
-          className="border-dashed motion-safe:transition-colors"
-        >
-          <Plus aria-hidden />
-        </Button>
+        {trigger === undefined ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-lg"
+            aria-label={t("label.answer.add")}
+            disabled={disabled}
+            className="border-dashed motion-safe:transition-colors"
+          >
+            <Plus aria-hidden />
+          </Button>
+        ) : (
+          <Button type="button" variant="outline" size="sm" aria-label={trigger.label} disabled={disabled} className="max-w-56">
+            <span className="min-w-0 truncate">{trigger.text}</span>
+            <ChevronDown aria-hidden />
+          </Button>
+        )}
       </PopoverTrigger>
       <PopoverContent
-        side="top"
+        side={side}
         align="start"
         collisionPadding={8}
         className="flex w-80 flex-col p-0"
@@ -97,9 +126,12 @@ export function PatternPicker({ taxonomy, isChosen, onPick, disabled }: PatternP
           e.preventDefault();
           inputRef.current?.focus();
         }}
-        // Focus falls back to the page, not the + button, so the next Enter saves instead of reopening the picker.
+        // Focus falls back to the page, not the + button, so the next Enter saves instead of reopening the picker. A
+        // labelled trigger lives outside the Label screen's Enter shortcut, so focus returns to it.
         onCloseAutoFocus={(e) => {
-          e.preventDefault();
+          if (trigger === undefined) {
+            e.preventDefault();
+          }
         }}
       >
         <div className="relative border-b p-2">

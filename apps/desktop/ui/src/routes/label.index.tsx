@@ -1,14 +1,26 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import {
   LabelScreen,
   labelPatternExamplesQuery,
   labelStatsQuery,
   labelTaxonomyQuery,
 } from "@/features/label";
+import { ProgressSummary } from "@/features/labelProgress";
 import { DEFAULT_KEYMODE } from "@/features/players";
 import { handLayoutQuery } from "@/features/preferences";
 
-export const Route = createFileRoute("/label")({
+const MD5 = /^[0-9a-f]{32}$/;
+
+interface LabelSearch {
+  /** A chart to open first, handed over by the session list; consumed on arrival. */
+  chart?: string | undefined;
+}
+
+export const Route = createFileRoute("/label/")({
+  validateSearch: (search: Record<string, unknown>): LabelSearch => ({
+    chart: typeof search["chart"] === "string" && MD5.test(search["chart"]) ? search["chart"] : undefined,
+  }),
   loaderDeps: ({ search }) => ({ keymode: search.keymode ?? DEFAULT_KEYMODE }),
   loader: ({ context, deps }) =>
     Promise.all([
@@ -27,5 +39,14 @@ export const Route = createFileRoute("/label")({
 
 function LabelPage() {
   const { keymode } = Route.useLoaderDeps();
-  return <LabelScreen keymode={keymode} />;
+  const chart = Route.useSearch({ select: (search) => search.chart });
+  const navigate = Route.useNavigate();
+  // Held for the screen's life: the address drops it so nav links and a reload do not reopen the same chart.
+  const [openChart] = useState(chart ?? null);
+  useEffect(() => {
+    if (chart !== undefined) {
+      void navigate({ search: (prev) => ({ ...prev, chart: undefined }), replace: true });
+    }
+  }, [chart, navigate]);
+  return <LabelScreen keymode={keymode} openChart={openChart} countersDetails={<ProgressSummary keymode={keymode} />} />;
 }

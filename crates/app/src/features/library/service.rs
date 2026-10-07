@@ -900,6 +900,21 @@ fn diagnostics(dbs: &Dbs, chart: &CatalogChart) -> Result<Option<u32>, AppError>
         .map(|p| saturating(p.diagnostics.iter().count() as u64)))
 }
 
+/// The catalog keymode of each of `md5s` that osu!.db lists, inside a caller's cache read, for
+/// code that must not hold the context (the session tracker).
+pub(crate) fn catalog_keymodes(
+    c: Conn<'_>,
+    md5s: &BTreeSet<ChartMd5>,
+) -> Result<BTreeMap<ChartMd5, u8>, StoreError> {
+    let mut out = BTreeMap::new();
+    for md5 in md5s {
+        if let Some(chart) = catalog_chart::get(c, *md5)? {
+            out.insert(*md5, chart.keymode);
+        }
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use wolluf_core::ErrorCode;

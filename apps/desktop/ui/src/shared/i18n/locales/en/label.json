@@ -57,7 +57,8 @@
       "copyMd5": "Copy MD5",
       "copied": "MD5 copied",
       "copyFailed": "Could not copy the MD5",
-      "openFailed": "Could not open the osu! website"
+      "openFailed": "Could not open the osu! website",
+      "progress": "Labelling progress"
     },
     "transport": {
       "play": "Play",
@@ -181,7 +182,8 @@
     "origin": {
       "random": "Random pick",
       "osuWindow": "From osu!",
-      "lastReplay": "Last played"
+      "lastReplay": "Last played",
+      "session": "Played this session"
     },
     "toolbar": {
       "label": "Windows",

@@ -560,6 +560,16 @@ describe("LabelScreen", () => {
     expect(pressed("Mixed")).toBe("false");
   });
 
+  it("marks the labelling progress stale after a save, so the counters popover shows today's count", async () => {
+    renderScreen();
+    await roundLoaded();
+    const progressKey = ["labels", "progress", 7, 0];
+    queryClient?.setQueryData(progressKey, { goldTotal: 0 });
+    await saveNoPattern();
+    await roundLoaded("Beta Song");
+    expect(queryClient?.getQueryState(progressKey)?.isInvalidated).toBe(true);
+  });
+
   it("removes a chip with its × and toggles it off from its card", async () => {
     renderScreen();
     await roundLoaded();
@@ -954,6 +964,50 @@ describe("LabelScreen", () => {
     await clickTool("Next");
     await roundLoaded("Beta Song");
     expect(sampleRequests(calls)[1]).toMatchObject({ round: 1, exclude: [ANCHOR_A, ANCHOR_C] });
+  });
+
+  it("opens a chart handed over from the session list before sampling the plan", async () => {
+    const calls = renderScreen(undefined, { labelWindowAt: () => WINDOW_C }, { openChart: ANCHOR_C.md5 });
+    await roundLoaded("Gamma Song");
+    expect(screen.getByText("Played this session")).toBeInTheDocument();
+    expect(argsOf(calls, "label_window_at")).toEqual([
+      { req: { keymode: 7, md5: ANCHOR_C.md5, seed: "42", windowMs: null, exclude: [] } },
+    ]);
+    expect(sampleRequests(calls)).toHaveLength(0);
+
+    await clickTool("Next");
+    await roundLoaded("Alpha Song");
+    expect(sampleRequests(calls)[0]).toMatchObject({ round: 0, exclude: [ANCHOR_C] });
+  });
+
+  it("words a chart that cannot be opened and samples the plan instead", async () => {
+    const calls = renderScreen(undefined, { labelWindowAt: () => mockIpcError("CONFLICT") }, { openChart: ANCHOR_C.md5 });
+    await roundLoaded("Alpha Song");
+    expect(argsOf(calls, "label_window_at")).toHaveLength(1);
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+  });
+
+  it("puts the progress summary it is handed in the counters popover", async () => {
+    renderScreen(undefined, {}, { countersDetails: <p>Progress summary</p> });
+    await roundLoaded();
+    await userEvent.click(screen.getByRole("button", { name: "Labelling progress" }));
+    expect(await screen.findByText("Progress summary")).toBeInTheDocument();
+  });
+
+  it("still peeks the counters popover on keyboard focus after the mouse used its trigger", async () => {
+    renderScreen(undefined, {}, { countersDetails: <p>Progress summary</p> });
+    await roundLoaded();
+    const trigger = screen.getByRole("button", { name: "Labelling progress" });
+    // A press that ends off the trigger, so no click follows; the screen keeps focus where it was.
+    fireEvent.pointerDown(trigger, { button: 0, pointerId: 1 });
+    fireEvent.mouseDown(trigger, { button: 0 });
+    fireEvent.pointerUp(document.body, { button: 0, pointerId: 1 });
+    expect(trigger).not.toHaveFocus();
+    act(() => {
+      trigger.focus();
+    });
+    expect(await screen.findByText("Progress summary")).toBeInTheDocument();
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
   });
 
   it("sends the shown windows with Now playing, so a skipped one is not offered again", async () => {

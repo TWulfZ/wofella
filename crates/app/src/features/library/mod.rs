@@ -11,4 +11,5 @@ pub(crate) mod testkit;
 
 pub use index::IndexLibraryJob;
 pub use params::LibraryParams;
+pub(crate) use service::catalog_keymodes;
 pub use service::{ChartRows, LibraryService};

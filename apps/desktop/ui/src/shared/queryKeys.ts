@@ -5,3 +5,8 @@ export type QueryDomain = "setup" | "jobs" | "players" | "plays" | "labels" | "s
 export function qk<const A extends readonly unknown[]>(domain: QueryDomain, ...args: A): readonly [QueryDomain, ...A] {
   return [domain, ...args];
 }
+
+// Owned by the label progress slice, but the session-play-added bridge in ipc/ invalidates them and may not import a
+// feature (D14), so the roots live here.
+export const SESSION_PLAYS_ROOT = qk("plays", "session");
+export const LABEL_PROGRESS_ROOT = qk("labels", "progress");

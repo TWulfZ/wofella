@@ -10,9 +10,10 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as LabelRouteImport } from './routes/label'
 import { Route as RecommendationsRouteImport } from './routes/recommendations'
 import { Route as SkillRouteImport } from './routes/skill'
+import { Route as LabelIndexRouteImport } from './routes/label.index'
+import { Route as LabelProgressRouteImport } from './routes/label.progress'
 import { Route as SettingsIndexRouteImport } from './routes/settings.index'
 import { Route as SettingsIdentityRouteImport } from './routes/settings.identity'
 import { Route as SetupIndexRouteImport } from './routes/setup.index'
@@ -23,11 +24,6 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const LabelRoute = LabelRouteImport.update({
-  id: '/label',
-  path: '/label',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const RecommendationsRoute = RecommendationsRouteImport.update({
   id: '/recommendations',
   path: '/recommendations',
@@ -36,6 +32,16 @@ const RecommendationsRoute = RecommendationsRouteImport.update({
 const SkillRoute = SkillRouteImport.update({
   id: '/skill',
   path: '/skill',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LabelIndexRoute = LabelIndexRouteImport.update({
+  id: '/label/',
+  path: '/label/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LabelProgressRoute = LabelProgressRouteImport.update({
+  id: '/label/progress',
+  path: '/label/progress',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsIndexRoute = SettingsIndexRouteImport.update({
@@ -61,32 +67,35 @@ const SetupIdentityRoute = SetupIdentityRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/label': typeof LabelRoute
   '/recommendations': typeof RecommendationsRoute
   '/skill': typeof SkillRoute
+  '/label/progress': typeof LabelProgressRoute
   '/settings/identity': typeof SettingsIdentityRoute
   '/setup/identity': typeof SetupIdentityRoute
+  '/label/': typeof LabelIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/setup/': typeof SetupIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/label': typeof LabelRoute
   '/recommendations': typeof RecommendationsRoute
   '/skill': typeof SkillRoute
+  '/label/progress': typeof LabelProgressRoute
   '/settings/identity': typeof SettingsIdentityRoute
   '/setup/identity': typeof SetupIdentityRoute
+  '/label': typeof LabelIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/setup': typeof SetupIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/label': typeof LabelRoute
   '/recommendations': typeof RecommendationsRoute
   '/skill': typeof SkillRoute
+  '/label/progress': typeof LabelProgressRoute
   '/settings/identity': typeof SettingsIdentityRoute
   '/setup/identity': typeof SetupIdentityRoute
+  '/label/': typeof LabelIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/setup/': typeof SetupIndexRoute
 }
@@ -94,42 +103,46 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/label'
     | '/recommendations'
     | '/skill'
+    | '/label/progress'
     | '/settings/identity'
     | '/setup/identity'
+    | '/label/'
     | '/settings/'
     | '/setup/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/label'
     | '/recommendations'
     | '/skill'
+    | '/label/progress'
     | '/settings/identity'
     | '/setup/identity'
+    | '/label'
     | '/settings'
     | '/setup'
   id:
     | '__root__'
     | '/'
-    | '/label'
     | '/recommendations'
     | '/skill'
+    | '/label/progress'
     | '/settings/identity'
     | '/setup/identity'
+    | '/label/'
     | '/settings/'
     | '/setup/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  LabelRoute: typeof LabelRoute
   RecommendationsRoute: typeof RecommendationsRoute
   SkillRoute: typeof SkillRoute
+  LabelProgressRoute: typeof LabelProgressRoute
   SettingsIdentityRoute: typeof SettingsIdentityRoute
   SetupIdentityRoute: typeof SetupIdentityRoute
+  LabelIndexRoute: typeof LabelIndexRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
   SetupIndexRoute: typeof SetupIndexRoute
 }
@@ -141,13 +154,6 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/label': {
-      id: '/label'
-      path: '/label'
-      fullPath: '/label'
-      preLoaderRoute: typeof LabelRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/recommendations': {
@@ -162,6 +168,20 @@ declare module '@tanstack/react-router' {
       path: '/skill'
       fullPath: '/skill'
       preLoaderRoute: typeof SkillRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/label/': {
+      id: '/label/'
+      path: '/label'
+      fullPath: '/label/'
+      preLoaderRoute: typeof LabelIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/label/progress': {
+      id: '/label/progress'
+      path: '/label/progress'
+      fullPath: '/label/progress'
+      preLoaderRoute: typeof LabelProgressRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings/': {
@@ -197,11 +217,12 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  LabelRoute: LabelRoute,
   RecommendationsRoute: RecommendationsRoute,
   SkillRoute: SkillRoute,
+  LabelProgressRoute: LabelProgressRoute,
   SettingsIdentityRoute: SettingsIdentityRoute,
   SetupIdentityRoute: SetupIdentityRoute,
+  LabelIndexRoute: LabelIndexRoute,
   SettingsIndexRoute: SettingsIndexRoute,
   SetupIndexRoute: SetupIndexRoute,
 }

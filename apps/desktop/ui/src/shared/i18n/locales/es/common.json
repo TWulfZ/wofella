@@ -13,7 +13,11 @@
       "skill": "Habilidad",
       "recommendations": "Recomendados",
       "settings": "Ajustes",
-      "identity": "Identidad"
+      "identity": "Identidad",
+      "progress": "Progreso",
+      "withPending_one": "{{label}}, {{count}} mapa por etiquetar",
+      "withPending_other": "{{label}}, {{count}} mapas por etiquetar",
+      "sections": "Páginas de {{label}}"
     },
     "home": {
       "title": "Inicio",

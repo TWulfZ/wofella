@@ -3,6 +3,7 @@ export { HandLayoutCard } from "./HandLayoutCard";
 export { LayoutDiagram } from "./LayoutDiagram";
 export { useLayoutName } from "./layoutName";
 export { handLayoutKeys, handLayoutQuery, handLayoutsQuery, useSetHandLayout } from "./queries";
+export { SessionNotifyCard } from "./SessionNotifyCard";
 export {
   previewExample,
   readSkinChoice,

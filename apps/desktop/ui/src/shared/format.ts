@@ -17,3 +17,24 @@ export function formatEta(ms: number): string {
   const seconds = totalSeconds % SECONDS_PER_MINUTE;
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
+
+const RELATIVE_UNITS: readonly { unit: Intl.RelativeTimeFormatUnit; ms: number }[] = [
+  { unit: "year", ms: 365 * 24 * 60 * 60 * MS_PER_SECOND },
+  { unit: "month", ms: 30 * 24 * 60 * 60 * MS_PER_SECOND },
+  { unit: "week", ms: 7 * 24 * 60 * 60 * MS_PER_SECOND },
+  { unit: "day", ms: 24 * 60 * 60 * MS_PER_SECOND },
+  { unit: "hour", ms: 60 * 60 * MS_PER_SECOND },
+  { unit: "minute", ms: 60 * MS_PER_SECOND },
+];
+
+/** "5 minutes ago", "yesterday": the largest whole unit between `iso` and `nowMs`. */
+export function formatRelative(iso: string, nowMs: number, language: string): string {
+  const deltaMs = Date.parse(iso) - nowMs;
+  const format = new Intl.RelativeTimeFormat(language, { numeric: "auto" });
+  for (const { unit, ms } of RELATIVE_UNITS) {
+    if (Math.abs(deltaMs) >= ms) {
+      return format.format(Math.trunc(deltaMs / ms), unit);
+    }
+  }
+  return format.format(Math.trunc(deltaMs / MS_PER_SECOND), "second");
+}

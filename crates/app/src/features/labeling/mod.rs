@@ -8,6 +8,7 @@ mod service;
 pub mod window;
 
 pub use service::LabelingService;
+pub(crate) use service::{answerable, answered_charts};
 
 /// The slice's `label.error.*` message keys; shells map them to their own text.
 pub mod keys {

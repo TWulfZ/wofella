@@ -9,7 +9,9 @@ use wolluf_store::repo::labels::{
     DominantAnswer, GoldAnswer, NewPlayLabel, NewUndo, PlayLabel, append_play_label,
     append_play_label_undo, play_labels,
 };
+use wolluf_store::repo::players::profile;
 use wolluf_store::time::format_rfc3339_ms;
+use wolluf_store::{Conn, StoreError};
 
 use super::{
     APP_VERSION, LabelingService, count, counts, labelled_profile, parse_md5, patterns_of,
@@ -267,6 +269,23 @@ impl LabelingService<'_> {
             .map_err(blocking_join_error)??;
         Ok(labels)
     }
+}
+
+/// Charts with an effective session answer from the self profile, inside a caller's read, for
+/// code that must not hold the context (the session tracker).
+pub(crate) fn answered_charts(c: Conn<'_>) -> Result<BTreeSet<ChartMd5>, StoreError> {
+    let Some(me) = profile::self_profile(c)? else {
+        return Ok(BTreeSet::new());
+    };
+    Ok(play_labels(c, me.id)?
+        .into_iter()
+        .map(|l| l.chart_md5)
+        .collect())
+}
+
+/// Whether a session answer can be given for `keymode`: it has a taxonomy to pick from.
+pub(crate) fn answerable(keymode: u8) -> bool {
+    labelled_profile(keymode).is_ok()
 }
 
 /// `labels` come in append order, so the last one per chart is its effective answer.

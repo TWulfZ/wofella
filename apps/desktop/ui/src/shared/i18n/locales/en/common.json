@@ -13,7 +13,11 @@
       "skill": "Skill",
       "recommendations": "Recommended",
       "settings": "Settings",
-      "identity": "Identity"
+      "identity": "Identity",
+      "progress": "Progress",
+      "withPending_one": "{{label}}, {{count}} map to label",
+      "withPending_other": "{{label}}, {{count}} maps to label",
+      "sections": "{{label}} pages"
     },
     "home": {
       "title": "Home",

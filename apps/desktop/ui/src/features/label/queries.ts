@@ -10,10 +10,11 @@ import {
   type SampleRequestDto,
   type SkinDto,
   type SkinListDto,
+  type WindowAtRequestDto,
 } from "@/ipc/bindings";
 import { call } from "@/ipc/client";
 import type { ChartWindow } from "@/features/playfield";
-import { qk } from "@/shared/queryKeys";
+import { LABEL_PROGRESS_ROOT, qk } from "@/shared/queryKeys";
 import { toChartWindow, toLabelWindow } from "./mappers";
 import type { Anchor } from "./types";
 
@@ -190,6 +191,7 @@ export function useLabelMutations() {
     Promise.all([
       queryClient.invalidateQueries({ queryKey: labelKeys.stats() }),
       queryClient.invalidateQueries({ queryKey: labelKeys.chartTimelines() }),
+      queryClient.invalidateQueries({ queryKey: LABEL_PROGRESS_ROOT }),
     ]);
   return {
     sample: useMutation({
@@ -209,6 +211,9 @@ export function useLabelMutations() {
         const found = await call(commands.labelNowPlaying(req));
         return found === null ? null : { window: toLabelWindow(found.window), source: found.source };
       },
+    }),
+    windowAt: useMutation({
+      mutationFn: async (req: WindowAtRequestDto) => toLabelWindow(await call(commands.labelWindowAt(req))),
     }),
     move: useMutation({ mutationFn: (req: MoveWindowRequestDto) => call(commands.labelMoveWindow(req)) }),
     resize: useMutation({ mutationFn: (req: ResizeWindowRequestDto) => call(commands.labelResizeWindow(req)) }),

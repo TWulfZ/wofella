@@ -1,0 +1,85 @@
+{
+  "labelProgress": {
+    "title": "Labelling progress",
+    "subtitle": "Your gold set and the maps you played this session",
+    "unavailable": "Not available right now.",
+    "stats": {
+      "label": "Totals",
+      "gold": "Gold labels",
+      "goldHint": "Blind windows in your gold set",
+      "session": "Session maps labelled",
+      "sessionHint": "Maps you named after playing them",
+      "today": "Labelled today",
+      "todayHint": "{{gold}} gold, {{session}} session"
+    },
+    "axes": {
+      "title": "Gold labels by pattern",
+      "description": "Windows per axis and pattern. A window with two patterns counts in both.",
+      "value": "{{name}}: {{count}}",
+      "noPattern": "No clear pattern: {{count}}"
+    },
+    "activity": {
+      "title": "Last {{days}} days",
+      "gold": "Gold",
+      "session": "Session",
+      "summary": "Last {{days}} days: {{gold}} and {{session}}, on {{active}}.",
+      "empty": "Nothing labelled in the last {{days}} days.",
+      "day": "{{day}}: {{gold}} gold, {{session}} session"
+    },
+    "recent": {
+      "title": "Recent gold labels",
+      "empty": "No gold labels yet. Label windows on the Label screen to build your gold set.",
+      "unknownMap": "Map no longer in the library",
+      "noPattern": "No clear pattern"
+    },
+    "session": {
+      "title": "This session",
+      "description": "Every map you finished in osu! since wolluf opened. Name its dominant pattern: the one its dense parts are made of.",
+      "counts": "{{labelled}} · {{pending}}",
+      "empty": "Play a map in osu! with wolluf open and it shows up here, ready to label.",
+      "pending": "Pending",
+      "noPattern": "No clear pattern",
+      "choose": "Choose pattern",
+      "chooseFor": "Dominant pattern of {{title}}: {{choice}}",
+      "save": "Save",
+      "undo": "Undo",
+      "open": "Open in Label screen",
+      "playedAt": "Played {{when}}",
+      "stars": "{{stars}} stars",
+      "toLabel": "To label",
+      "labelledGroup": "Labelled",
+      "playCount": "×{{count}}",
+      "timesPlayed_one": "Played once",
+      "timesPlayed_other": "Played {{count}} times",
+      "noTaxonomy": "The pattern list could not be loaded, so maps cannot be labelled here."
+    },
+    "ranking": {
+      "title": "Ranking",
+      "badge": "Coming soon",
+      "body": "Later you will be able to compare how much you add to the shared label set with other players. Nothing is shared yet: your labels stay on this computer."
+    },
+    "summary": {
+      "title": "Labelling progress",
+      "gold": "Gold set",
+      "today": "Labelled today",
+      "session": "This session",
+      "sessionValue": "{{labelled}}, {{pending}}",
+      "pendingMaps": "Waiting for a label",
+      "more_one": "and {{count}} more",
+      "more_other": "and {{count}} more",
+      "link": "See progress"
+    },
+    "count": {
+      "labelled_one": "{{count}} labelled",
+      "labelled_other": "{{count}} labelled",
+      "pending_one": "{{count}} pending",
+      "pending_other": "{{count}} pending",
+      "goldLabels_one": "{{count}} gold label",
+      "goldLabels_other": "{{count}} gold labels",
+      "sessionMaps_one": "{{count}} session map",
+      "sessionMaps_other": "{{count}} session maps",
+      "days_one": "{{count}} day",
+      "days_other": "{{count}} days"
+    }
+  }
+}

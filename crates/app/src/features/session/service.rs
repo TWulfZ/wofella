@@ -13,7 +13,7 @@ use super::dto::{SessionPlayDto, SessionPlaysDto};
 use crate::context::{AppContext, InstallId, blocking_join_error};
 use crate::errors::AppError;
 use crate::events::{AppEvent, SessionPlayAddedDto};
-use crate::features::{players, plays, settings};
+use crate::features::{labeling, library, players, plays, settings};
 use crate::watch::InstallWatcher;
 
 /// Query-key roots whose change can add a session play: a sync adds plays, an identity refresh
@@ -92,17 +92,14 @@ impl<'a> SessionService<'a> {
         // Subscribed before the seed is read, so a sync finishing in between is not missed.
         let rx = self.ctx.subscribe();
         let since = self.started_at();
-        let seen = self
-            .self_plays_since(since)
-            .await?
-            .into_iter()
-            .map(|p| p.id)
-            .collect();
+        let seed = self.self_plays_since(since).await?;
         let tracker = Tracker {
             user: self.ctx.user_db().clone(),
+            cache: self.ctx.cache_db().clone(),
             events: self.ctx.event_sender(),
             since,
-            seen,
+            seen: seed.iter().map(|p| p.id).collect(),
+            listed: seed.iter().map(|p| p.chart_md5).collect(),
         };
         let task = self.ctx.runtime().spawn(tracker.run(rx)).abort_handle();
         state.adopt_tracker(epoch, task);
@@ -175,10 +172,13 @@ async fn drop_watcher(watcher: Option<InstallWatcher>) {
 /// aborts it on close.
 struct Tracker {
     user: DbHandle,
+    cache: DbHandle,
     events: broadcast::Sender<AppEvent>,
     since: UnixUs,
     /// Plays already announced, or present when tracking began.
     seen: BTreeSet<PlayId>,
+    /// Charts of `seen`: a retry of one adds no map to label, so it never flashes.
+    listed: BTreeSet<ChartMd5>,
 }
 
 impl Tracker {
@@ -206,33 +206,55 @@ impl Tracker {
 
     async fn announce_new(&mut self) -> Result<(), AppError> {
         let (user, since) = (self.user.clone(), self.since);
-        let (plays, notify) = tokio::task::spawn_blocking(move || {
+        // `answered` is `Some` only when notifying: the flash is the only thing that needs it.
+        let (plays, answered) = tokio::task::spawn_blocking(move || {
             user.read(|c| {
                 let aliases = players::self_alias_ids(c)?;
-                Ok((
-                    plays::plays_since(c, &aliases, since)?,
-                    settings::session_notify(c)?,
-                ))
+                let answered = if settings::session_notify(c)? {
+                    Some(labeling::answered_charts(c)?)
+                } else {
+                    None
+                };
+                Ok((plays::plays_since(c, &aliases, since)?, answered))
             })
         })
         .await
         .map_err(blocking_join_error)??;
-        let mut announced = false;
+        let mut fresh = BTreeSet::new();
         // Oldest first, so the UI's newest-first list grows at the top in play order.
         for p in plays.iter().rev() {
             if self.seen.insert(p.id) {
-                announced = true;
+                // Every new play is announced: the UI only refetches on it.
                 let _ = self
                     .events
                     .send(AppEvent::SessionPlayAdded(SessionPlayAddedDto {
                         play_id: p.id.to_string(),
                         md5: p.chart_md5.to_string(),
                     }));
+                if let Some(answered) = &answered
+                    && !self.listed.contains(&p.chart_md5)
+                    && !answered.contains(&p.chart_md5)
+                {
+                    fresh.insert(p.chart_md5);
+                }
             }
         }
-        if announced && notify {
+        self.listed.extend(plays.iter().map(|p| p.chart_md5));
+        if !fresh.is_empty() && self.lists_one_to_answer(fresh).await? {
             let _ = self.events.send(AppEvent::AttentionRequested);
         }
         Ok(())
+    }
+
+    /// Whether any of `charts` shows in a session list as a map to answer: osu!.db lists it, in
+    /// a keymode with a taxonomy (ADR 0020).
+    async fn lists_one_to_answer(&self, charts: BTreeSet<ChartMd5>) -> Result<bool, AppError> {
+        let cache = self.cache.clone();
+        let keymodes = tokio::task::spawn_blocking(move || {
+            cache.read(|c| library::catalog_keymodes(c, &charts))
+        })
+        .await
+        .map_err(blocking_join_error)??;
+        Ok(keymodes.into_values().any(labeling::answerable))
     }
 }

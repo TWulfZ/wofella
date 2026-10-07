@@ -436,3 +436,70 @@ describe("/settings/ default skin", () => {
     expect(await screen.findByRole("img", { name: "Pilot en un patrón de ejemplo" })).toBeInTheDocument();
   });
 });
+
+describe("/settings/ session notification", () => {
+  function notifyHandlers(initial: boolean, setFails = false): CommandHandlers {
+    let current = initial;
+    return {
+      ...handLayoutHandlers(),
+      settingsGetSessionNotify: () => current,
+      settingsSetSessionNotify: (args) => {
+        if (setFails) {
+          mockIpcError("INTERNAL");
+        }
+        current = Boolean(args["on"]);
+        return null;
+      },
+    };
+  }
+
+  async function notifySwitch(): Promise<HTMLElement> {
+    const toggle = await screen.findByRole("switch", { name: "Notify when a song ends" });
+    await waitFor(() => {
+      expect(toggle).toBeEnabled();
+    });
+    return toggle;
+  }
+
+  it("is off by default and explains it only flashes the taskbar", async () => {
+    await bootApp("/settings/", notifyHandlers(false));
+    const toggle = await notifySwitch();
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(toggle).toHaveAccessibleDescription(/taskbar/i);
+    expect(toggle).toHaveAccessibleDescription(/no system notification/i);
+  });
+
+  it("turns on and off, storing each change", async () => {
+    const { calls } = await bootApp("/settings/", notifyHandlers(false));
+    const toggle = await notifySwitch();
+    await userEvent.click(toggle);
+    await waitFor(() => {
+      expect(toggle).toHaveAttribute("aria-checked", "true");
+    });
+    await userEvent.click(toggle);
+    await waitFor(() => {
+      expect(toggle).toHaveAttribute("aria-checked", "false");
+    });
+    expect(calls.filter((c) => c.cmd === "settings_set_session_notify").map((c) => c.args)).toEqual([{ on: true }, { on: false }]);
+  });
+
+  it("shows a stored on", async () => {
+    await bootApp("/settings/", notifyHandlers(true));
+    expect(await notifySwitch()).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("keeps the stored value and words the error when saving fails", async () => {
+    await bootApp("/settings/", notifyHandlers(false, true));
+    const toggle = await notifySwitch();
+    await userEvent.click(toggle);
+    const region = screen.getByRole("region", { name: "Notify when a song ends" });
+    expect(await within(region).findByRole("alert")).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("speaks Spanish", async () => {
+    await i18n.changeLanguage("es");
+    await bootApp("/settings/", notifyHandlers(false));
+    expect(await screen.findByRole("switch", { name: "Avisar cuando termine una canción" })).toBeInTheDocument();
+  });
+});

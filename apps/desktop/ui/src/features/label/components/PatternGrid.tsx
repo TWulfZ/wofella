@@ -43,7 +43,7 @@ export const PATTERN_GRID_PARAMS: PatternGridParams = {
   highlightMs: 1200,
 };
 
-interface FamilyAccent {
+export interface FamilyAccent {
   /** Sets the axis icon's accent variable (axisIcons.tsx) to the family colour. */
   icon: string;
   heading: string;
@@ -81,6 +81,10 @@ const FALLBACK_ACCENT: FamilyAccent = {
   bar: "bg-primary",
   badge: "border-primary/50 bg-primary/15 text-primary",
 };
+
+export function familyAccent(family: string): FamilyAccent {
+  return FAMILY_ACCENTS[family] ?? FALLBACK_ACCENT;
+}
 
 export interface FocusPatternOptions {
   /**

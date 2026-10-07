@@ -20,6 +20,11 @@ export {
   type WindowOrigin,
 } from "./session";
 export type { Anchor, LabelWindow, Span, ThumbSide } from "./types";
+export { AxisIcon } from "./components/axisIcons";
+export { familyAccent } from "./components/PatternGrid";
+export { PatternPicker } from "./components/PatternPicker";
+export { HOLD_BUTTON_PARAMS, HoldButton } from "./components/HoldButton";
+export { axisKey, groupByAxis, groupByFamily, patternName } from "./components/patterns";
 export { LABEL_SCREEN_PARAMS, LabelScreen, type LabelScreenParams, type LabelScreenProps } from "./LabelScreen";
 export { toChartWindow, toLabelWindow } from "./mappers";
 export {

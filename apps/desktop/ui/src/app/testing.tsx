@@ -36,6 +36,10 @@ export async function bootApp(path: string, handlers: CommandHandlers = {}, plug
       setupDetectInstalls: () => [],
       jobsList: () => [],
       playersListAliases: () => ({ selectionVersion: 1, cfgUsernameAvailable: true, wizardNeeded: false, aliases: [] }),
+      // The shell's nav badge asks on every route.
+      sessionPlays: () => ({ startedAt: "2026-10-07T10:00:00.000Z", plays: [] }),
+      // Settings always shows the opt-in switch; it is off until the user turns it on.
+      settingsGetSessionNotify: () => false,
       ...handlers,
     },
     plugins,

@@ -17,7 +17,9 @@ export const EMPTY_ANSWER: Answer = { patterns: [], noPattern: false, mixed: fal
 export type WindowOrigin =
   | { kind: "plan"; round: number }
   | { kind: "random" }
-  | { kind: "nowPlaying"; source: "osuWindow" | "lastReplay" };
+  | { kind: "nowPlaying"; source: "osuWindow" | "lastReplay" }
+  /** A map the player chose from the session list (ADR 0020). */
+  | { kind: "session" };
 
 export type EntryStatus =
   | { kind: "pending" }

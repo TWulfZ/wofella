@@ -1,4 +1,4 @@
-import { Check, Copy, ExternalLink, Maximize2, SkipForward, Star, Trophy, Undo2 } from "lucide-react";
+import { ChartColumnBig, Check, Copy, ExternalLink, Maximize2, SkipForward, Star, Trophy, Undo2 } from "lucide-react";
 import { type ComponentType, type ReactNode, type RefObject, type SVGProps, useEffect, useEffectEvent, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@/ipc/opener";
@@ -6,6 +6,7 @@ import { cn } from "@/shared/lib/utils";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/shared/ui/dialog";
+import { Popover, PopoverAnchor, PopoverContent } from "@/shared/ui/popover";
 import { formatMinSec } from "../format";
 import type { WindowOrigin } from "../session";
 import { difficultyColour, starTextColour } from "../starColour";
@@ -17,6 +18,8 @@ export const CHART_HEADER_PARAMS = {
   compactBarPx: 44,
   /** How long the "copied" confirmation stays before the status line clears. */
   copiedFeedbackMs: 2000,
+  /** Grace before a hover-opened counters popover closes, so the pointer can travel from the counters into it. */
+  popoverCloseDelayMs: 150,
 } as const;
 
 const OSU_WEB = "https://osu.ppy.sh";
@@ -38,6 +41,8 @@ function originKey(origin: WindowOrigin): string {
       return "label.origin.random";
     case "nowPlaying":
       return origin.source === "osuWindow" ? "label.origin.osuWindow" : "label.origin.lastReplay";
+    case "session":
+      return "label.origin.session";
   }
 }
 
@@ -90,6 +95,8 @@ export interface ChartHeaderProps {
   scrollRoot?: RefObject<HTMLElement | null> | undefined;
   /** The expanded card's height, for a backdrop the panel paints under its scrollbar. */
   onBlockSize?: ((px: number) => void) | undefined;
+  /** Labelling progress shown from the counters; without it the counters stay a plain list. */
+  countersDetails?: ReactNode;
 }
 
 function StarRating({ stars }: { stars: number }) {
@@ -143,6 +150,155 @@ function Counters({ counters }: { counters: SessionCounters }) {
         );
       })}
     </ul>
+  );
+}
+
+type PopoverOpener = "hover" | "focus" | "click";
+
+const FOCUSABLE = "a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex='-1'])";
+
+/**
+ * Hover, keyboard focus and click all open it, so it is never hover-only. Hover and focus only peek (focus stays where
+ * it is); a click, or Enter on a focus-opened trigger, moves focus inside so its link can be reached.
+ */
+function CountersPopover({ counters, details }: { counters: SessionCounters; details: ReactNode }) {
+  const { t } = useTranslation();
+  const [openedBy, setOpenedBy] = useState<PopoverOpener | null>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const anchor = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const content = useRef<HTMLDivElement>(null);
+  // A pointer press focuses the trigger before its click; that focus must not count as a keyboard peek.
+  const pointerPressed = useRef(false);
+  const returnFocus = useRef(false);
+  const refocusing = useRef(false);
+
+  const cancelClose = (): void => {
+    if (closeTimer.current !== null) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+  const scheduleClose = (): void => {
+    cancelClose();
+    closeTimer.current = setTimeout(() => {
+      closeTimer.current = null;
+      setOpenedBy((current) => (current === "hover" ? null : current));
+    }, CHART_HEADER_PARAMS.popoverCloseDelayMs);
+  };
+  useEffect(() => cancelClose, []);
+
+  const peek = (): void => {
+    cancelClose();
+    setOpenedBy((current) => current ?? "hover");
+  };
+  const close = (): void => {
+    returnFocus.current = content.current?.contains(document.activeElement) ?? false;
+    setOpenedBy(null);
+  };
+  const isInsideAnchor = (target: EventTarget | null): boolean =>
+    target instanceof Node && anchor.current?.contains(target) === true;
+
+  return (
+    <Popover
+      open={openedBy !== null}
+      onOpenChange={(next) => {
+        if (!next) {
+          close();
+        }
+      }}
+    >
+      <PopoverAnchor asChild>
+        <div
+          ref={anchor}
+          data-testid="counters-row"
+          onPointerEnter={peek}
+          onPointerLeave={scheduleClose}
+          className="ml-auto flex shrink-0 items-center gap-1"
+        >
+          <Counters counters={counters} />
+          <Button
+            ref={trigger}
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label={t("label.header.progress")}
+            aria-haspopup="dialog"
+            aria-expanded={openedBy !== null}
+            onPointerDown={() => {
+              pointerPressed.current = true;
+              // Cleared on release wherever it ends: the Label screen keeps focus off a pressed button, so the focus
+              // that would clear it may never come, and the next keyboard focus would be taken for this press.
+              const released = new AbortController();
+              const release = (): void => {
+                pointerPressed.current = false;
+                released.abort();
+              };
+              window.addEventListener("pointerup", release, { capture: true, signal: released.signal });
+              window.addEventListener("pointercancel", release, { capture: true, signal: released.signal });
+            }}
+            onFocus={() => {
+              if (!pointerPressed.current && !refocusing.current) {
+                cancelClose();
+                setOpenedBy((current) => current ?? "focus");
+              }
+              pointerPressed.current = false;
+              refocusing.current = false;
+            }}
+            onClick={() => {
+              if (openedBy === "click") {
+                close();
+                return;
+              }
+              const alreadyOpen = openedBy !== null;
+              cancelClose();
+              setOpenedBy("click");
+              // Content opened by a peek is already mounted, so its auto focus will not run again.
+              if (alreadyOpen) {
+                content.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
+              }
+            }}
+          >
+            <ChartColumnBig aria-hidden />
+          </Button>
+        </div>
+      </PopoverAnchor>
+      <PopoverContent
+        ref={content}
+        role="dialog"
+        aria-label={t("label.header.progress")}
+        align="end"
+        collisionPadding={8}
+        className="w-72"
+        onPointerEnter={cancelClose}
+        onPointerLeave={() => {
+          if (openedBy === "hover") {
+            scheduleClose();
+          }
+        }}
+        onOpenAutoFocus={(e) => {
+          if (openedBy !== "click") {
+            e.preventDefault();
+          }
+        }}
+        onCloseAutoFocus={(e) => {
+          e.preventDefault();
+          if (returnFocus.current) {
+            returnFocus.current = false;
+            refocusing.current = true;
+            trigger.current?.focus();
+          }
+        }}
+        // The trigger and the counters sit outside the content; touching them must not count as leaving the popover.
+        onInteractOutside={(e) => {
+          if (isInsideAnchor(e.target)) {
+            e.preventDefault();
+          }
+        }}
+      >
+        {details}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -457,7 +613,7 @@ function CompactBar({ window, origin, background, details, nav }: CompactBarProp
 }
 
 export function ChartHeader(props: ChartHeaderProps) {
-  const { window, origin, background = null, details, nav, counters, scrollRoot, onBlockSize } = props;
+  const { window, origin, background = null, details, nav, counters, scrollRoot, onBlockSize, countersDetails } = props;
   const { t } = useTranslation();
   const sentinel = useRef<HTMLDivElement>(null);
   const collapsed = useScrolledAway(sentinel, scrollRoot);
@@ -536,7 +692,11 @@ export function ChartHeader(props: ChartHeaderProps) {
           className="border-border/60 bg-background/80 flex flex-wrap items-center gap-x-2 gap-y-1 border-t px-2 py-1.5"
         >
           <div className="flex min-w-0 flex-wrap items-center gap-1">{nav}</div>
-          <Counters counters={counters} />
+          {countersDetails === undefined ? (
+            <Counters counters={counters} />
+          ) : (
+            <CountersPopover counters={counters} details={countersDetails} />
+          )}
         </div>
         {/* The card's lower edge, below the navigation: the bar takes over only once no card control is still on screen. */}
         <div ref={sentinel} aria-hidden data-testid="header-sentinel" className="h-px w-full" />

@@ -38,6 +38,23 @@ describe("startEventBridge", () => {
     stop();
   });
 
+  it("SessionPlayAdded invalidates the session plays and labelling progress, and nothing else", async () => {
+    const { queryClient, sink } = setup();
+    queryClient.setQueryData(["plays", "session", 7], 1);
+    queryClient.setQueryData(["labels", "progress", 7, 120], 2);
+    queryClient.setQueryData(["plays", "other"], 3);
+    queryClient.setQueryData(["labels", "stats"], 4);
+    const stop = await startEventBridge(queryClient, sink);
+
+    await emitMockEvent("sessionPlayAdded", { playId: "0a1b", md5: "a".repeat(32) });
+
+    expect(queryClient.getQueryState(["plays", "session", 7])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(["labels", "progress", 7, 120])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(["plays", "other"])?.isInvalidated).toBe(false);
+    expect(queryClient.getQueryState(["labels", "stats"])?.isInvalidated).toBe(false);
+    stop();
+  });
+
   it("forwards progress and finished events to the tray sink", async () => {
     const { queryClient, sink } = setup();
     const stop = await startEventBridge(queryClient, sink);

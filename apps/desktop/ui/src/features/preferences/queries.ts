@@ -36,3 +36,23 @@ export function useSetHandLayout(keymode: number) {
     },
   });
 }
+
+export const sessionNotifyKey = ["settings", "sessionNotify"] as const;
+
+export function sessionNotifyQuery() {
+  return queryOptions({
+    queryKey: sessionNotifyKey,
+    queryFn: () => call(commands.settingsGetSessionNotify()),
+    staleTime: Infinity,
+  });
+}
+
+export function useSetSessionNotify() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (on: boolean) => call(commands.settingsSetSessionNotify(on)),
+    onSuccess: (_data, on) => {
+      queryClient.setQueryData(sessionNotifyKey, on);
+    },
+  });
+}

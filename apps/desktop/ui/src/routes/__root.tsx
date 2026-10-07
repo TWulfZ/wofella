@@ -1,9 +1,11 @@
-import { createRootRouteWithContext, Link, Outlet, redirect, useLocation } from "@tanstack/react-router";
+import { createRootRouteWithContext, Outlet, redirect, useLocation, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { RootErrorView } from "@/app/ErrorBoundary";
 import { NAV } from "@/app/nav";
+import { type NavBadgeCounts, NavGroupMenu, NavLinkItem } from "@/app/NavMenu";
 import { JobTray } from "@/features/jobs";
-import { MergeCompareToggle, NotSelfBanner, ScopePicker, validateGlobalSearch } from "@/features/players";
+import { usePendingSessionMaps } from "@/features/labelProgress";
+import { DEFAULT_KEYMODE, MergeCompareToggle, NotSelfBanner, ScopePicker, validateGlobalSearch } from "@/features/players";
 import { firstRunRedirect, SETUP_PATH, setupStatusQuery } from "@/features/setup";
 import type { RouterContext } from "@/shared/router";
 import { BrandMark } from "@/shared/ui/brand-mark";
@@ -28,6 +30,9 @@ function RootLayout() {
   const { t } = useTranslation();
   // During first-run setup there is no identity to scope by yet.
   const inSetup = useLocation({ select: (l) => l.pathname.startsWith(SETUP_PATH) });
+  const keymode = useSearch({ strict: false, select: (search) => search.keymode ?? DEFAULT_KEYMODE });
+  // Before setup there is no self profile, so nothing can be pending (ADR 0020).
+  const badges: NavBadgeCounts = { sessionPending: usePendingSessionMaps(keymode, !inSetup) ?? 0 };
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       <header className="bg-header osu-triangles sticky top-0 z-20 h-14 border-b">
@@ -38,18 +43,13 @@ function RootLayout() {
             <span className="font-display text-lg font-extrabold tracking-tight italic">{t("common.appName")}</span>
           </div>
           <nav aria-label={t("common.nav.label")} className="flex h-full shrink-0 items-center gap-1">
-            {NAV.map(({ to, labelKey, icon: Icon }) => (
-              <Link
-                key={to}
-                to={to}
-                search={(prev) => prev}
-                activeOptions={{ exact: true, includeSearch: false }}
-                className="text-muted-foreground hover:text-foreground focus-visible:ring-ring data-[status=active]:text-foreground data-[status=active]:after:bg-primary relative inline-flex h-14 items-center gap-2 rounded-sm px-3 text-sm font-medium transition-colors duration-200 after:absolute after:inset-x-2 after:bottom-0 after:hidden after:h-[3px] after:rounded-full focus-visible:ring-2 focus-visible:outline-none data-[status=active]:after:block"
-              >
-                <Icon className="size-4" aria-hidden="true" />
-                {t(labelKey)}
-              </Link>
-            ))}
+            {NAV.map((entry) =>
+              entry.kind === "group" ? (
+                <NavGroupMenu key={entry.pathPrefix} entry={entry} counts={badges} />
+              ) : (
+                <NavLinkItem key={entry.to} entry={entry} counts={badges} />
+              ),
+            )}
           </nav>
           {!inSetup && (
             <div className="ml-auto flex min-w-0 shrink items-center gap-3">

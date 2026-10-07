@@ -1020,5 +1020,6 @@ fn inside(path: &Path, root: &Path) -> bool {
 }
 
 mod session_labels;
+pub(crate) use session_labels::{answerable, answered_charts};
 #[cfg(test)]
 mod tests;

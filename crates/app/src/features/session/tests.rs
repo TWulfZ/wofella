@@ -30,6 +30,10 @@ fn beta() -> Map {
     Map::k7("beta").named("200 wolluf - beta", "Hard")
 }
 
+fn gamma() -> Map {
+    Map::k7("gamma")
+}
+
 fn four() -> Map {
     Map::new(
         "four",
@@ -58,7 +62,7 @@ const SELF_CFG: &str = "Username = TWulfZ\r\n";
 
 /// Synced once (the self profile holds `SELF_NAME`), with one play from before the session.
 async fn session() -> Fixture {
-    let maps = [alpha(), beta(), four()];
+    let maps = [alpha(), beta(), gamma(), four()];
     let f = Fixture::new(&install(&maps, &[&maps[0]]).cfg("fixture", SELF_CFG)).await;
     f.sync().await;
     f
@@ -403,10 +407,11 @@ async fn tracker_emits_each_new_self_play_once_and_attention_only_when_notifying
     assert_eq!(next_session_event(&mut rx).await, added(&second, &b));
 
     f.ctx.settings().set_session_notify(true).await.unwrap();
-    let third = score(&a, SELF_NAME, 30, 104);
+    let g = gamma();
+    let third = score(&g, SELF_NAME, 30, 104);
     save_replay(&f, &third);
     f.sync().await;
-    assert_eq!(next_session_event(&mut rx).await, added(&third, &a));
+    assert_eq!(next_session_event(&mut rx).await, added(&third, &g));
     assert_eq!(
         next_session_event(&mut rx).await,
         AppEvent::AttentionRequested
@@ -423,6 +428,53 @@ async fn tracker_emits_each_new_self_play_once_and_attention_only_when_notifying
             ),
             "{e:?}"
         );
+    }
+}
+
+/// The flash means "a map joined the list to label": a play the list never shows as a new
+/// pending map (another keymode without a taxonomy, a chart osu!.db does not list yet, a map
+/// already answered, a retry of a map already listed) is announced but never flashes.
+#[tokio::test(flavor = "multi_thread")]
+async fn tracker_requests_attention_only_for_a_new_pending_map() {
+    let f = session().await;
+    let (b, g, k4) = (beta(), gamma(), four());
+    let unlisted = Map::k7("unlisted");
+    f.ctx
+        .labeling()
+        .session_submit(dominant(&b, None, Some("regular.stream.jumpstream")))
+        .await
+        .unwrap();
+    f.ctx.settings().set_session_notify(true).await.unwrap();
+    let mut rx = f.ctx.subscribe();
+    f.ctx.session().track().await.unwrap();
+
+    let steps = [
+        (score(&k4, SELF_NAME, 10, 101), &k4),
+        (score(&unlisted, SELF_NAME, 20, 102), &unlisted),
+        (score(&b, SELF_NAME, 30, 103), &b),
+    ];
+    for (play, map) in &steps {
+        save_replay(&f, play);
+        f.sync().await;
+        assert_eq!(next_session_event(&mut rx).await, added(play, map));
+    }
+
+    let pending = score(&g, SELF_NAME, 40, 104);
+    save_replay(&f, &pending);
+    f.sync().await;
+    assert_eq!(next_session_event(&mut rx).await, added(&pending, &g));
+    assert_eq!(
+        next_session_event(&mut rx).await,
+        AppEvent::AttentionRequested
+    );
+
+    let retry = score(&g, SELF_NAME, 50, 105);
+    save_replay(&f, &retry);
+    f.sync().await;
+    assert_eq!(next_session_event(&mut rx).await, added(&retry, &g));
+    tokio::time::sleep(QUIET).await;
+    while let Ok(e) = rx.try_recv() {
+        assert_ne!(e, AppEvent::AttentionRequested);
     }
 }
 

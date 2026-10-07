@@ -193,6 +193,104 @@ describe("ChartHeader card contents", () => {
   });
 });
 
+describe("ChartHeader counters popover", () => {
+  class NoopResizeObserver {
+    observe(): void {
+      // jsdom does no layout.
+    }
+    unobserve(): void {
+      // See observe.
+    }
+    disconnect(): void {
+      // See observe.
+    }
+  }
+
+  const DETAILS_SLOT = (
+    <div>
+      <p>Gold set 42</p>
+      <a href="/label/progress">See progress</a>
+    </div>
+  );
+
+  function renderWithDetails() {
+    vi.stubGlobal("ResizeObserver", NoopResizeObserver);
+    return renderHeader({ countersDetails: DETAILS_SLOT });
+  }
+
+  it("offers no progress trigger without details to show", () => {
+    renderHeader();
+    expect(screen.queryByRole("button", { name: "Labelling progress" })).not.toBeInTheDocument();
+  });
+
+  it("opens on hover over the counters and closes after the pointer leaves", async () => {
+    const user = userEvent.setup();
+    renderWithDetails();
+    const row = screen.getByTestId("counters-row");
+    await user.hover(row);
+    expect(await screen.findByText("Gold set 42")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Labelling progress" })).toHaveAttribute("aria-expanded", "true");
+    await user.unhover(row);
+    await waitFor(() => {
+      expect(screen.queryByText("Gold set 42")).not.toBeInTheDocument();
+    });
+  });
+
+  it("stays open while the pointer moves from the counters into the popover", async () => {
+    const user = userEvent.setup();
+    renderWithDetails();
+    await user.hover(screen.getByTestId("counters-row"));
+    const link = await screen.findByRole("link", { name: "See progress" });
+    await user.unhover(screen.getByTestId("counters-row"));
+    await user.hover(link);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, CHART_HEADER_PARAMS.popoverCloseDelayMs * 2));
+    });
+    expect(screen.getByRole("link", { name: "See progress" })).toBeInTheDocument();
+  });
+
+  it("opens when the keyboard focuses the trigger, and closes on Escape", async () => {
+    const user = userEvent.setup();
+    renderWithDetails();
+    const trigger = screen.getByRole("button", { name: "Labelling progress" });
+    while (document.activeElement !== trigger) {
+      await user.tab();
+    }
+    expect(await screen.findByText("Gold set 42")).toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByText("Gold set 42")).not.toBeInTheDocument();
+    });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("opens on click and takes focus into the popover, so its link is reachable", async () => {
+    const user = userEvent.setup();
+    renderWithDetails();
+    await user.click(screen.getByRole("button", { name: "Labelling progress" }));
+    const link = await screen.findByRole("link", { name: "See progress" });
+    await waitFor(() => {
+      expect(link).toHaveFocus();
+    });
+  });
+
+  it("moves into the popover when Enter is pressed on a trigger the focus opened", async () => {
+    const user = userEvent.setup();
+    renderWithDetails();
+    const trigger = screen.getByRole("button", { name: "Labelling progress" });
+    while (document.activeElement !== trigger) {
+      await user.tab();
+    }
+    await screen.findByText("Gold set 42");
+    await user.keyboard("{Enter}");
+    const link = screen.getByRole("link", { name: "See progress" });
+    await waitFor(() => {
+      expect(link).toHaveFocus();
+    });
+  });
+});
+
 describe("ChartHeader details dialog", () => {
   it("lists each tag once, in first-seen order", async () => {
     const user = userEvent.setup();

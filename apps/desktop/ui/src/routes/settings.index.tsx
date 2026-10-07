@@ -10,6 +10,7 @@ import {
   previewExample,
   readSkinChoice,
   selectedSkinFolder,
+  SessionNotifyCard,
   skinOptions,
   writeSkinChoice,
 } from "@/features/preferences";
@@ -137,6 +138,7 @@ function SettingsPage() {
             </dl>
           </CardContent>
         </Card>
+        <SessionNotifyCard />
         <HandLayoutCard keymode={KEYMODE} />
         <DefaultSkinSection keymode={KEYMODE} />
       </div>
