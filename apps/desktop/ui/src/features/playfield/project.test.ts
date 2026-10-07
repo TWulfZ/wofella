@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_PLAYFIELD_PARAMS, fitPxPerMs, project, type ProjectView } from "./project";
+import { judgeYFromHitPosition, osuPxPerMs } from "./stage";
 import type { ChartWindow, ColumnHand } from "./types";
 
 const HANDS_313: ColumnHand[] = ["left", "left", "left", "right", "right", "right", "right"];
@@ -51,7 +52,7 @@ describe("project", () => {
     ]);
   });
 
-  it("draws an LN as body, tail and head, clipping the body to the visible area", () => {
+  it("draws an LN as body, tail and head, holding a started one's head on the judgement line", () => {
     const notes = [
       { tMs: 1200, col: 4, endMs: 1400 },
       { tMs: 900, col: 3, endMs: 3000 },
@@ -60,12 +61,12 @@ describe("project", () => {
       { col: 4, x: 400, y: 300, w: 100, h: 100, kind: "lnBody", clipped: false },
       { col: 4, x: 400, y: 300 - TAIL_H, w: 100, h: TAIL_H, kind: "lnTail", clipped: false },
       { col: 4, x: 400, y: 400 - NOTE_H, w: 100, h: NOTE_H, kind: "lnHead", clipped: false },
-      { col: 3, x: 300, y: 0, w: 100, h: 550, kind: "lnBody", clipped: true },
-      { col: 3, x: 300, y: 550 - NOTE_H, w: 100, h: NOTE_H, kind: "lnHead", clipped: false },
+      { col: 3, x: 300, y: 0, w: 100, h: 500, kind: "lnBody", clipped: true },
+      { col: 3, x: 300, y: 500 - NOTE_H, w: 100, h: NOTE_H, kind: "lnHead", clipped: false },
     ]);
   });
 
-  it("keeps each note's unclipped head and tail y for skinned drawing, dropping notes entirely above the top", () => {
+  it("keeps each note's head and tail y for skinned drawing, uncut by the top edge, dropping notes entirely above it", () => {
     const notes = [
       { tMs: 1000, col: 0, endMs: null },
       { tMs: 900, col: 3, endMs: 3000 },
@@ -74,7 +75,7 @@ describe("project", () => {
     ];
     expect(project(chartWindow({ notes }), VIEW).spans).toEqual([
       { col: 0, headY: 500, tailY: null },
-      { col: 3, headY: 550, tailY: -500 },
+      { col: 3, headY: 500, tailY: -500 },
     ]);
   });
 
@@ -115,12 +116,86 @@ describe("project", () => {
     expect(out.beatLines).toHaveLength(10);
   });
 
-  it("shades the visible regions outside [fromMs, toMs]", () => {
-    expect(project(chartWindow(), VIEW).shade).toEqual([
+  it("shades the regions above the judgement line outside [fromMs, toMs]", () => {
+    expect(project(chartWindow(), VIEW).shade).toEqual([{ y0: 0, y1: 100 }]);
+    expect(project(chartWindow({ fromMs: 1100 }), VIEW).shade).toEqual([
       { y0: 0, y1: 100 },
-      { y0: 550, y1: 600 },
+      { y0: 450, y1: 500 },
     ]);
     expect(project(chartWindow({ fromMs: 0, toMs: 10_000 }), VIEW).shade).toEqual([]);
+    expect(project(chartWindow({ fromMs: 0, toMs: 500 }), VIEW).shade).toEqual([{ y0: 0, y1: 500 }]);
+  });
+});
+
+// osu! judges a note when it reaches the skin's HitPosition; what passed it is hit or held, never drawn lower.
+describe("the judgement line ends every note's travel", () => {
+  const H = 600;
+  const viewAt = (hitPosition: number, nowMs = 1000): ProjectView => ({
+    nowMs,
+    pxPerMs: osuPxPerMs(30, H),
+    width: 700,
+    height: H,
+    judgeY: judgeYFromHitPosition(hitPosition, H),
+  });
+
+  it.each([240, 402, 428, 465, 480])("lands a note whose time is now with its bottom edge on HitPosition %i", (hitPosition) => {
+    const view = viewAt(hitPosition);
+    const out = project(chartWindow({ notes: [{ tMs: 1000, col: 2, endMs: null }] }), view);
+    const tap = out.notes[0];
+    expect(tap?.kind).toBe("tap");
+    expect((tap?.y ?? 0) + (tap?.h ?? 0)).toBe(view.judgeY);
+    expect(out.spans).toEqual([{ col: 2, headY: view.judgeY, tailY: null }]);
+  });
+
+  it.each([240, 402, 428, 480])("draws no tap that has passed HitPosition %i", (hitPosition) => {
+    const notes = [
+      { tMs: 999, col: 0, endMs: null },
+      { tMs: 950, col: 1, endMs: null },
+      { tMs: 1001, col: 2, endMs: null },
+    ];
+    const out = project(chartWindow({ notes }), viewAt(hitPosition));
+    expect(out.notes.map((n) => n.col)).toEqual([2]);
+    expect(out.spans.map((s) => s.col)).toEqual([2]);
+  });
+
+  it.each([240, 402, 428, 480])("holds a started LN's head on HitPosition %i and cuts its body there", (hitPosition) => {
+    const view = viewAt(hitPosition);
+    const tailY = view.judgeY - 200 * view.pxPerMs;
+    const out = project(chartWindow({ notes: [{ tMs: 900, col: 3, endMs: 1200 }] }), view);
+    expect(out.spans).toEqual([{ col: 3, headY: view.judgeY, tailY }]);
+    const body = out.notes.find((n) => n.kind === "lnBody");
+    const head = out.notes.find((n) => n.kind === "lnHead");
+    expect(body?.y).toBeCloseTo(tailY);
+    expect((body?.y ?? 0) + (body?.h ?? 0)).toBeCloseTo(view.judgeY);
+    expect((head?.y ?? 0) + (head?.h ?? 0)).toBe(view.judgeY);
+  });
+
+  it("drops an LN once its tail has passed the line", () => {
+    const out = project(chartWindow({ notes: [{ tMs: 800, col: 3, endMs: 999 }] }), viewAt(428));
+    expect(out.notes).toEqual([]);
+    expect(out.spans).toEqual([]);
+  });
+
+  it("draws neither notes nor beat lines below the line", () => {
+    const view = viewAt(428, 1234);
+    const notes = Array.from({ length: 40 }, (_, i) => ({
+      tMs: 800 + i * 25,
+      col: i % 7,
+      endMs: i % 3 === 0 ? 800 + i * 25 + 120 : null,
+    }));
+    const timing = [{ tMs: 0, kind: "red" as const, beatLenMs: 50, meter: 4, sv: null }];
+    const out = project(chartWindow({ notes, timing }), view);
+    expect(out.notes.length).toBeGreaterThan(0);
+    for (const n of out.notes) {
+      expect(n.y + n.h).toBeLessThanOrEqual(view.judgeY + 1e-9);
+    }
+    for (const s of out.spans) {
+      expect(s.headY).toBeLessThanOrEqual(view.judgeY + 1e-9);
+    }
+    expect(out.beatLines.length).toBeGreaterThan(0);
+    for (const line of out.beatLines) {
+      expect(line.y).toBeLessThanOrEqual(view.judgeY + 1e-9);
+    }
   });
 });
 

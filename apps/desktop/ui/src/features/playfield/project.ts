@@ -45,7 +45,10 @@ export interface NoteRect {
   clipped: boolean;
 }
 
-/** Unclipped y of a note's head and LN tail; the skinned path sizes sprites itself, so it cannot use NoteRect. */
+/**
+ * y of a note's head and LN tail, uncut by the canvas edges; the skinned path sizes sprites itself, so it cannot use
+ * NoteRect. A held LN's head stays on the judgement line.
+ */
 export interface NoteSpan {
   col: number;
   headY: number;
@@ -59,7 +62,7 @@ export interface Projection {
   beatLines: { y: number; measure: boolean }[];
   handSeparators: { x: number }[];
   columns: { x: number; w: number; hand: ColumnHand }[];
-  /** Visible regions outside [fromMs, toMs], top to bottom. */
+  /** Regions above the judgement line outside [fromMs, toMs], top to bottom. */
   shade: { y0: number; y1: number }[];
 }
 
@@ -72,7 +75,6 @@ export function project(
   // Later notes sit higher, scrolling down toward the judgement line as in osu!mania; SV is ignored on purpose.
   const yOf = (tMs: number): number => judgeY - (tMs - nowMs) * pxPerMs;
   const topMs = nowMs + judgeY / pxPerMs;
-  const bottomMs = nowMs - (height - judgeY) / pxPerMs;
 
   const colW = width / window.layout.columns.length;
   const columns = window.layout.columns.map(({ hand }, i) => ({ x: i * colW, w: colW, hand }));
@@ -97,7 +99,13 @@ export function project(
     notes.push({ col, x: column.x, y: y0, w: column.w, h: y1 - y0, kind, clipped: y0 !== top || y1 !== bottom });
   };
   for (const note of window.notes) {
-    const headY = yOf(note.tMs);
+    // The judgement line ends the travel, as in osu! played cleanly: a tap goes once its time passes, an LN once its
+    // tail does, and a held LN's head waits on the line. Letting them run on to the bottom edge made the line read as
+    // sitting on the floor and stretched the time on screen past stable's (research 06, "Scroll speed").
+    if ((note.endMs ?? note.tMs) < nowMs) {
+      continue;
+    }
+    const headY = yOf(Math.max(note.tMs, nowMs));
     // Every sprite of a note lies above its head, so a head at or above the top edge leaves nothing visible.
     if (columns[note.col] !== undefined && headY > 0) {
       spans.push({ col: note.col, headY, tailY: note.endMs === null ? null : yOf(note.endMs) });
@@ -115,10 +123,10 @@ export function project(
   return {
     notes,
     spans,
-    beatLines: beatLines(window.timing, bottomMs, topMs, params).map(({ tMs, measure }) => ({ y: yOf(tMs), measure })),
+    beatLines: beatLines(window.timing, nowMs, topMs, params).map(({ tMs, measure }) => ({ y: yOf(tMs), measure })),
     handSeparators,
     columns,
-    shade: shade(window, yOf, height),
+    shade: shade(window, yOf, Math.min(judgeY, height)),
   };
 }
 
@@ -153,15 +161,15 @@ function beatLines(
   return lines;
 }
 
-function shade(window: ChartWindow, yOf: (tMs: number) => number, height: number): { y0: number; y1: number }[] {
+function shade(window: ChartWindow, yOf: (tMs: number) => number, bottom: number): { y0: number; y1: number }[] {
   const regions: { y0: number; y1: number }[] = [];
-  const afterY = Math.min(yOf(window.toMs), height);
+  const afterY = Math.min(yOf(window.toMs), bottom);
   if (afterY > 0) {
     regions.push({ y0: 0, y1: afterY });
   }
   const beforeY = Math.max(yOf(window.fromMs), 0);
-  if (beforeY < height) {
-    regions.push({ y0: beforeY, y1: height });
+  if (beforeY < bottom) {
+    regions.push({ y0: beforeY, y1: bottom });
   }
   return regions;
 }

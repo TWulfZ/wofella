@@ -330,6 +330,32 @@ describe("Playfield with a skin", () => {
     expect(layerCanvases.instances[0]?.width).toBe(0);
   });
 
+  it.each([402, 428, 465])(
+    "lands the skin's notes on HitPosition %i when their time comes, at stable's travel time, and hides those past it",
+    (hitPosition) => {
+      const noteBitmap = image(100, 50);
+      const skin = skin7k({ hitPosition }, [[SKIN_SLOT.note(3), noteBitmap]]);
+      const speed = 30;
+      const travelMs = (hitPosition * 200) / (7 * speed);
+      const notes = [
+        { tMs: 1000, col: 3, endMs: null },
+        { tMs: 1000 + travelMs / 2, col: 3, endMs: null },
+        { tMs: 990, col: 3, endMs: null },
+      ];
+      const clock = fakeClock(1000, true);
+      render(<Playfield window={{ ...WINDOW, notes }} clock={clock} scroll={{ kind: "osu", speed }} skin={skin} />);
+      observer().resize(CONTAINER_W, H);
+      rec.images.length = 0;
+      runFrame();
+      const judgeY = skinLayout(skin, H, 1).judgeY;
+      expect(judgeY).toBeCloseTo((hitPosition * H) / 480);
+      const bottoms = rec.images.filter((op) => op.image === noteBitmap.bitmap).map((op) => op.dy + op.dh);
+      expect(bottoms).toHaveLength(2);
+      expect(bottoms[0]).toBeCloseTo(judgeY);
+      expect(bottoms[1]).toBeCloseTo(judgeY / 2);
+    },
+  );
+
   it("draws procedurally, with no image, when the skin is null", () => {
     render(<Playfield window={WINDOW} clock={null} scroll={PX} hitPosition={HIT_POSITION} skin={null} />);
     observer().resize(CONTAINER_W, H);

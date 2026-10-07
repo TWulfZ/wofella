@@ -37,6 +37,24 @@ describe("osu! stable scroll speed", () => {
     }
   });
 
+  // Research 06, "Scroll speed": v = 0.035·n is fixed, so T = HitPosition / (0.035·n) = HitPosition·200/(7n).
+  it.each([240, 402, 428, 465, 480])(
+    "takes HitPosition·200/(7n) ms from the top edge to HitPosition %i, the velocity being the same for every HitPosition",
+    (hitPosition) => {
+      for (const speed of [1, 10, 30, 40]) {
+        for (const height of HEIGHTS) {
+          const ms = visibleMs(osuPxPerMs(speed, height), judgeYFromHitPosition(hitPosition, height));
+          expect(ms).toBeCloseTo((hitPosition * 200) / (7 * speed), 6);
+        }
+      }
+    },
+  );
+
+  it("matches stable's SpeedMania.TimeAt at the default HitPosition (ppy/osu PR #13901)", () => {
+    expect(visibleMs(osuPxPerMs(40, 480), judgeYFromHitPosition(402, 480))).toBeCloseTo(287.14, 2);
+    expect(visibleMs(osuPxPerMs(1, 480), judgeYFromHitPosition(402, 480))).toBeCloseTo(11485.71, 2);
+  });
+
   it("clamps the speed to 1..40 in whole steps", () => {
     expect(clampOsuSpeed(0)).toBe(1);
     expect(clampOsuSpeed(-5)).toBe(1);
