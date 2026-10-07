@@ -1165,7 +1165,11 @@ describe("LabelScreen skins", () => {
   class SizedResizeObserver {
     constructor(private readonly callback: ResizeObserverCallback) {}
     observe(target: Element): void {
-      const entry = { target, contentRect: { width: 800, height: 600 } };
+      const entry = {
+        target,
+        contentRect: { width: 800, height: 600 },
+        borderBoxSize: [{ inlineSize: 800, blockSize: 600 }],
+      };
       queueMicrotask(() => {
         this.callback([entry as unknown as ResizeObserverEntry], this);
       });
