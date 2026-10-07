@@ -138,10 +138,17 @@ export interface LabelScreenProps {
   params?: LabelScreenParams;
   /** Used until a speed is chosen here, ahead of the cfg ManiaSpeed. */
   defaultOsuSpeed?: number;
-  /** md5 of a chart to open first, ahead of the plan (the session list's "Open in Label screen"). */
+  /** md5 of a chart to open first, ahead of the plan (the session list's "Inspect in Label screen"). */
   openChart?: string | null;
   /** Shown from the map card's counters. */
   countersDetails?: ReactNode;
+  /** Drawn under the map card while the shown window's chart came from the session list (ADR 0020). */
+  sessionMap?: ((map: SessionMapRef) => ReactNode) | undefined;
+}
+
+export interface SessionMapRef {
+  md5: string;
+  title: string;
 }
 
 function newSeed(): string {
@@ -149,7 +156,7 @@ function newSeed(): string {
 }
 
 export function LabelScreen(props: LabelScreenProps) {
-  const { keymode, seed, createAudioContext, params = LABEL_SCREEN_PARAMS, countersDetails } = props;
+  const { keymode, seed, createAudioContext, params = LABEL_SCREEN_PARAMS, countersDetails, sessionMap } = props;
   const defaultOsuSpeed = props.defaultOsuSpeed ?? null;
   // The handed-over chart opens with the first session only; New session starts from the plan.
   const [session, setSession] = useState(() => ({ id: 0, seed: seed ?? newSeed(), openChart: props.openChart ?? null }));
@@ -160,6 +167,7 @@ export function LabelScreen(props: LabelScreenProps) {
       seed={session.seed}
       openChart={session.openChart}
       countersDetails={countersDetails}
+      sessionMap={sessionMap}
       createAudioContext={createAudioContext ?? (() => new AudioContext())}
       params={params}
       defaultOsuSpeed={defaultOsuSpeed}
@@ -178,6 +186,7 @@ interface LabelSessionProps {
   defaultOsuSpeed: number | null;
   openChart: string | null;
   countersDetails: ReactNode;
+  sessionMap: ((map: SessionMapRef) => ReactNode) | undefined;
   onRestart: () => void;
 }
 
@@ -244,7 +253,8 @@ function gutterBackdrop(background: string | null, headerPx: number | null): CSS
 }
 
 function LabelSession(props: LabelSessionProps) {
-  const { keymode, seed, createAudioContext, params, defaultOsuSpeed, openChart, countersDetails, onRestart } = props;
+  const { keymode, seed, createAudioContext, params, defaultOsuSpeed, openChart, countersDetails, sessionMap, onRestart } =
+    props;
   const { t } = useTranslation();
   const errorText = useErrorText();
   const [state, dispatch] = useReducer(sessionReducer, seed, initialSession);
@@ -896,6 +906,8 @@ function LabelSession(props: LabelSessionProps) {
             />
           )}
           <div className="flex flex-1 flex-col gap-4 pt-3 pr-2 pl-1">
+            {entry?.origin.kind === "session" &&
+              sessionMap?.({ md5: entry.window.anchor.md5, title: entry.window.title })}
             {notice !== null && (
               <p
                 role={notice.tone === "error" ? "alert" : "status"}

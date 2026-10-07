@@ -8,6 +8,8 @@ import { type CommandHandlers, emitMockEvent } from "@/ipc/mocks";
 const PROGRESS: LabelProgressDto = {
   goldTotal: 42,
   goldNoPattern: 0,
+  goldBlind: 0,
+  perSelection: [],
   perPattern: [],
   perAxis: [],
   sessionLabels: 1,
@@ -28,6 +30,7 @@ function play(md5Char: string, title: string, labelled = false): SessionPlayDto 
     keymode: 7,
     setId: null,
     label: labelled ? { eventId: "01E", pattern: null, at: "2026-10-07T11:10:00.000Z" } : null,
+    goldWindows: 0,
   };
 }
 

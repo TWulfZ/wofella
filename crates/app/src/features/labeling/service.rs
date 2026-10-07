@@ -18,8 +18,8 @@ use wolluf_engine::window::chart_window;
 use wolluf_source_osu::probe::{OsuProcessProbe, ProbeParams, parse_osu_title, system_probe};
 use wolluf_source_osu::replay_dir::{self, replay_player};
 use wolluf_store::repo::labels::{
-    GoldAnswer, GoldLabel, NewGoldLabel, NewUndo, ThumbPref, append_gold_label, append_undo,
-    gold_labels,
+    ChartPick, GoldAnswer, GoldLabel, GoldSelection, NewGoldLabel, NewUndo, Selection, ThumbPref,
+    WindowPick, append_gold_label, append_undo, gold_labels,
 };
 use wolluf_store::repo::ledger::feedback_event;
 use wolluf_store::time::format_rfc3339_ms;
@@ -28,11 +28,11 @@ use wolluf_core::ErrorCode;
 use wolluf_store::StoreError;
 
 use super::dto::{
-    AnchorDto, ChartTimelineDto, ChartTimelineRequestDto, CountDto, LabelEventDto, LabelExportDto,
-    LabelStatsDto, LabelSubmitDto, LabelWindowDto, MoveWindowRequestDto, NowPlayingDto,
-    NowPlayingRequestDto, NowPlayingSourceDto, PatternDefDto, PatternExampleDto, RandomRequestDto,
-    ResizeWindowRequestDto, SampleRequestDto, SpanDto, ThumbPrefDto, WindowAtRequestDto,
-    WindowOpDto,
+    AnchorDto, ChartPickDto, ChartTimelineDto, ChartTimelineRequestDto, CountDto, LabelEventDto,
+    LabelExportDto, LabelSelectionDto, LabelStatsDto, LabelSubmitDto, LabelWindowDto,
+    MoveWindowRequestDto, NowPlayingDto, NowPlayingRequestDto, NowPlayingSourceDto, PatternDefDto,
+    PatternExampleDto, RandomRequestDto, ResizeWindowRequestDto, SampleRequestDto,
+    SelectionCountDto, SpanDto, ThumbPrefDto, WindowAtRequestDto, WindowOpDto, WindowPickDto,
 };
 use super::keys;
 use super::now_playing::{NowPlayingParams, title_matches};
@@ -46,6 +46,8 @@ use crate::jobs::to_system_time;
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 const US_PER_MS: i64 = 1_000;
 const UNKNOWN_STRATUM: &str = "unknown";
+/// Export value of a label stored before ADR 0021 recorded its selection.
+const UNKNOWN_SELECTION: &str = "unknown";
 const FLAG_MIXED: &str = "mixed";
 const FLAG_UNSURE: &str = "unsure";
 /// Examples are not library charts; zeros keep the window DTO without naming one.
@@ -115,6 +117,13 @@ struct ExportRow {
     flags: Vec<&'static str>,
     thumb_pref: Option<&'static str>,
     labelled_at: String,
+    selection: ExportSelection,
+}
+
+#[derive(Debug, Serialize)]
+struct ExportSelection {
+    pick: &'static str,
+    window: &'static str,
 }
 
 impl<'a> LabelingService<'a> {
@@ -501,6 +510,14 @@ impl<'a> LabelingService<'a> {
             ThumbPrefDto::Left => ThumbPref::Left,
             ThumbPrefDto::Right => ThumbPref::Right,
         });
+        let selection = selection_of(req.selection);
+        // The only part of a declared selection the service can check (ADR 0021): a session
+        // pick names a chart the user played.
+        if selection.pick == ChartPick::Session && !self.played().await?.contains(&md5) {
+            return Err(AppError::invalid_input()
+                .with_arg("pick", ChartPick::Session.as_str())
+                .with_arg("md5", req.anchor.md5.clone()));
+        }
         let now = self.ctx.clock().now();
         let label = move |id| NewGoldLabel {
             id,
@@ -512,6 +529,7 @@ impl<'a> LabelingService<'a> {
             mixed: req.mixed,
             unsure: req.unsure,
             thumb_pref,
+            selection,
             app_version: APP_VERSION.to_owned(),
         };
         let id = self
@@ -617,7 +635,23 @@ impl<'a> LabelingService<'a> {
             per_pattern: counts(per_pattern),
             per_axis: counts(per_axis),
             per_stratum: counts(per_stratum),
+            blind: blind_count(&labels),
+            per_selection: selection_counts(&labels),
         })
+    }
+
+    /// The self profile's gold windows that no undo cancels, per chart md5.
+    pub async fn gold_windows(&self) -> Result<BTreeMap<String, u32>, AppError> {
+        let Some(me) = self.self_profile().await? else {
+            return Ok(BTreeMap::new());
+        };
+        let mut per_chart: BTreeMap<String, u32> = BTreeMap::new();
+        for l in self.labels(me).await? {
+            *per_chart
+                .entry(l.anchor.chart_md5().to_string())
+                .or_insert(0) += 1;
+        }
+        Ok(per_chart)
     }
 
     /// The gold set as JSONL, sorted by (md5, t0).
@@ -948,6 +982,16 @@ fn export_lines(mut labels: Vec<GoldLabel>) -> Result<String, AppError> {
             flags,
             thumb_pref: l.thumb_pref.map(ThumbPref::as_str),
             labelled_at: format_rfc3339_ms(l.ts),
+            selection: match l.selection {
+                GoldSelection::Recorded(s) => ExportSelection {
+                    pick: s.pick.as_str(),
+                    window: s.window.as_str(),
+                },
+                GoldSelection::Unknown => ExportSelection {
+                    pick: UNKNOWN_SELECTION,
+                    window: UNKNOWN_SELECTION,
+                },
+            },
         };
         let line = serde_json::to_string(&row)
             .map_err(|e| AppError::internal(format!("export row: {e}")))?;
@@ -955,6 +999,57 @@ fn export_lines(mut labels: Vec<GoldLabel>) -> Result<String, AppError> {
         out.push('\n');
     }
     Ok(out)
+}
+
+fn selection_of(dto: LabelSelectionDto) -> Selection {
+    Selection {
+        pick: match dto.pick {
+            ChartPickDto::Sampled => ChartPick::Sampled,
+            ChartPickDto::Random => ChartPick::Random,
+            ChartPickDto::NowPlaying => ChartPick::NowPlaying,
+            ChartPickDto::Session => ChartPick::Session,
+        },
+        window: match dto.window {
+            WindowPickDto::Sampled => WindowPick::Sampled,
+            WindowPickDto::Moved => WindowPick::Moved,
+        },
+    }
+}
+
+fn selection_dto(s: Selection) -> LabelSelectionDto {
+    LabelSelectionDto {
+        pick: match s.pick {
+            ChartPick::Sampled => ChartPickDto::Sampled,
+            ChartPick::Random => ChartPickDto::Random,
+            ChartPick::NowPlaying => ChartPickDto::NowPlaying,
+            ChartPick::Session => ChartPickDto::Session,
+        },
+        window: match s.window {
+            WindowPick::Sampled => WindowPickDto::Sampled,
+            WindowPick::Moved => WindowPickDto::Moved,
+        },
+    }
+}
+
+fn blind_count(labels: &[GoldLabel]) -> u32 {
+    count(labels.iter().filter(|l| l.selection.is_blind()).count())
+}
+
+/// Unknown first, then by pick and window, as `GoldSelection` orders.
+fn selection_counts(labels: &[GoldLabel]) -> Vec<SelectionCountDto> {
+    let mut per: BTreeMap<GoldSelection, usize> = BTreeMap::new();
+    for l in labels {
+        *per.entry(l.selection).or_insert(0) += 1;
+    }
+    per.into_iter()
+        .map(|(selection, n)| SelectionCountDto {
+            selection: match selection {
+                GoldSelection::Recorded(s) => Some(selection_dto(s)),
+                GoldSelection::Unknown => None,
+            },
+            count: count(n),
+        })
+        .collect()
 }
 
 fn patterns_of(l: &GoldLabel) -> &[PatternId] {

@@ -226,6 +226,17 @@ export type ChartImageDto = {
 	height: number,
 };
 
+/**  Values match the persisted and exported ids. */
+export type ChartPickDto = 
+/**  The stratified sampler's round. */
+"sampled" | 
+/**  Any eligible chart, outside the stratified plan. */
+"random" | 
+/**  The chart osu! is playing, or the newest self replay. */
+"now_playing" | 
+/**  A map opened from the session list. */
+"session";
+
 /**  The first and the last row of the chart (LN tails included); `0, 0` without rows. */
 export type ChartSpanDto = {
 	firstMs: number,
@@ -452,6 +463,10 @@ export type LabelEventDto = {
 export type LabelProgressDto = {
 	goldTotal: number,
 	goldNoPattern: number,
+	/**  Gold labels whose selection is blind (ADR 0021). */
+	goldBlind: number,
+	/**  Gold labels by selection, as in `LabelStatsDto`. */
+	perSelection: SelectionCountDto[],
 	perPattern: CountDto[],
 	perAxis: CountDto[],
 	/**  Maps with a session answer; relabelling a map does not add one. */
@@ -459,6 +474,15 @@ export type LabelProgressDto = {
 	perDay: DayCountDto[],
 	/**  Newest first. */
 	recent: RecentLabelDto[],
+};
+
+/**
+ *  How a gold window was chosen (ADR 0021): blind when the chart is `sampled` or `random` and
+ *  the window is the one offered.
+ */
+export type LabelSelectionDto = {
+	pick: ChartPickDto,
+	window: WindowPickDto,
 };
 
 /**  Over the self profile's labels that are not undone. Lists are sorted by key. */
@@ -474,6 +498,10 @@ export type LabelStatsDto = {
 	perAxis: CountDto[],
 	/**  A chart no longer in the library counts under `unknown`. */
 	perStratum: CountDto[],
+	/**  Labels whose selection is blind (ADR 0021); every count above includes the others too. */
+	blind: number,
+	/**  Unknown first, then by pick and window. */
+	perSelection: SelectionCountDto[],
 };
 
 export type LabelSubmitDto = {
@@ -486,6 +514,8 @@ export type LabelSubmitDto = {
 	unsure: boolean,
 	/**  `None` is neutral. */
 	thumbPref: ThumbPrefDto | null,
+	/**  Declared by the client; the service checks only what it can know (ADR 0021). */
+	selection: LabelSelectionDto,
 };
 
 export type LabelWindowDto = {
@@ -672,6 +702,15 @@ export type ScopeDto = {
 	keymode: number,
 };
 
+/**
+ *  Gold labels with one selection; `selection` `None` counts labels stored before ADR 0021,
+ *  whose origin is unknown.
+ */
+export type SelectionCountDto = {
+	selection: LabelSelectionDto | null,
+	count: number,
+};
+
 /**  A chart's effective session answer: the latest one no undo cancels. */
 export type SessionLabelDto = {
 	eventId: string,
@@ -714,6 +753,11 @@ export type SessionPlayDto = {
 	setId: number | null,
 	/**  The chart's effective session answer, from this session or an earlier one. */
 	label: SessionLabelDto | null,
+	/**
+	 *  The self profile's gold windows on the chart that no undo cancels. Information only:
+	 *  they never resolve the row (ADR 0020).
+	 */
+	goldWindows: number,
 };
 
 export type SessionPlaysDto = {
@@ -873,6 +917,12 @@ export type WindowAtRequestDto = {
 	windowMs: number | null,
 	exclude: AnchorDto[],
 };
+
+export type WindowPickDto = 
+/**  Exactly the window the pick offered. */
+"sampled" | 
+/**  Moved, resized, widened, narrowed or shifted by the labeller. */
+"moved";
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {

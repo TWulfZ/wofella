@@ -8,8 +8,9 @@ use wolluf_app::clock::SystemClock;
 use wolluf_app::context::AppContext;
 use wolluf_app::errors::AppError;
 use wolluf_app::features::labeling::dto::{
-    AnchorDto, CountDto, LabelExportDto, LabelStatsDto, LabelSubmitDto, LabelWindowDto,
-    PatternDefDto, SampleRequestDto, ThumbPrefDto, WindowOpDto,
+    AnchorDto, ChartPickDto, CountDto, LabelExportDto, LabelSelectionDto, LabelStatsDto,
+    LabelSubmitDto, LabelWindowDto, PatternDefDto, SampleRequestDto, ThumbPrefDto, WindowOpDto,
+    WindowPickDto,
 };
 use wolluf_app::features::labeling::keys;
 use wolluf_core::Clock;
@@ -23,6 +24,8 @@ const SECONDS_PER_MINUTE: i32 = 60;
 const PROMPT: &str = "> ";
 
 const NO_PATTERN: &str = "x";
+/// How `label stats` names labels stored before ADR 0021, as the export does.
+const UNKNOWN_SELECTION: &str = "unknown";
 const THUMB_LEFT: &str = "tl";
 const THUMB_RIGHT: &str = "tr";
 const COMMANDS: &str = "x no clear pattern · tl/tr thumb side · m mixed · ? unsure · s skip · \
@@ -277,6 +280,9 @@ async fn session(
         };
         shown.push(window.anchor.clone());
         let mut anchor = window.anchor.clone();
+        // ADR 0021: once reshaped, the window is the labeller's choice even if it returns to
+        // the sampled bounds.
+        let mut window_pick = WindowPickDto::Sampled;
         let mut flags = Flags::default();
         let view = |anchor: &AnchorDto, flags: Flags, labelled: u32| View {
             round,
@@ -334,6 +340,7 @@ async fn session(
                 Input::Reshape(op) => match ctx.labeling().reshape(anchor.clone(), op).await {
                     Ok(next) => {
                         anchor = next;
+                        window_pick = WindowPickDto::Moved;
                         let v = view(&anchor, flags, counts.labelled);
                         draw(ctx, out, &v, &taxonomy).await?;
                     }
@@ -364,6 +371,10 @@ async fn session(
                         mixed: flags.mixed != toggle_mixed,
                         unsure: flags.unsure != toggle_unsure,
                         thumb_pref: thumb.or(flags.thumb),
+                        selection: LabelSelectionDto {
+                            pick: ChartPickDto::Sampled,
+                            window: window_pick,
+                        },
                     };
                     match ctx.labeling().submit(submit).await {
                         Ok(event) => {
@@ -483,9 +494,29 @@ fn counts_table(title: &str, rows: &[CountDto]) -> String {
     render::table(&[title, "COUNT"], &rows)
 }
 
+/// `pick/window` in their persisted spelling, or `unknown`.
+fn selection_key(selection: Option<LabelSelectionDto>) -> String {
+    let id = |v: serde_json::Result<serde_json::Value>| {
+        v.ok()
+            .and_then(|v| v.as_str().map(str::to_owned))
+            .unwrap_or_default()
+    };
+    selection.map_or_else(
+        || UNKNOWN_SELECTION.to_owned(),
+        |s| {
+            format!(
+                "{}/{}",
+                id(serde_json::to_value(s.pick)),
+                id(serde_json::to_value(s.window))
+            )
+        },
+    )
+}
+
 fn stats_text(s: &LabelStatsDto) -> String {
     let mut text = render::key_values(&[
         ("total", s.total.to_string()),
+        ("blind", s.blind.to_string()),
         ("no pattern", s.no_pattern.to_string()),
         ("mixed", s.mixed.to_string()),
         ("unsure", s.unsure.to_string()),
@@ -500,6 +531,16 @@ fn stats_text(s: &LabelStatsDto) -> String {
         text.push('\n');
         text.push_str(&counts_table(title, rows));
     }
+    let selections: Vec<CountDto> = s
+        .per_selection
+        .iter()
+        .map(|c| CountDto {
+            key: selection_key(c.selection),
+            count: c.count,
+        })
+        .collect();
+    text.push('\n');
+    text.push_str(&counts_table("SELECTION", &selections));
     text
 }
 
@@ -678,6 +719,45 @@ mod tests {
             assert!(!reserved(&p.key), "{} shadows a command or answer", p.key);
             assert!(!p.key.contains(['?', ',', ' ', '+', '-']), "{}", p.key);
         }
+    }
+
+    #[test]
+    fn stats_text_reports_blind_labels_and_each_selection() {
+        use wolluf_app::features::labeling::dto::SelectionCountDto;
+        let stats = LabelStatsDto {
+            total: 3,
+            no_pattern: 0,
+            mixed: 0,
+            unsure: 0,
+            thumb_left: 0,
+            thumb_right: 0,
+            per_pattern: vec![],
+            per_axis: vec![],
+            per_stratum: vec![],
+            blind: 1,
+            per_selection: vec![
+                SelectionCountDto {
+                    selection: None,
+                    count: 1,
+                },
+                SelectionCountDto {
+                    selection: Some(LabelSelectionDto {
+                        pick: ChartPickDto::NowPlaying,
+                        window: WindowPickDto::Moved,
+                    }),
+                    count: 2,
+                },
+            ],
+        };
+        let text = stats_text(&stats);
+        let row = |prefix: &str, value: &str| {
+            text.lines()
+                .any(|l| l.starts_with(prefix) && l.trim_end().ends_with(value))
+        };
+        assert!(row("blind", "1"), "{text}");
+        assert!(text.contains("SELECTION"), "{text}");
+        assert!(row("unknown", "1"), "{text}");
+        assert!(row("now_playing/moved", "2"), "{text}");
     }
 
     #[test]

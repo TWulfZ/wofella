@@ -6,11 +6,19 @@
     "stats": {
       "label": "Totales",
       "gold": "Etiquetas gold",
-      "goldHint": "Ventanas a ciegas de tu conjunto gold",
+      "goldHint": "Ventanas de tu conjunto gold",
       "session": "Mapas de sesión etiquetados",
       "sessionHint": "Mapas que nombraste después de jugarlos",
       "today": "Etiquetado hoy",
-      "todayHint": "{{gold}} gold, {{session}} de sesión"
+      "todayHint": "{{gold}} gold, {{session}} de sesión",
+      "origins": "Etiquetas gold según cómo se eligió la ventana",
+      "blind_one": "{{count}} a ciegas",
+      "blind_other": "{{count}} a ciegas",
+      "chosen_one": "{{count}} elegida",
+      "chosen_other": "{{count}} elegidas",
+      "unknown_one": "{{count}} sin origen registrado",
+      "unknown_other": "{{count}} sin origen registrado",
+      "originsExplained": "Las ventanas a ciegas las ofrecieron el plan o Al azar y se etiquetaron tal cual; son las que usa la evaluación. Las elegidas vienen de Sonando ahora o de esta sesión, o se movieron en la línea de tiempo. Las etiquetas guardadas antes de que wolluf registrara el origen no lo tienen."
     },
     "axes": {
       "title": "Etiquetas gold por patrón",
@@ -43,7 +51,7 @@
       "chooseFor": "Patrón dominante de {{title}}: {{choice}}",
       "save": "Guardar",
       "undo": "Deshacer",
-      "open": "Abrir en la pantalla Etiquetar",
+      "open": "Inspeccionar en la pantalla Etiquetar",
       "playedAt": "Jugado {{when}}",
       "toLabel": "Por etiquetar",
       "labelledGroup": "Etiquetados",
@@ -52,7 +60,11 @@
       "timesPlayed_other": "Jugado {{count}} veces",
       "noTaxonomy": "No se pudo cargar la lista de patrones, así que aquí no se pueden etiquetar mapas.",
       "pickerTitle": "Patrón dominante de {{title}}",
-      "pickerDescription": "Elige el patrón del que están hechas sus partes densas. Busca por nombre, o acota con rice, ln o un eje como tech."
+      "pickerDescription": "Elige el patrón del que están hechas sus partes densas. Busca por nombre, o acota con rice, ln o un eje como tech.",
+      "byArtist": "de {{artist}}",
+      "mappedBy": "mapeado por <creator>{{creator}}</creator>",
+      "goldWindows_one": "{{count}} ventana gold",
+      "goldWindows_other": "{{count}} ventanas gold"
     },
     "ranking": {
       "title": "Clasificación",
@@ -81,6 +93,13 @@
       "sessionMaps_other": "{{count}} mapas de sesión",
       "days_one": "{{count}} día",
       "days_other": "{{count}} días"
+    },
+    "strip": {
+      "title": "Mapa de esta sesión: patrón dominante",
+      "description": "Nombra de qué está hecho el mapa entero. Esta respuesta resuelve su fila en Esta sesión; las ventanas gold que guardes aquí no la responden.",
+      "notInSession": "Este mapa ya no está en la lista de esta sesión.",
+      "save": "Guardar patrón dominante",
+      "undo": "Deshacer patrón dominante"
     }
   }
 }

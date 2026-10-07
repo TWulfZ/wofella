@@ -6,11 +6,19 @@
     "stats": {
       "label": "Totals",
       "gold": "Gold labels",
-      "goldHint": "Blind windows in your gold set",
+      "goldHint": "Windows in your gold set",
       "session": "Session maps labelled",
       "sessionHint": "Maps you named after playing them",
       "today": "Labelled today",
-      "todayHint": "{{gold}} gold, {{session}} session"
+      "todayHint": "{{gold}} gold, {{session}} session",
+      "origins": "Gold labels by how the window was chosen",
+      "blind_one": "{{count}} blind",
+      "blind_other": "{{count}} blind",
+      "chosen_one": "{{count}} chosen",
+      "chosen_other": "{{count}} chosen",
+      "unknown_one": "{{count}} with no recorded origin",
+      "unknown_other": "{{count}} with no recorded origin",
+      "originsExplained": "Blind windows were offered by the plan or Random and labelled as offered; they are what the evaluation uses. Chosen ones came from Now playing or this session, or were moved on the timeline. Labels saved before wolluf recorded the origin have none."
     },
     "axes": {
       "title": "Gold labels by pattern",
@@ -43,7 +51,7 @@
       "chooseFor": "Dominant pattern of {{title}}: {{choice}}",
       "save": "Save",
       "undo": "Undo",
-      "open": "Open in Label screen",
+      "open": "Inspect in Label screen",
       "playedAt": "Played {{when}}",
       "toLabel": "To label",
       "labelledGroup": "Labelled",
@@ -52,7 +60,11 @@
       "timesPlayed_other": "Played {{count}} times",
       "noTaxonomy": "The pattern list could not be loaded, so maps cannot be labelled here.",
       "pickerTitle": "Dominant pattern of {{title}}",
-      "pickerDescription": "Choose the pattern its dense parts are made of. Search by name, or narrow with rice, ln or an axis such as tech."
+      "pickerDescription": "Choose the pattern its dense parts are made of. Search by name, or narrow with rice, ln or an axis such as tech.",
+      "byArtist": "by {{artist}}",
+      "mappedBy": "mapped by <creator>{{creator}}</creator>",
+      "goldWindows_one": "{{count}} gold window",
+      "goldWindows_other": "{{count}} gold windows"
     },
     "ranking": {
       "title": "Ranking",
@@ -81,6 +93,13 @@
       "sessionMaps_other": "{{count}} session maps",
       "days_one": "{{count}} day",
       "days_other": "{{count}} days"
+    },
+    "strip": {
+      "title": "Map from this session: dominant pattern",
+      "description": "Name what the whole map is made of. This answer resolves its row in This session; gold windows you save here do not answer it.",
+      "notInSession": "This map is no longer in this session's list.",
+      "save": "Save dominant pattern",
+      "undo": "Undo dominant pattern"
     }
   }
 }

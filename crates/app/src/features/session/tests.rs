@@ -8,7 +8,10 @@ use super::dto::SessionPlaysDto;
 use super::*;
 use crate::errors::AppError;
 use crate::events::{AppEvent, SessionPlayAddedDto};
-use crate::features::labeling::dto::{AnchorDto, LabelSubmitDto, SessionLabelSubmitDto};
+use crate::features::labeling::dto::{
+    AnchorDto, ChartPickDto, LabelSelectionDto, LabelSubmitDto, SelectionCountDto,
+    SessionLabelSubmitDto, WindowPickDto,
+};
 use crate::features::library::testkit::{Map, install};
 use crate::features::plays::testkit::{Fixture, T0, osr_name};
 use crate::watch::{InstallWatcher, WatchParams};
@@ -263,7 +266,67 @@ fn gold(map: &Map, t0_ms: i32, t1_ms: i32, patterns: &[&str]) -> LabelSubmitDto 
         mixed: false,
         unsure: false,
         thumb_pref: None,
+        selection: SAMPLED,
     }
+}
+
+const SAMPLED: LabelSelectionDto = LabelSelectionDto {
+    pick: ChartPickDto::Sampled,
+    window: WindowPickDto::Sampled,
+};
+
+/// Written under the store, since the service only ever labels as the self profile.
+fn append_other_profiles_gold_label(f: &Fixture, map: &Map) {
+    use wolluf_core::{ColMask, Keymode, PatternId, SegmentAnchor, TimeUs, UnixUs};
+    use wolluf_store::repo::labels::{
+        ChartPick, GoldAnswer, NewGoldLabel, Selection, WindowPick, append_gold_label,
+    };
+    use wolluf_store::repo::players::{MergeMode, NewProfile, ProfileKind, profile};
+
+    let md5: wolluf_core::ChartMd5 = map.md5.parse().unwrap();
+    f.ctx
+        .user_db()
+        .write(move |tx| {
+            let other = profile::insert(
+                tx,
+                &NewProfile {
+                    kind: ProfileKind::Other,
+                    label: "Rival".into(),
+                    is_default: false,
+                    merge_mode: MergeMode::Merged,
+                    created_at: UnixUs(0),
+                },
+            )?;
+            append_gold_label(
+                tx,
+                &NewGoldLabel {
+                    id: ulid::Ulid::from_parts(1, 1),
+                    ts: UnixUs(0),
+                    profile_id: other,
+                    keymode: Keymode::K7,
+                    anchor: SegmentAnchor::new(
+                        md5,
+                        TimeUs::from_ms(3_000),
+                        TimeUs::from_ms(3_500),
+                        ColMask::full(Keymode::K7),
+                        Keymode::K7,
+                    )
+                    .unwrap(),
+                    answer: GoldAnswer::Patterns(vec![PatternId::from_static(
+                        "regular.jack.minijack",
+                    )]),
+                    mixed: false,
+                    unsure: false,
+                    thumb_pref: None,
+                    selection: Selection {
+                        pick: ChartPick::Sampled,
+                        window: WindowPick::Sampled,
+                    },
+                    app_version: "test".into(),
+                },
+            )
+        })
+        .unwrap();
 }
 
 /// ADR 0020: the gold set, its stats, its export and the sampler's exclusions never see a
@@ -299,6 +362,41 @@ async fn session_labels_leave_gold_readers_unchanged() {
     assert_eq!(before, after);
 }
 
+/// T5: each session row shows how many gold windows its chart already has, undone ones aside.
+#[tokio::test(flavor = "multi_thread")]
+async fn session_rows_count_the_charts_gold_windows() {
+    let f = session().await;
+    let (a, b) = (alpha(), beta());
+    save_replay(&f, &score(&a, SELF_NAME, 10, 101));
+    save_replay(&f, &score(&b, SELF_NAME, 20, 102));
+    f.sync().await;
+    let labeling = f.ctx.labeling();
+    for (t0, t1) in [(1_000, 1_500), (1_500, 2_000)] {
+        labeling
+            .submit(gold(&a, t0, t1, &["regular.jack.minijack"]))
+            .await
+            .unwrap();
+    }
+    let undone = labeling
+        .submit(gold(&a, 2_000, 2_500, &["regular.jack.minijack"]))
+        .await
+        .unwrap();
+    labeling.undo(&undone.id).await.unwrap();
+    append_other_profiles_gold_label(&f, &a);
+
+    let windows = |plays: &SessionPlaysDto| {
+        plays
+            .plays
+            .iter()
+            .map(|p| (p.md5.clone(), p.gold_windows))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        windows(&f.ctx.session().plays(7).await.unwrap()),
+        [(b.md5.clone(), 0), (a.md5.clone(), 2)]
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn progress_counts_gold_and_session_labels_by_local_day() {
     let f = session().await;
@@ -317,7 +415,17 @@ async fn progress_counts_gold_and_session_labels_by_local_day() {
         ))
         .await
         .unwrap();
-    labeling.submit(gold(&b, 1_000, 2_000, &[])).await.unwrap();
+    let chosen = LabelSelectionDto {
+        pick: ChartPickDto::NowPlaying,
+        window: WindowPickDto::Sampled,
+    };
+    labeling
+        .submit(LabelSubmitDto {
+            selection: chosen,
+            ..gold(&b, 1_000, 2_000, &[])
+        })
+        .await
+        .unwrap();
     labeling
         .session_submit(dominant(&a, None, Some("regular.stream.jumpstream")))
         .await
@@ -336,6 +444,23 @@ async fn progress_counts_gold_and_session_labels_by_local_day() {
     assert_eq!(
         (p.gold_total, p.gold_no_pattern, p.session_labels),
         (2, 1, 2)
+    );
+    assert_eq!(
+        p.gold_blind, 1,
+        "a now-playing pick is not blind (ADR 0021)"
+    );
+    assert_eq!(
+        p.per_selection,
+        [
+            SelectionCountDto {
+                selection: Some(SAMPLED),
+                count: 1
+            },
+            SelectionCountDto {
+                selection: Some(chosen),
+                count: 1
+            },
+        ]
     );
     let keyed = |c: &[crate::features::labeling::dto::CountDto]| {
         c.iter()

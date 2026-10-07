@@ -1,6 +1,6 @@
 // The label session: windows shown, their outcomes and the answer being built. IPC calls happen outside and only their
 // outcomes are dispatched here.
-import type { Anchor, LabelWindow, ThumbSide } from "./types";
+import type { Anchor, LabelSelection, LabelWindow, ThumbSide } from "./types";
 
 export interface Answer {
   /** Full taxonomy ids in pick order; never typed, so only ids the taxonomy offers can be stored. */
@@ -30,6 +30,8 @@ export interface HistoryEntry {
   /** Its anchor follows timeline moves. */
   window: LabelWindow;
   origin: WindowOrigin;
+  /** Set by any applied timeline move or resize, even one that ends on the offered bounds: the labeller looked elsewhere. */
+  moved: boolean;
   status: EntryStatus;
 }
 
@@ -142,7 +144,7 @@ function loaded(state: SessionState, window: LabelWindow, origin: WindowOrigin):
   return moveTo(
     {
       ...state,
-      history: [...state.history, { window, origin, status: { kind: "pending" } }],
+      history: [...state.history, { window, origin, moved: false, status: { kind: "pending" } }],
       shown: [...state.shown, window.anchor],
       round: origin.kind === "plan" ? state.round + 1 : state.round,
       randomRound: origin.kind === "random" ? state.randomRound + 1 : state.randomRound,
@@ -166,7 +168,7 @@ export function sessionReducer(state: SessionState, action: SessionAction): Sess
         return state;
       }
       const window = { ...entry.window, anchor: action.anchor };
-      return { ...state, history: state.history.map((e, i) => (i === action.cursor ? { ...e, window } : e)) };
+      return { ...state, history: state.history.map((e, i) => (i === action.cursor ? { ...e, window, moved: true } : e)) };
     }
     case "moved":
       if (action.to === "previous") {
@@ -276,6 +278,18 @@ export interface SubmitPayload {
   mixed: boolean;
   unsure: boolean;
   thumbPref: ThumbSide | null;
+  selection: LabelSelection;
+}
+
+const ORIGIN_PICK: Readonly<Record<WindowOrigin["kind"], LabelSelection["pick"]>> = {
+  plan: "sampled",
+  random: "random",
+  nowPlaying: "now_playing",
+  session: "session",
+};
+
+export function selectionOf(entry: HistoryEntry): LabelSelection {
+  return { pick: ORIGIN_PICK[entry.origin.kind], window: entry.moved ? "moved" : "sampled" };
 }
 
 export function submitPayload(state: SessionState): SubmitPayload | null {
@@ -284,5 +298,13 @@ export function submitPayload(state: SessionState): SubmitPayload | null {
     return null;
   }
   const { patterns, noPattern, mixed, unsure, thumb } = state.answer;
-  return { anchor: entry.window.anchor, patterns: [...patterns], noPattern, mixed, unsure, thumbPref: thumb };
+  return {
+    anchor: entry.window.anchor,
+    patterns: [...patterns],
+    noPattern,
+    mixed,
+    unsure,
+    thumbPref: thumb,
+    selection: selectionOf(entry),
+  };
 }

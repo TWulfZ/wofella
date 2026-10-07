@@ -31,4 +31,7 @@ pub struct SessionPlayDto {
     pub set_id: Option<i32>,
     /// The chart's effective session answer, from this session or an earlier one.
     pub label: Option<SessionLabelDto>,
+    /// The self profile's gold windows on the chart that no undo cancels. Information only:
+    /// they never resolve the row (ADR 0020).
+    pub gold_windows: u32,
 }

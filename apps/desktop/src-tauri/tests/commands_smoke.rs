@@ -294,20 +294,27 @@ mod commands_smoke {
 
         let anchor =
             json!({ "md5": CHART_MD5, "t0Ms": 0, "t1Ms": 2_000, "cols": [1, 2, 3, 4, 5, 6, 7] });
-        let event = h
-            .invoke(
-                "label_submit",
-                json!({ "req": {
-                    "anchor": anchor, "patterns": ids, "noPattern": false, "mixed": false,
-                    "unsure": false, "thumbPref": null,
-                } }),
-            )
-            .unwrap();
+        let req = |pick: &str| {
+            json!({ "req": {
+                "anchor": anchor, "patterns": ids, "noPattern": false, "mixed": false,
+                "unsure": false, "thumbPref": null,
+                "selection": { "pick": pick, "window": "moved" },
+            } })
+        };
+        // ADR 0021: the selection's ids cross the wire in their persisted spelling.
+        assert!(h.invoke("label_submit", req("nowPlaying")).is_err());
+        let event = h.invoke("label_submit", req("now_playing")).unwrap();
         let id = event["id"].as_str().unwrap().to_owned();
         assert_eq!(id.len(), ULID_LEN, "{id}");
+        let stats = h.invoke("label_stats", json!({})).unwrap();
         assert_eq!(
-            h.invoke("label_stats", json!({})).unwrap()["total"],
-            json!(1)
+            (&stats["total"], &stats["blind"]),
+            (&json!(1), &json!(0)),
+            "{stats}"
+        );
+        assert_eq!(
+            stats["perSelection"],
+            json!([{ "selection": { "pick": "now_playing", "window": "moved" }, "count": 1 }])
         );
 
         h.invoke("label_undo", json!({ "eventId": id })).unwrap();
@@ -481,10 +488,11 @@ mod commands_smoke {
         };
         let p = progress(&h);
         assert_eq!(
-            (&p["sessionLabels"], &p["goldTotal"]),
-            (&json!(1), &json!(0)),
+            (&p["sessionLabels"], &p["goldTotal"], &p["goldBlind"]),
+            (&json!(1), &json!(0), &json!(0)),
             "{p}"
         );
+        assert_eq!(p["perSelection"], json!([]), "{p}");
         assert_eq!(p["perDay"].as_array().unwrap().len(), 30, "{p}");
         // ADR 0020: a session label never reaches the gold stats.
         assert_eq!(

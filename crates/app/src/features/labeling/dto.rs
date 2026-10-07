@@ -178,6 +178,49 @@ pub struct LabelSubmitDto {
     pub unsure: bool,
     /// `None` is neutral.
     pub thumb_pref: Option<ThumbPrefDto>,
+    /// Declared by the client; the service checks only what it can know (ADR 0021).
+    pub selection: LabelSelectionDto,
+}
+
+/// How a gold window was chosen (ADR 0021): blind when the chart is `sampled` or `random` and
+/// the window is the one offered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LabelSelectionDto {
+    pub pick: ChartPickDto,
+    pub window: WindowPickDto,
+}
+
+/// Values match the persisted and exported ids.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ChartPickDto {
+    /// The stratified sampler's round.
+    Sampled,
+    /// Any eligible chart, outside the stratified plan.
+    Random,
+    /// The chart osu! is playing, or the newest self replay.
+    NowPlaying,
+    /// A map opened from the session list.
+    Session,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum WindowPickDto {
+    /// Exactly the window the pick offered.
+    Sampled,
+    /// Moved, resized, widened, narrowed or shifted by the labeller.
+    Moved,
+}
+
+/// Gold labels with one selection; `selection` `None` counts labels stored before ADR 0021,
+/// whose origin is unknown.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SelectionCountDto {
+    pub selection: Option<LabelSelectionDto>,
+    pub count: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -216,6 +259,10 @@ pub struct LabelStatsDto {
     pub per_axis: Vec<CountDto>,
     /// A chart no longer in the library counts under `unknown`.
     pub per_stratum: Vec<CountDto>,
+    /// Labels whose selection is blind (ADR 0021); every count above includes the others too.
+    pub blind: u32,
+    /// Unknown first, then by pick and window.
+    pub per_selection: Vec<SelectionCountDto>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -288,6 +335,10 @@ pub struct RecentLabelDto {
 pub struct LabelProgressDto {
     pub gold_total: u32,
     pub gold_no_pattern: u32,
+    /// Gold labels whose selection is blind (ADR 0021).
+    pub gold_blind: u32,
+    /// Gold labels by selection, as in `LabelStatsDto`.
+    pub per_selection: Vec<SelectionCountDto>,
     pub per_pattern: Vec<CountDto>,
     pub per_axis: Vec<CountDto>,
     /// Maps with a session answer; relabelling a map does not add one.

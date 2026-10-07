@@ -4,9 +4,10 @@ use wolluf_core::ErrorCode;
 
 use super::*;
 use crate::features::labeling::dto::{
-    AnchorDto, ChartTimelineDto, ChartTimelineRequestDto, LabelSubmitDto, MoveWindowRequestDto,
-    NowPlayingRequestDto, NowPlayingSourceDto, RandomRequestDto, ResizeWindowRequestDto,
-    SampleRequestDto, SpanDto, WindowAtRequestDto, WindowOpDto,
+    AnchorDto, ChartPickDto, ChartTimelineDto, ChartTimelineRequestDto, LabelSelectionDto,
+    LabelSubmitDto, MoveWindowRequestDto, NowPlayingRequestDto, NowPlayingSourceDto,
+    RandomRequestDto, ResizeWindowRequestDto, SampleRequestDto, SelectionCountDto, SpanDto,
+    WindowAtRequestDto, WindowOpDto, WindowPickDto,
 };
 use crate::features::library::testkit::{Map, install, osu_text, synced};
 use crate::features::plays::testkit::Fixture;
@@ -49,7 +50,12 @@ fn submit(anchor: &AnchorDto, patterns: &[&str]) -> LabelSubmitDto {
         mixed: false,
         unsure: false,
         thumb_pref: None,
+        selection: picked(ChartPickDto::Sampled, WindowPickDto::Sampled),
     }
+}
+
+fn picked(pick: ChartPickDto, window: WindowPickDto) -> LabelSelectionDto {
+    LabelSelectionDto { pick, window }
 }
 
 fn anchor(md5: &str, t0_ms: i32, t1_ms: i32) -> AnchorDto {
@@ -410,6 +416,7 @@ async fn export_is_sorted_anchors_and_ids_only() {
             "flags": [],
             "thumb_pref": null,
             "labelled_at": "2026-09-28T23:13:56.636Z",
+            "selection": {"pick": "sampled", "window": "sampled"},
         })
     );
     assert_eq!(lines[2]["flags"], serde_json::json!(["mixed", "unsure"]));
@@ -630,6 +637,10 @@ async fn another_profiles_label_is_neither_undone_nor_counted() {
                     mixed: false,
                     unsure: false,
                     thumb_pref: None,
+                    selection: wolluf_store::repo::labels::Selection {
+                        pick: wolluf_store::repo::labels::ChartPick::Sampled,
+                        window: wolluf_store::repo::labels::WindowPick::Sampled,
+                    },
                     app_version: "test".into(),
                 },
             )
@@ -792,6 +803,131 @@ async fn no_pattern_answers_and_thumb_sides_are_stored_counted_and_exported() {
     assert_eq!(lines[0]["thumb_pref"], "left");
     assert_eq!(lines[1]["no_pattern"], false);
     assert_eq!(lines[1]["thumb_pref"], "right");
+}
+
+/// A `segment_label` exactly as written before ADR 0021, under the self profile.
+async fn store_v1_label(f: &Fixture, md5: &str, t0_ms: i64, t1_ms: i64) {
+    use wolluf_store::repo::labels::SEGMENT_LABEL_KIND;
+    use wolluf_store::repo::ledger::NewFeedbackEvent;
+
+    let me = f.ctx.players().self_profile_id().await.unwrap().unwrap();
+    let md5 = md5.to_owned();
+    f.ctx
+        .user_db()
+        .write(move |tx| {
+            feedback_event::append(
+                tx,
+                &NewFeedbackEvent {
+                    id: ulid::Ulid::from_parts(1, 1),
+                    ts: wolluf_core::UnixUs(0),
+                    profile_id: Some(me),
+                    kind: SEGMENT_LABEL_KIND.to_owned(),
+                    subject: serde_json::json!({"anchor": {
+                        "chart_md5": md5, "t0_us": t0_ms * 1_000, "t1_us": t1_ms * 1_000,
+                        "cols": [0, 1, 2, 3, 4, 5, 6], "keymode": 7,
+                    }}),
+                    payload: serde_json::json!({
+                        "v": 1, "action": "assert_set", "origin": "gold",
+                        "patterns": ["regular.stream.trill"],
+                        "flags": {"mixed": false, "unsure": false},
+                    }),
+                    context: serde_json::json!({"app_version": "0.1.0"}),
+                },
+            )
+        })
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn submit_records_the_selection_and_stats_and_export_report_it() {
+    let (f, maps) = library().await;
+    let svc = f.ctx.labeling();
+    let (three, eight, plain) = (&maps[0].md5, &maps[1].md5, &maps[2].md5);
+    let random = picked(ChartPickDto::Random, WindowPickDto::Sampled);
+    let moved = picked(ChartPickDto::NowPlaying, WindowPickDto::Moved);
+    svc.submit(submit(&anchor(three, 0, 4_000), &["regular.stream.trill"]))
+        .await
+        .unwrap();
+    svc.submit(LabelSubmitDto {
+        selection: random,
+        ..submit(&anchor(eight, 0, 4_000), &["regular.stream.trill"])
+    })
+    .await
+    .unwrap();
+    svc.submit(LabelSubmitDto {
+        selection: moved,
+        ..submit(&anchor(plain, 0, 4_000), &["regular.stream.trill"])
+    })
+    .await
+    .unwrap();
+    store_v1_label(&f, three, 8_000, 12_000).await;
+
+    let stats = svc.stats().await.unwrap();
+    assert_eq!((stats.total, stats.blind), (4, 2), "{stats:?}");
+    let count = |selection, count| SelectionCountDto { selection, count };
+    assert_eq!(
+        stats.per_selection,
+        [
+            count(None, 1),
+            count(
+                Some(picked(ChartPickDto::Sampled, WindowPickDto::Sampled)),
+                1
+            ),
+            count(Some(random), 1),
+            count(Some(moved), 1),
+        ]
+    );
+
+    let text = svc.export_jsonl().await.unwrap();
+    let selection_of = |md5: &str, t0_us: i64| {
+        text.lines()
+            .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
+            .find(|r| r["md5"] == md5 && r["t0_us"] == t0_us)
+            .unwrap()["selection"]
+            .clone()
+    };
+    assert_eq!(
+        selection_of(three, 0),
+        serde_json::json!({"pick": "sampled", "window": "sampled"})
+    );
+    assert_eq!(
+        selection_of(plain, 0),
+        serde_json::json!({"pick": "now_playing", "window": "moved"})
+    );
+    assert_eq!(
+        selection_of(three, 8_000_000),
+        serde_json::json!({"pick": "unknown", "window": "unknown"}),
+        "a label stored before ADR 0021 exports with an unknown selection"
+    );
+}
+
+/// ADR 0021: the service checks what it can know; a session pick names a chart the user played.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_session_pick_needs_a_chart_the_self_profile_played() {
+    use crate::features::plays::testkit::scores_db;
+    use wolluf_source_osu::testkit::ScoreBuilder;
+
+    let maps = maps();
+    let (three, eight) = (&maps[0], &maps[1]);
+    let inst = install(&maps, &[])
+        .cfg("fixture", "Username = TWulfZ\r\n")
+        .scores_db(scores_db(&[
+            ScoreBuilder::mania(&three.md5, "TWulfZ", 1),
+            ScoreBuilder::mania(&eight.md5, "Kovacs", 2),
+        ]));
+    let f = Fixture::new(&inst).await;
+    f.sync().await;
+    let svc = f.ctx.labeling();
+    let session = |md5: &str| LabelSubmitDto {
+        selection: picked(ChartPickDto::Session, WindowPickDto::Moved),
+        ..submit(&anchor(md5, 0, 4_000), &["regular.stream.trill"])
+    };
+    let err = svc.submit(session(&eight.md5)).await.unwrap_err();
+    assert_eq!(err.code, ErrorCode::InvalidInput, "{err:?}");
+    assert_eq!(err.args.get("pick").map(String::as_str), Some("session"));
+    svc.submit(session(&three.md5)).await.unwrap();
+    let stats = svc.stats().await.unwrap();
+    assert_eq!((stats.total, stats.blind), (1, 0));
 }
 
 /// The gold protocol stays blind: name hints never reach the sampler or the window it shows.

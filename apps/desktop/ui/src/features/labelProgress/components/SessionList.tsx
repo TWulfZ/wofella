@@ -1,35 +1,24 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Check, ExternalLink, Undo2 } from "lucide-react";
-import { useId, useState } from "react";
-import { useTranslation } from "react-i18next";
-import {
-  backgroundDataUrl,
-  chartBackgroundQuery,
-  HoldButton,
-  PatternGridPicker,
-  patternName,
-  StarRating,
-} from "@/features/label";
+import { ExternalLink, Trophy } from "lucide-react";
+import { type RefCallback, useId } from "react";
+import { Trans, useTranslation } from "react-i18next";
+import { backgroundDataUrl, chartBackgroundQuery, StarRating } from "@/features/label";
 import type { PatternDefDto, SessionPlayDto, SessionPlaysDto } from "@/ipc/bindings";
-import { useErrorText } from "@/ipc/errorText";
 import { formatDateTime, formatRelative } from "@/shared/format";
 import { cn } from "@/shared/lib/utils";
 import { Badge } from "@/shared/ui/badge";
-import { Button, buttonVariants } from "@/shared/ui/button";
+import { buttonVariants } from "@/shared/ui/button";
 import { sessionCountsText } from "../countText";
 import { type SessionMap, sessionMapCounts, sessionMaps } from "../model";
-import { useSessionLabelMutations } from "../queries";
 import { useNearViewport } from "../useNearViewport";
 import { QueryAlert } from "./QueryAlert";
+import { SessionAnswer, SessionStatusPill } from "./SessionAnswer";
 
 export interface SessionThumbnailParams {
   /** How far outside the viewport a row starts loading its image, so it is there by the time it scrolls in. */
   rootMargin: string;
 }
-
-/** The answer being built: one taxonomy pattern or "no clear pattern" (ADR 0020), never a set. */
-type Draft = { kind: "pattern"; id: string } | { kind: "none" } | null;
 
 interface SessionRowProps {
   map: SessionMap;
@@ -40,17 +29,20 @@ interface SessionRowProps {
   thumbnail: SessionThumbnailParams;
 }
 
-function MapThumbnail({ md5, params }: { md5: string; params: SessionThumbnailParams }) {
+function useLazyCover(md5: string, params: SessionThumbnailParams): [RefCallback<HTMLDivElement>, string | null] {
   const [ref, near] = useNearViewport<HTMLDivElement>(params.rootMargin);
   const background = useQuery(chartBackgroundQuery(near ? md5 : null));
-  const src = backgroundDataUrl(background.data);
-  // Fixed box, so the image arriving or failing moves nothing.
+  return [ref, backgroundDataUrl(background.data)];
+}
+
+function MapCover({ coverRef, src }: { coverRef: RefCallback<HTMLDivElement>; src: string | null }) {
+  // Fixed square, so the image arriving or failing moves nothing.
   return (
     <div
-      ref={ref}
+      ref={coverRef}
       aria-hidden
       data-testid="session-thumb"
-      className="ring-border relative h-14 w-24 shrink-0 overflow-hidden rounded-md ring-1"
+      className="ring-border relative size-24 shrink-0 self-start overflow-hidden rounded-lg shadow-md shadow-black/40 ring-1"
     >
       {src === null ? (
         <div data-testid="session-thumb-fallback" className="from-osu-pink/35 via-osu-purple/25 to-osu-blue/35 size-full bg-linear-to-br" />
@@ -68,158 +60,93 @@ function MapThumbnail({ md5, params }: { md5: string; params: SessionThumbnailPa
   );
 }
 
-function answerText(pattern: string | null, noPatternText: string): string {
-  return pattern === null ? noPatternText : patternName(pattern);
-}
-
 function SessionRow({ map, keymode, taxonomy, holdMs, nowMs, thumbnail }: SessionRowProps) {
   const play: SessionPlayDto = map.newest;
   const { t, i18n } = useTranslation();
-  const errorText = useErrorText();
   const titleId = useId();
-  const [draft, setDraft] = useState<Draft>(null);
-  const [error, setError] = useState<string | null>(null);
-  const { submit, undo } = useSessionLabelMutations();
-  const busy = submit.isPending || undo.isPending;
-  const noPatternText = t("labelProgress.session.noPattern");
-
-  const save = async (): Promise<void> => {
-    if (draft === null) {
-      return;
-    }
-    setError(null);
-    try {
-      await submit.mutateAsync({
-        keymode,
-        md5: play.md5,
-        playId: play.playId,
-        pattern: draft.kind === "pattern" ? draft.id : null,
-      });
-      setDraft(null);
-    } catch (e) {
-      setError(errorText(e));
-    }
-  };
-
-  const runUndo = async (eventId: string): Promise<void> => {
-    setError(null);
-    try {
-      await undo.mutateAsync(eventId);
-    } catch (e) {
-      setError(errorText(e));
-    }
-  };
-
-  // Untouched, the row shows its saved answer, so reopening the picker starts from it.
-  const shownPattern = draft === null ? (play.label?.pattern ?? null) : draft.kind === "pattern" ? draft.id : null;
-  const choiceText = shownPattern === null ? t("labelProgress.session.choose") : patternName(shownPattern);
+  const [coverRef, cover] = useLazyCover(play.md5, thumbnail);
   return (
-    <li aria-labelledby={titleId} className="flex gap-3 py-3 first:pt-0 last:pb-0">
-      <MapThumbnail md5={play.md5} params={thumbnail} />
-      <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-          <span id={titleId} className="min-w-0 truncate font-medium">
-            {play.title}
-          </span>
-          <Badge variant="secondary" className="max-w-48 truncate">
-            {play.version}
-          </Badge>
-          {play.stars !== null && <StarRating stars={play.stars} />}
-          {map.playCount > 1 && (
-            <span className="text-muted-foreground text-xs font-semibold tabular-nums">
-              <span aria-hidden="true">{t("labelProgress.session.playCount", { count: map.playCount })}</span>
-              <span className="sr-only">{t("labelProgress.session.timesPlayed", { count: map.playCount })}</span>
-            </span>
-          )}
-          <time dateTime={play.playedAt} title={formatDateTime(play.playedAt, i18n.language)} className="text-muted-foreground text-xs">
-            {t("labelProgress.session.playedAt", { when: formatRelative(play.playedAt, nowMs, i18n.language) })}
-          </time>
-          <span className="ml-auto">
-            {play.label === null ? (
-              <Badge variant="outline" className="border-osu-yellow/40 text-osu-yellow">
-                {t("labelProgress.session.pending")}
-              </Badge>
-            ) : (
-              <Badge variant="default" className="capitalize">
-                <Check aria-hidden="true" />
-                {answerText(play.label.pattern, noPatternText)}
+    <li aria-labelledby={titleId} className="bg-card ring-border relative isolate overflow-hidden rounded-xl ring-1">
+      {/* osu!web's beatmap card: the cover faded behind the text. Even over a white cover the scrim's thinnest edge
+          (card at 75 % over the image at 40 %) keeps muted text at about 5:1. */}
+      <div aria-hidden="true" className="absolute inset-0 -z-10">
+        {cover !== null && (
+          <img
+            data-testid="session-card-backdrop"
+            src={cover}
+            alt=""
+            draggable={false}
+            decoding="async"
+            className="size-full scale-110 object-cover opacity-40 blur-sm motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-300"
+          />
+        )}
+        <div
+          data-testid="session-card-scrim"
+          className="from-card via-card/90 to-card/75 absolute inset-0 bg-linear-to-r"
+        />
+      </div>
+      <div className="flex gap-3 p-3">
+        <MapCover coverRef={coverRef} src={cover} />
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <div className="flex min-w-0 items-start gap-2">
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span id={titleId} className="font-display min-w-0 truncate text-base leading-tight font-bold">
+                {play.title}
+              </span>
+              <span className="text-foreground/90 min-w-0 truncate text-sm">
+                {t("labelProgress.session.byArtist", { artist: play.artist })}
+              </span>
+              <span className="text-muted-foreground min-w-0 truncate text-xs">
+                <Trans
+                  i18nKey="labelProgress.session.mappedBy"
+                  values={{ creator: play.creator }}
+                  components={{ creator: <span className="text-osu-pink font-semibold" /> }}
+                />
+              </span>
+            </div>
+            <SessionStatusPill label={play.label} className="shrink-0" />
+          </div>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            {play.stars !== null && <StarRating stars={play.stars} />}
+            <span className="min-w-0 max-w-56 truncate text-sm font-semibold">{play.version}</span>
+            {play.goldWindows > 0 && (
+              <Badge variant="outline" className="border-osu-yellow/40 bg-background/60 text-foreground">
+                <Trophy aria-hidden="true" className="text-osu-yellow" />
+                {t("labelProgress.session.goldWindows", { count: play.goldWindows })}
               </Badge>
             )}
-          </span>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <PatternGridPicker
+            {map.playCount > 1 && (
+              <span className="text-muted-foreground text-xs font-semibold tabular-nums">
+                <span aria-hidden="true">{t("labelProgress.session.playCount", { count: map.playCount })}</span>
+                <span className="sr-only">{t("labelProgress.session.timesPlayed", { count: map.playCount })}</span>
+              </span>
+            )}
+            <time dateTime={play.playedAt} title={formatDateTime(play.playedAt, i18n.language)} className="text-muted-foreground text-xs">
+              {t("labelProgress.session.playedAt", { when: formatRelative(play.playedAt, nowMs, i18n.language) })}
+            </time>
+          </div>
+          <SessionAnswer
             keymode={keymode}
-            taxonomy={taxonomy}
-            disabled={busy || taxonomy.length === 0}
-            chosen={shownPattern}
-            onChoose={(pattern) => {
-              setDraft({ kind: "pattern", id: pattern.id });
-            }}
-            title={t("labelProgress.session.pickerTitle", { title: play.title })}
-            description={t("labelProgress.session.pickerDescription")}
-            trigger={{
-              // The visible choice is part of the name (WCAG 2.5.3), so it is heard and can be spoken to.
-              label: t("labelProgress.session.chooseFor", { title: play.title, choice: choiceText }),
-              text: shownPattern === null ? choiceText : <span className="capitalize">{choiceText}</span>,
-            }}
-          />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            aria-pressed={draft?.kind === "none"}
-            aria-describedby={titleId}
-            disabled={busy}
-            onClick={() => {
-              setDraft((current) => (current?.kind === "none" ? null : { kind: "none" }));
-            }}
-            className="aria-pressed:border-primary aria-pressed:bg-primary/15 aria-pressed:text-primary"
-          >
-            {noPatternText}
-          </Button>
-          <HoldButton
-            label={t("labelProgress.session.save")}
-            icon={<Check aria-hidden="true" />}
-            holdMs={holdMs}
+            md5={play.md5}
+            playId={play.playId}
+            label={play.label}
+            title={play.title}
             describedBy={titleId}
-            disabled={draft === null || busy}
-            onConfirm={() => {
-              void save();
-            }}
-          />
-          {play.label !== null && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={busy}
-              aria-describedby={titleId}
-              onClick={() => {
-                if (play.label !== null) {
-                  void runUndo(play.label.eventId);
-                }
-              }}
-            >
-              <Undo2 aria-hidden="true" />
-              {t("labelProgress.session.undo")}
-            </Button>
-          )}
-          <Link
-            to="/label"
-            search={(prev) => ({ ...prev, chart: play.md5 })}
-            aria-describedby={titleId}
-            className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "ml-auto")}
+            taxonomy={taxonomy}
+            holdMs={holdMs}
+            placement="sessionList"
           >
-            <ExternalLink aria-hidden="true" />
-            {t("labelProgress.session.open")}
-          </Link>
+            <Link
+              to="/label"
+              search={(prev) => ({ ...prev, chart: play.md5 })}
+              aria-describedby={titleId}
+              className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "ml-auto")}
+            >
+              <ExternalLink aria-hidden="true" />
+              {t("labelProgress.session.open")}
+            </Link>
+          </SessionAnswer>
         </div>
-        {error !== null && (
-          <p role="alert" className="text-destructive text-sm">
-            {error}
-          </p>
-        )}
       </div>
     </li>
   );
@@ -241,7 +168,7 @@ function MapGroup({ heading, maps, secondary = false, ...row }: MapGroupProps) {
       >
         {heading}
       </h3>
-      <ul aria-labelledby={headingId} className="flex flex-col divide-y">
+      <ul aria-labelledby={headingId} className="flex flex-col gap-2">
         {maps.map((map) => (
           <SessionRow key={map.newest.md5} map={map} {...row} />
         ))}

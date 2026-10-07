@@ -35,6 +35,8 @@ function day(offset: number, gold: number, session: number) {
 const PROGRESS: LabelProgressDto = {
   goldTotal: 42,
   goldNoPattern: 3,
+  goldBlind: 0,
+  perSelection: [],
   perPattern: [
     { key: "7k.ln.release.shield", count: 4 },
     { key: "7k.regular.jack.minijack", count: 12 },
@@ -80,6 +82,7 @@ function sessionPlay(md5: string, title: string, overrides: Partial<SessionPlayD
     keymode: 7,
     setId: null,
     label: null,
+    goldWindows: 0,
     ...overrides,
   };
 }
@@ -234,6 +237,32 @@ describe("LabelProgressPage", () => {
     expect(card("Labelled today")).toHaveTextContent("2 gold, 2 session");
   });
 
+  it("splits the gold labels into blind, chosen and unrecorded origins, explained in text", async () => {
+    renderPage({
+      labelProgress: () => ({
+        ...PROGRESS,
+        goldBlind: 30,
+        perSelection: [
+          { selection: null, count: 8 },
+          { selection: { pick: "random", window: "sampled" }, count: 10 },
+          { selection: { pick: "sampled", window: "sampled" }, count: 20 },
+          { selection: { pick: "session", window: "moved" }, count: 1 },
+          { selection: { pick: "now_playing", window: "sampled" }, count: 3 },
+        ],
+      }),
+    });
+    const totals = await screen.findByRole("region", { name: "Totals" });
+    const origins = await within(totals).findByRole("group", { name: "Gold labels by how the window was chosen" });
+    await waitFor(() => {
+      expect(within(origins).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+        "30 blind",
+        "4 chosen",
+        "8 with no recorded origin",
+      ]);
+    });
+    expect(within(origins).getByText(/they are what the evaluation uses/)).toBeInTheDocument();
+  });
+
   it("bars the gold labels per axis and pattern under RICE and LN, each with its count as text", async () => {
     renderPage();
     const axes = await screen.findByRole("region", { name: "Gold labels by pattern" });
@@ -371,7 +400,7 @@ describe("LabelProgressPage", () => {
     expect(save).toBeDisabled();
     expect(save).toHaveAccessibleDescription(expect.stringContaining("Alpha Song"));
     expect(within(alpha).getByRole("button", { name: "No clear pattern" })).toHaveAccessibleDescription("Alpha Song");
-    expect(within(alpha).getByRole("link", { name: "Open in Label screen" })).toHaveAccessibleDescription("Alpha Song");
+    expect(within(alpha).getByRole("link", { name: "Inspect in Label screen" })).toHaveAccessibleDescription("Alpha Song");
     await userEvent.click(within(alpha).getByRole("button", { name: "Dominant pattern of Alpha Song: Choose pattern" }));
     const picker = await screen.findByRole("dialog", { name: "Dominant pattern of Alpha Song" });
     await userEvent.type(within(picker).getByRole("searchbox", { name: "Search patterns" }), "long");
@@ -480,7 +509,7 @@ describe("LabelProgressPage", () => {
     await within(alpha).findByTestId("session-thumb-image");
     expect(queryClient.getQueryCache().find({ queryKey: labelKeys.chartBackground(A) })).toBeDefined();
 
-    await userEvent.click(within(alpha).getByRole("link", { name: "Open in Label screen" }));
+    await userEvent.click(within(alpha).getByRole("link", { name: "Inspect in Label screen" }));
     await waitFor(() => {
       expect(router.state.location.pathname).toBe("/label");
     });
@@ -548,14 +577,56 @@ describe("LabelProgressPage", () => {
     expect(await within(alpha).findByRole("alert")).toBeInTheDocument();
   });
 
-  it("opens a session map in the Label screen", async () => {
+  it("opens a session map in the Label screen to inspect it", async () => {
     const { router } = renderPage();
     const alpha = await row("Alpha Song");
-    await userEvent.click(within(alpha).getByRole("link", { name: "Open in Label screen" }));
+    await userEvent.click(within(alpha).getByRole("link", { name: "Inspect in Label screen" }));
     await waitFor(() => {
       expect(router.state.location.pathname).toBe("/label");
     });
     expect(router.state.location.search).toEqual(expect.objectContaining({ chart: A }));
+  });
+
+  it("shows each map as a beatmap card: title, artist, mapper, difficulty and status", async () => {
+    renderPage();
+    const alpha = await row("Alpha Song");
+    expect(within(alpha).getByText("Alpha Song")).toHaveClass("font-bold");
+    expect(within(alpha).getByText("by Artist")).toBeInTheDocument();
+    expect(alpha).toHaveTextContent("mapped by Mapper");
+    expect(within(alpha).getByText("Mapper")).toHaveClass("text-osu-pink");
+    expect(within(alpha).getByText("Hard")).toBeInTheDocument();
+    expect(within(alpha).getByTestId("session-status")).toHaveTextContent("Pending");
+    expect(within(await row("Beta Song")).getByTestId("session-status")).toHaveTextContent("minijack");
+  });
+
+  it("counts the chart's gold windows as information beside the answer", async () => {
+    renderPage({
+      sessionPlays: () => ({ ...SESSION, plays: [{ ...PLAY_A, goldWindows: 3 }, { ...PLAY_B, goldWindows: 1 }] }),
+    });
+    const alpha = await row("Alpha Song");
+    expect(within(alpha).getByText("3 gold windows")).toBeInTheDocument();
+    expect(within(alpha).getByTestId("session-status")).toHaveTextContent("Pending");
+    expect(within(await row("Beta Song")).getByText("1 gold window")).toBeInTheDocument();
+  });
+
+  it("leaves the gold window count out of a map with none", async () => {
+    renderPage();
+    const alpha = await row("Alpha Song");
+    expect(within(alpha).queryByText(/gold window/)).toBeNull();
+  });
+
+  it("fades the cover behind the card once its row nears the viewport, under a scrim for the text", async () => {
+    renderPage({
+      chartBackground: () => ({ mime: "image/png", base64: "QUJD", width: 1920, height: 1080 }),
+    });
+    const alpha = await row("Alpha Song");
+    expect(within(alpha).queryByTestId("session-card-backdrop")).toBeNull();
+    reveal(within(alpha).getByTestId("session-thumb"));
+    const backdrop = await within(alpha).findByTestId("session-card-backdrop");
+    expect(backdrop).toHaveAttribute("src", "data:image/png;base64,QUJD");
+    expect(backdrop).toHaveAttribute("alt", "");
+    expect(backdrop.closest("[aria-hidden='true']")).not.toBeNull();
+    expect(within(alpha).getByTestId("session-card-scrim")).toBeInTheDocument();
   });
 
   it("explains the coming ranking without showing any data", async () => {

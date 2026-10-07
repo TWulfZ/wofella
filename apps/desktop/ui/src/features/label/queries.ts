@@ -14,7 +14,7 @@ import {
 } from "@/ipc/bindings";
 import { call } from "@/ipc/client";
 import type { ChartWindow } from "@/features/playfield";
-import { LABEL_PROGRESS_ROOT, qk } from "@/shared/queryKeys";
+import { LABEL_PROGRESS_ROOT, qk, SESSION_PLAYS_ROOT } from "@/shared/queryKeys";
 import { toChartWindow, toLabelWindow } from "./mappers";
 import type { Anchor } from "./types";
 
@@ -193,6 +193,8 @@ export function useLabelMutations() {
       queryClient.invalidateQueries({ queryKey: labelKeys.stats() }),
       queryClient.invalidateQueries({ queryKey: labelKeys.chartTimelines() }),
       queryClient.invalidateQueries({ queryKey: LABEL_PROGRESS_ROOT }),
+      // Session rows count the chart's gold windows.
+      queryClient.invalidateQueries({ queryKey: SESSION_PLAYS_ROOT }),
     ]);
   return {
     sample: useMutation({

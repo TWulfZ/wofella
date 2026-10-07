@@ -311,7 +311,7 @@ It never lives in `settings`. That is what makes every model state replayable.
 **Feedback event shapes.** Payloads are versioned; a shape change bumps `v` or adds a new kind, never rewrites rows.
 - `segment_label` (gold labels from `wolluf label`, later the Playfield relabel):
   - subject `{"anchor":{chart_md5, t0_us, t1_us, cols:[0-based], keymode}}`;
-  - payload `{"v":1, "action":"assert_set"|"assert_none", "origin":"gold", "patterns":[sorted PatternIds], "flags":{"mixed", "unsure", "thumb_pref"?: "left"|"right"}}`, where `assert_set` needs a non-empty `patterns` and `assert_none` (no clear pattern) needs an empty one.
+  - payload `{"v":2, "action":"assert_set"|"assert_none", "origin":"gold", "patterns":[sorted PatternIds], "flags":{"mixed", "unsure", "thumb_pref"?: "left"|"right"}, "selection":{"pick":"sampled"|"random"|"now_playing"|"session", "window":"sampled"|"moved"}}`, where `assert_set` needs a non-empty `patterns` and `assert_none` (no clear pattern) needs an empty one; v1 rows (no `selection`) read as unknown, and only a `sampled`/`random` pick of the offered window is blind (ADR 0021).
 - `play_label` (a played map's dominant pattern from the session list; ADR 0020): subject `{"chart_md5", "keymode"}`, payload `{"v":1, "action":"assert_dominant"|"assert_none", "origin":"player_session", "pattern"?: PatternId}`, context adds `play_id`. Latest per chart wins. It never enters the gold set, its stats, export or the sampler's exclusions.
 - `undo`: subject `{"event_id"}`, payload `{"undone_kind"}`. It compensates and never deletes, and only the same profile can undo, once; each kind is undone only by its own path (ADR 0020).
 - Pattern ids and their meaning: ADR 0017.
@@ -467,7 +467,7 @@ scores.db mixes the user's own plays (under several aliases, some offline like `
 
 **Offline fit (`wolluf fit --snapshot <dataset-manifest>`, Rust, reusing the same likelihood code as the client, so there is no train/serve skew):**
 - **Frozen dataset.** A manifest of object hashes, so every pack can be retrained exactly.
-- **Pattern-rule thresholds.** Grid or coordinate search maximising macro-F1 on the gold set. The gold set = hand labels ∪ crowd corrections agreed by **≥ 3 independent installs**. Crowd labels never override hand labels.
+- **Pattern-rule thresholds.** Grid or coordinate search maximising macro-F1 on the gold set. The gold set = hand labels ∪ crowd corrections agreed by **≥ 3 independent installs**. Crowd labels never override hand labels. The fit uses gold labels of every selection origin: choosing a map or section changes which windows get labelled, not whether a label is right (ADR 0021). Held-out evaluation stays blind (§6.5).
 - **Difficulty calibration d_{s,a}.** Ridge or isotonic from features to the dan scale, using the ordinal labels (KomeijiDove, Jinjin, BMS st/oj, O2Jam [H]). IRT item offsets are fitted by alternating MAP over the players' θ, *only where the data suffices*; otherwise they shrink to the content model. Player overlap is what links the Jinjin and BMS scales, which labels alone cannot link.
 - **Also fitted:** IRT discriminations per pattern family, population priors, σ-drift and the feedback weights from §6.3.
 - **Python** is allowed in `research/` notebooks for exploration only. It is never on the release path, and a pack is always the output of the Rust fit.
@@ -477,7 +477,7 @@ scores.db mixes the user's own plays (under several aliases, some offline like `
 | Suite | Data | Metric | Role |
 |---|---|---|---|
 | S1 temporal holdout | Per contributor (and the pilot's local data): train before T, test after T. **Non-recommended plays are the primary data**, because recommended plays are selection-biased | Prequential log-loss (primary), Brier, ECE, MAE of y | Primary: a **paired bootstrap per player, 95% CI excluding 0**; must also beat the SR and NPS baselines |
-| S2 labelled segments | Gold set | Macro-F1, per-pattern P/R, confusion matrix | No regression beyond tolerance (e.g. −0.01) |
+| S2 labelled segments | Blind gold labels by default (sampled or random pick, offered window; ADR 0021); chosen and unknown-origin labels reported separately | Macro-F1, per-pattern P/R, confusion matrix | No regression beyond tolerance (e.g. −0.01) |
 | S3 ordinal agreement | BMS st/oj, O2Jam [H]; KomeijiDove 8-class slot, grouped by level | Spearman/Kendall, slot accuracy | No regression; must beat NPS |
 | S4 scale anchor | Jinjin / KomeijiDove dan charts | Mapped dan within tolerance | Hard gate: θ units must not drift between releases |
 | S5 recommender | `rec_impression` + `rec_outcome` | Reliability of `p_pred` | **Guard only** (biased data) |

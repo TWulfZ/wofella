@@ -25,7 +25,9 @@ pub const GOLD_ORIGIN: &str = "gold";
 /// `segment_label` payload layout. Persisted and replayed forever (architecture §5.3): a
 /// changed shape bumps this or becomes a new kind (docs/conventions.md, stable ids), and
 /// readers reject what they do not know instead of guessing.
-pub const SEGMENT_LABEL_V: u32 = 1;
+pub const SEGMENT_LABEL_V: u32 = 2;
+/// The layout before ADR 0021 added `selection`: still read, never written.
+const SEGMENT_LABEL_V1: u32 = 1;
 /// The anchor carries exactly these patterns: a full set, not a delta against the engine.
 pub const ASSERT_SET_ACTION: &str = "assert_set";
 /// The user looked and saw no clear pattern: a stored answer, unlike a skip, which is never
@@ -57,6 +59,54 @@ crate::repo::sql::str_enum! {
     }
 }
 
+crate::repo::sql::str_enum! {
+    /// How the labelled chart was reached (ADR 0021).
+    pub enum ChartPick {
+        Sampled => "sampled",
+        Random => "random",
+        NowPlaying => "now_playing",
+        Session => "session",
+    }
+}
+
+crate::repo::sql::str_enum! {
+    /// Whether the labelled window is the one the pick offered, or one the labeller moved or
+    /// resized to (ADR 0021).
+    pub enum WindowPick {
+        Sampled => "sampled",
+        Moved => "moved",
+    }
+}
+
+/// How a gold window was chosen, as the labelling client declared it (ADR 0021).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Selection {
+    pub pick: ChartPick,
+    pub window: WindowPick,
+}
+
+impl Selection {
+    /// ADR 0021: the labeller chose neither the chart nor the window, so the label can stand in
+    /// an unbiased test set.
+    pub fn is_blind(self) -> bool {
+        matches!(self.pick, ChartPick::Sampled | ChartPick::Random)
+            && self.window == WindowPick::Sampled
+    }
+}
+
+/// A stored label's [`Selection`]; v1 rows predate it and read as `Unknown`, never as blind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum GoldSelection {
+    Unknown,
+    Recorded(Selection),
+}
+
+impl GoldSelection {
+    pub fn is_blind(self) -> bool {
+        matches!(self, Self::Recorded(s) if s.is_blind())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewGoldLabel {
     pub id: ulid::Ulid,
@@ -68,6 +118,7 @@ pub struct NewGoldLabel {
     pub mixed: bool,
     pub unsure: bool,
     pub thumb_pref: Option<ThumbPref>,
+    pub selection: Selection,
     pub app_version: String,
 }
 
@@ -82,6 +133,7 @@ pub struct GoldLabel {
     pub mixed: bool,
     pub unsure: bool,
     pub thumb_pref: Option<ThumbPref>,
+    pub selection: GoldSelection,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -161,18 +213,37 @@ struct AnchorJson {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct PayloadJson {
     v: u32,
     action: String,
+    origin: String,
     patterns: Vec<String>,
     flags: FlagsJson,
+    /// Absent in v1; `null` is rejected rather than read as absent.
+    #[serde(default, deserialize_with = "present")]
+    selection: Option<SelectionJson>,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct FlagsJson {
     mixed: bool,
     unsure: bool,
     thumb_pref: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SelectionJson {
+    pick: String,
+    window: String,
+}
+
+fn present<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
+    d: D,
+) -> Result<Option<T>, D::Error> {
+    T::deserialize(d).map(Some)
 }
 
 /// No engine manifest or pack exists yet, as for the identity events (spec 004 Data).
@@ -221,6 +292,10 @@ pub fn append_gold_label(tx: &Tx<'_>, l: &NewGoldLabel) -> Result<(), StoreError
                 "origin": GOLD_ORIGIN,
                 "patterns": patterns,
                 "flags": flags,
+                "selection": {
+                    "pick": l.selection.pick.as_str(),
+                    "window": l.selection.window.as_str(),
+                },
             }),
             context: context(&l.app_version),
         },
@@ -411,9 +486,24 @@ fn decode(
     let invalid = |e: &dyn std::fmt::Display| StoreError::InvalidData(format!("label {id}: {e}"));
     let SubjectJson { anchor: a } = serde_json::from_str(subject).map_err(|e| invalid(&e))?;
     let p: PayloadJson = serde_json::from_str(payload).map_err(|e| invalid(&e))?;
-    if p.v != SEGMENT_LABEL_V {
-        return Err(invalid(&format!("payload v {}", p.v)));
+    if p.origin != GOLD_ORIGIN {
+        return Err(invalid(&format!("origin {:?}", p.origin)));
     }
+    let selection = match (p.v, p.selection) {
+        (SEGMENT_LABEL_V1, None) => GoldSelection::Unknown,
+        (SEGMENT_LABEL_V, Some(s)) => GoldSelection::Recorded(Selection {
+            pick: ChartPick::parse(&s.pick)
+                .ok_or_else(|| invalid(&format!("pick {:?}", s.pick)))?,
+            window: WindowPick::parse(&s.window)
+                .ok_or_else(|| invalid(&format!("window {:?}", s.window)))?,
+        }),
+        (v, s) => {
+            return Err(invalid(&format!(
+                "payload v {v} {} a selection",
+                if s.is_some() { "with" } else { "without" }
+            )));
+        }
+    };
     let none = match (p.action.as_str(), p.patterns.is_empty()) {
         (ASSERT_SET_ACTION, false) => false,
         (ASSERT_NONE_ACTION, true) => true,
@@ -456,6 +546,7 @@ fn decode(
         mixed: p.flags.mixed,
         unsure: p.flags.unsure,
         thumb_pref,
+        selection,
     })
 }
 
@@ -512,9 +603,15 @@ mod tests {
             mixed: true,
             unsure: false,
             thumb_pref: None,
+            selection: BLIND,
             app_version: "0.1.0".into(),
         }
     }
+
+    const BLIND: Selection = Selection {
+        pick: ChartPick::Sampled,
+        window: WindowPick::Sampled,
+    };
 
     fn undo(id: u64, profile_id: ProfileId, target: u64) -> NewUndo {
         NewUndo {
@@ -547,11 +644,12 @@ mod tests {
         assert_eq!(
             rows[0].payload,
             serde_json::json!({
-                "v": 1,
+                "v": 2,
                 "action": "assert_set",
                 "origin": "gold",
                 "patterns": ["regular.jack.minijack", "regular.stream.jumpstream"],
                 "flags": {"mixed": true, "unsure": false},
+                "selection": {"pick": "sampled", "window": "sampled"},
             })
         );
         assert_eq!(rows[0].context["app_version"], "0.1.0");
@@ -570,6 +668,7 @@ mod tests {
             "sorted, as stored"
         );
         assert_eq!((got.mixed, got.unsure, got.thumb_pref), (true, false, None));
+        assert_eq!(got.selection, GoldSelection::Recorded(BLIND));
     }
 
     #[test]
@@ -582,6 +681,10 @@ mod tests {
             mixed: false,
             unsure: true,
             thumb_pref: Some(ThumbPref::Left),
+            selection: Selection {
+                pick: ChartPick::NowPlaying,
+                window: WindowPick::Moved,
+            },
             ..label(1, me, anchor(MD5_A, 0, 4_000))
         };
         let right = NewGoldLabel {
@@ -594,11 +697,12 @@ mod tests {
         assert_eq!(
             rows[0].payload,
             serde_json::json!({
-                "v": 1,
+                "v": 2,
                 "action": "assert_none",
                 "origin": "gold",
                 "patterns": [],
                 "flags": {"mixed": false, "unsure": true, "thumb_pref": "left"},
+                "selection": {"pick": "now_playing", "window": "moved"},
             })
         );
         assert_eq!(rows[1].payload["action"], "assert_set");
@@ -678,53 +782,156 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn decode_rejects_unknown_shapes_and_empty_patterns() {
-        let good = serde_json::json!({
+    /// Stores `payload` raw next to a valid label's subject, as a row from an older or foreign
+    /// writer would sit in the ledger.
+    fn stored_with(payload: &serde_json::Value) -> Result<Vec<GoldLabel>, StoreError> {
+        let mut conn = migrated();
+        let me = me(&mut conn);
+        let tx = tx(&mut conn);
+        append_gold_label(&tx, &label(1, me, anchor(MD5_A, 0, 4_000))).unwrap();
+        let stored = feedback_event::list(tx.conn()).unwrap().remove(0);
+        feedback_event::append(
+            &tx,
+            &crate::repo::ledger::NewFeedbackEvent {
+                id: ulid::Ulid::from_parts(1, 2),
+                ts: T0,
+                profile_id: Some(me),
+                kind: SEGMENT_LABEL_KIND.into(),
+                subject: stored.subject,
+                payload: payload.clone(),
+                context: stored.context,
+            },
+        )
+        .unwrap();
+        gold_labels(tx.conn(), me)
+    }
+
+    fn v1_payload() -> serde_json::Value {
+        serde_json::json!({
             "v": 1, "action": "assert_set", "origin": "gold",
             "patterns": ["regular.jack.minijack"], "flags": {"mixed": false, "unsure": false},
-        });
-        let with = |key: &str, value: serde_json::Value| {
-            let mut p = good.clone();
+        })
+    }
+
+    fn v2_payload() -> serde_json::Value {
+        let mut p = v1_payload();
+        p["v"] = serde_json::json!(2);
+        p["selection"] = serde_json::json!({"pick": "random", "window": "sampled"});
+        p
+    }
+
+    /// Architecture §5.3: rows are never rewritten, so a label stored before ADR 0021 must keep
+    /// reading, as `Unknown` rather than as blind.
+    #[test]
+    fn a_stored_v1_label_reads_with_an_unknown_selection() {
+        let got = stored_with(&v1_payload()).unwrap();
+        assert_eq!(got.len(), 2);
+        let v1 = &got[1];
+        assert_eq!(v1.selection, GoldSelection::Unknown);
+        assert!(!v1.selection.is_blind());
+        assert_eq!(
+            v1.answer,
+            GoldAnswer::Patterns(vec![PatternId::from_static("regular.jack.minijack")])
+        );
+        let v2 = stored_with(&v2_payload()).unwrap().remove(1);
+        assert_eq!(
+            v2.selection,
+            GoldSelection::Recorded(Selection {
+                pick: ChartPick::Random,
+                window: WindowPick::Sampled,
+            })
+        );
+    }
+
+    #[test]
+    fn decode_rejects_unknown_shapes_and_empty_patterns() {
+        let with = |base: serde_json::Value, key: &str, value: serde_json::Value| {
+            let mut p = base;
             p[key] = value;
             p
         };
-        let mut missing_v = good.clone();
-        missing_v.as_object_mut().unwrap().remove("v");
-        let none = with("action", serde_json::json!("assert_none"));
+        let without = |base: serde_json::Value, key: &str| {
+            let mut p = base;
+            p.as_object_mut().unwrap().remove(key);
+            p
+        };
+        let good = v2_payload();
+        let none = with(good.clone(), "action", serde_json::json!("assert_none"));
         let mut flags = good["flags"].clone();
         flags["thumb_pref"] = serde_json::json!("middle");
+        let mut extra_flag = good["flags"].clone();
+        extra_flag["loud"] = serde_json::json!(true);
+        let selection =
+            |pick: &str, window: &str| serde_json::json!({"pick": pick, "window": window});
         for payload in [
-            with("v", serde_json::json!(2)),
-            with("action", serde_json::json!("deny")),
-            with("patterns", serde_json::json!([])),
+            with(good.clone(), "v", serde_json::json!(3)),
+            with(good.clone(), "action", serde_json::json!("deny")),
+            with(good.clone(), "patterns", serde_json::json!([])),
             none,
-            with("flags", flags),
-            missing_v,
+            with(good.clone(), "flags", flags),
+            with(good.clone(), "flags", extra_flag),
+            without(good.clone(), "v"),
+            with(good.clone(), "origin", serde_json::json!("player_session")),
+            with(good.clone(), "extra", serde_json::json!(1)),
+            // v2 needs a valid selection; v1 never had one.
+            without(good.clone(), "selection"),
+            with(good.clone(), "selection", serde_json::Value::Null),
+            with(good.clone(), "selection", selection("chosen", "sampled")),
+            with(good.clone(), "selection", selection("sampled", "dragged")),
+            with(good.clone(), "selection", selection("Sampled", "sampled")),
+            with(
+                good.clone(),
+                "selection",
+                serde_json::json!({"pick": "sampled", "window": "sampled", "by": "me"}),
+            ),
+            with(
+                good.clone(),
+                "selection",
+                serde_json::json!({"pick": "sampled"}),
+            ),
+            with(v1_payload(), "selection", selection("sampled", "sampled")),
+            with(v1_payload(), "selection", serde_json::Value::Null),
         ] {
-            let mut conn = migrated();
-            let me = me(&mut conn);
-            let tx = tx(&mut conn);
-            append_gold_label(&tx, &label(1, me, anchor(MD5_A, 0, 4_000))).unwrap();
-            let stored = feedback_event::list(tx.conn()).unwrap().remove(0);
-            feedback_event::append(
-                &tx,
-                &crate::repo::ledger::NewFeedbackEvent {
-                    id: ulid::Ulid::from_parts(1, 2),
-                    ts: T0,
-                    profile_id: Some(me),
-                    kind: SEGMENT_LABEL_KIND.into(),
-                    subject: stored.subject,
-                    payload: payload.clone(),
-                    context: stored.context,
-                },
-            )
-            .unwrap();
             assert!(
-                matches!(gold_labels(tx.conn(), me), Err(StoreError::InvalidData(_))),
+                matches!(stored_with(&payload), Err(StoreError::InvalidData(_))),
                 "{payload}"
             );
         }
+    }
+
+    #[test]
+    fn only_a_sampled_or_random_pick_of_the_offered_window_is_blind() {
+        let names = |all: &[&str]| all.join(",");
+        assert_eq!(
+            names(
+                &ChartPick::ALL
+                    .iter()
+                    .map(|p| p.as_str())
+                    .collect::<Vec<_>>()
+            ),
+            "sampled,random,now_playing,session"
+        );
+        assert_eq!(
+            names(
+                &WindowPick::ALL
+                    .iter()
+                    .map(|w| w.as_str())
+                    .collect::<Vec<_>>()
+            ),
+            "sampled,moved"
+        );
+        let mut blind = Vec::new();
+        for &pick in ChartPick::ALL {
+            for &window in WindowPick::ALL {
+                let s = Selection { pick, window };
+                assert_eq!(GoldSelection::Recorded(s).is_blind(), s.is_blind());
+                if s.is_blind() {
+                    blind.push((pick.as_str(), window.as_str()));
+                }
+            }
+        }
+        assert_eq!(blind, [("sampled", "sampled"), ("random", "sampled")]);
+        assert!(!GoldSelection::Unknown.is_blind());
     }
 
     #[test]

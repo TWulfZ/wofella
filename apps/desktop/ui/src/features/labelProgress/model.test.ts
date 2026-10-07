@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DayCountDto, PatternDefDto, SessionPlayDto } from "@/ipc/bindings";
-import { activityTotals, axisBars, pendingMaps, sessionMapCounts, todayCounts } from "./model";
+import { activityTotals, axisBars, goldOrigins, newestPlayOf, pendingMaps, sessionMapCounts, todayCounts } from "./model";
 
 function play(md5: string, playedAt: string, label: SessionPlayDto["label"] = null): SessionPlayDto {
   return {
@@ -15,6 +15,7 @@ function play(md5: string, playedAt: string, label: SessionPlayDto["label"] = nu
     keymode: 7,
     setId: null,
     label,
+    goldWindows: 0,
   };
 }
 
@@ -107,5 +108,35 @@ describe("axisBars", () => {
         axes: [{ axis: "7k.ln.release", count: 2, patterns: [{ id: "7k.ln.release.shield", count: 2 }] }],
       },
     ]);
+  });
+});
+
+describe("newestPlayOf", () => {
+  it("finds the map's newest play in the newest-first list, or null when the session never played it", () => {
+    const plays = [play(A, "3"), play(B, "2", SAVED), play(A, "1")];
+    expect(newestPlayOf(plays, A)?.playId).toBe(play(A, "3").playId);
+    expect(newestPlayOf(plays, C)).toBeNull();
+  });
+});
+
+describe("goldOrigins", () => {
+  it("splits the gold total into blind, chosen and labels stored before the origin was recorded", () => {
+    expect(
+      goldOrigins({
+        goldTotal: 20,
+        goldBlind: 9,
+        perSelection: [
+          { selection: null, count: 6 },
+          { selection: { pick: "random", window: "sampled" }, count: 4 },
+          { selection: { pick: "sampled", window: "sampled" }, count: 5 },
+          { selection: { pick: "sampled", window: "moved" }, count: 2 },
+          { selection: { pick: "session", window: "sampled" }, count: 3 },
+        ],
+      }),
+    ).toEqual({ blind: 9, chosen: 5, unknown: 6 });
+  });
+
+  it("is all zero without gold labels", () => {
+    expect(goldOrigins({ goldTotal: 0, goldBlind: 0, perSelection: [] })).toEqual({ blind: 0, chosen: 0, unknown: 0 });
   });
 });

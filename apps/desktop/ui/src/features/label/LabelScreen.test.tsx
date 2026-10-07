@@ -153,6 +153,8 @@ const STATS: LabelStatsDto = {
   perPattern: [],
   perAxis: [],
   perStratum: [],
+  blind: 0,
+  perSelection: [],
 };
 
 const DETAILS: ChartDetailsDto = {
@@ -551,6 +553,7 @@ describe("LabelScreen", () => {
         mixed: true,
         unsure: false,
         thumbPref: null,
+        selection: { pick: "sampled", window: "sampled" },
       },
     ]);
     expect(argsOf(calls, "label_resolve_patterns")).toEqual([]);
@@ -654,7 +657,15 @@ describe("LabelScreen", () => {
 
     await roundLoaded("Beta Song");
     expect(submitted(calls)).toEqual([
-      { anchor: ANCHOR_A, patterns: [], noPattern: true, mixed: false, unsure: false, thumbPref: null },
+      {
+        anchor: ANCHOR_A,
+        patterns: [],
+        noPattern: true,
+        mixed: false,
+        unsure: false,
+        thumbPref: null,
+        selection: { pick: "sampled", window: "sampled" },
+      },
     ]);
   });
 
@@ -1240,6 +1251,7 @@ describe("LabelScreen", () => {
         mixed: false,
         unsure: true,
         thumbPref: "right",
+        selection: { pick: "sampled", window: "sampled" },
       },
     ]);
   });
@@ -2435,5 +2447,112 @@ describe("LabelScreen skins", () => {
     renderScreen(undefined, { skinList: () => ({ ...LIST, maniaSpeedBpmScale: true }) });
     await roundLoaded();
     expect(await screen.findByText(/BPM/)).toBeInTheDocument();
+  });
+});
+
+describe("LabelScreen label origin", () => {
+  function selections(calls: MockCall[]): unknown[] {
+    return argsOf(calls, "label_submit").map((a) => (a["req"] as { selection: unknown }).selection);
+  }
+
+  it("declares a planned window and a Random pick with their labels", async () => {
+    const calls = renderScreen([WINDOW_A, WINDOW_B], { labelRandom: () => WINDOW_C });
+    await roundLoaded();
+    await saveNoPattern();
+    await roundLoaded("Beta Song");
+    await clickTool("Random");
+    await roundLoaded("Gamma Song");
+    await saveNoPattern();
+    await waitFor(() => {
+      expect(selections(calls)).toEqual([
+        { pick: "sampled", window: "sampled" },
+        { pick: "random", window: "sampled" },
+      ]);
+    });
+  });
+
+  it("declares a Now playing pick", async () => {
+    const calls = renderScreen([WINDOW_A, WINDOW_B], {
+      labelNowPlaying: () => ({ window: WINDOW_C, source: "osuWindow" }),
+    });
+    await roundLoaded();
+    await clickTool("Now playing");
+    await roundLoaded("Gamma Song");
+    await saveNoPattern();
+    await waitFor(() => {
+      expect(selections(calls)).toEqual([{ pick: "now_playing", window: "sampled" }]);
+    });
+  });
+
+  it("declares a chart handed over from the session list as a session pick", async () => {
+    const calls = renderScreen(undefined, { labelWindowAt: () => WINDOW_C }, { openChart: ANCHOR_C.md5 });
+    await roundLoaded("Gamma Song");
+    await saveNoPattern();
+    await waitFor(() => {
+      expect(selections(calls)).toEqual([{ pick: "session", window: "sampled" }]);
+    });
+  });
+
+  it("declares a window moved on the timeline as moved", async () => {
+    const calls = renderScreen();
+    await roundLoaded();
+    (await timelineShown()).focus();
+    await userEvent.keyboard("{PageUp}");
+    expect(await screen.findByText("00:06.000–00:10.000")).toBeInTheDocument();
+    await saveNoPattern();
+    await waitFor(() => {
+      expect(selections(calls)).toEqual([{ pick: "sampled", window: "moved" }]);
+    });
+  });
+
+  it("declares a window resized from an edge handle as moved", async () => {
+    const calls = renderScreen();
+    await roundLoaded();
+    await timelineShown();
+    screen.getByRole("slider", { name: "Window end" }).focus();
+    await userEvent.keyboard("{PageUp}");
+    expect(await screen.findByText("00:01.000–00:10.000")).toBeInTheDocument();
+    await saveNoPattern();
+    await waitFor(() => {
+      expect(selections(calls)).toEqual([{ pick: "sampled", window: "moved" }]);
+    });
+  });
+
+  it("keeps a window seeked inside, but not moved, as offered", async () => {
+    const calls = renderScreen();
+    await roundLoaded();
+    await timelineShown();
+    const controls = screen.getByRole("group", { name: "Playback controls" });
+    const playhead = within(controls).getByRole("slider", { name: "Playback position" });
+    fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    await userEvent.click(within(controls).getByRole("button", { name: "Forward 2 s" }));
+    playhead.focus();
+    await userEvent.keyboard("{ArrowLeft}");
+    await waitFor(() => {
+      expect(playhead).toHaveAttribute("aria-valuenow", "2000");
+    });
+    await saveNoPattern();
+    await waitFor(() => {
+      expect(selections(calls)).toEqual([{ pick: "sampled", window: "sampled" }]);
+    });
+  });
+
+  it("shows the session map slot only on a window handed over from the session list, with its chart", async () => {
+    const slot = vi.fn((map: { md5: string; title: string }) => <p>{`Session strip for ${map.title}`}</p>);
+    renderScreen(undefined, { labelWindowAt: () => WINDOW_C }, { openChart: ANCHOR_C.md5, sessionMap: slot });
+    await roundLoaded("Gamma Song");
+    expect(screen.getByText("Session strip for Gamma Song")).toBeInTheDocument();
+    expect(slot).toHaveBeenLastCalledWith({ md5: ANCHOR_C.md5, title: "Gamma Song" });
+    await clickTool("Next");
+    await roundLoaded("Alpha Song");
+    expect(screen.queryByText(/Session strip for/)).toBeNull();
+  });
+
+  it("leaves the session map slot out of a planned window", async () => {
+    const slot = vi.fn(() => <p>Session strip</p>);
+    renderScreen(undefined, {}, { sessionMap: slot });
+    await roundLoaded();
+    expect(screen.queryByText("Session strip")).toBeNull();
+    expect(slot).not.toHaveBeenCalled();
   });
 });

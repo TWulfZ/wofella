@@ -14,7 +14,8 @@ use wolluf_store::time::format_rfc3339_ms;
 use wolluf_store::{Conn, StoreError};
 
 use super::{
-    APP_VERSION, LabelingService, count, counts, labelled_profile, parse_md5, patterns_of,
+    APP_VERSION, LabelingService, blind_count, count, counts, labelled_profile, parse_md5,
+    patterns_of, selection_counts,
 };
 use crate::context::blocking_join_error;
 use crate::errors::AppError;
@@ -222,6 +223,8 @@ impl LabelingService<'_> {
         }
 
         let gold_total = count(gold.len());
+        let gold_blind = blind_count(&gold);
+        let per_selection = selection_counts(&gold);
         let gold_no_pattern = count(
             gold.iter()
                 .filter(|l| l.answer == GoldAnswer::NoPattern)
@@ -254,6 +257,8 @@ impl LabelingService<'_> {
         Ok(LabelProgressDto {
             gold_total,
             gold_no_pattern,
+            gold_blind,
+            per_selection,
             per_pattern: counts(per_pattern),
             per_axis: counts(per_axis),
             session_labels: count(session.len()),

@@ -63,3 +63,7 @@ Constraints that already hold:
 - **Catalog** carries the map's `source` and `tags` from osu!.db (cache.db is disposable, ADR 0003; `CACHE_SCHEMA_VERSION` 5, `CATALOG_VERSION` 4).
 - **Playback rate** changes only what is heard and drawn (section audio and clock); stored anchors and labels stay in chart time.
 - **Save and Skip need a one-second hold** in the screen, because a mis-click either stores a label or loses the window. The CLI keeps single keystrokes.
+
+## Amendment 2026-10-07 (2): gold selection origin
+- The screen now writes `segment_label` **v2** (ADR 0021): every submit carries `selection {pick, window}` from how the window was reached (stratified sample, Random, Now playing, a session map; offered or moved on the timeline). Seeking inside a window is not a move. Only blind labels (sampled or random pick, offered window) feed the S2 evaluation by default.
+- A map opened from the session list also shows its dominant-pattern strip (ADR 0020); its Save and Undo are named for the dominant pattern so they cannot be mistaken for the gold ones.

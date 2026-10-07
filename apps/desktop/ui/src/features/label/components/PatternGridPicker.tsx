@@ -21,6 +21,8 @@ export interface PatternGridPickerProps {
   trigger: { label: string; text: ReactNode };
   title: string;
   description: string;
+  /** False inside the Label screen, where a focused trigger would take the next Enter from the gold Save hold. */
+  returnFocus?: boolean;
 }
 
 const NO_EXAMPLES: ReadonlyMap<string, ChartWindow> = new Map();
@@ -35,6 +37,7 @@ export function PatternGridPicker({
   trigger,
   title,
   description,
+  returnFocus = true,
 }: PatternGridPickerProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -49,6 +52,11 @@ export function PatternGridPicker({
       <DialogContent
         closeLabel={t("common.close")}
         className="flex max-h-[88dvh] flex-col gap-4 sm:max-w-4xl"
+        onCloseAutoFocus={(e) => {
+          if (!returnFocus) {
+            e.preventDefault();
+          }
+        }}
         onEscapeKeyDown={(e) => {
           // Radix listens in the capture phase, before the grid's own Escape clears a typed search; that clear wins.
           const target = e.target;

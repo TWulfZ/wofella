@@ -6,7 +6,7 @@ import {
   labelStatsQuery,
   labelTaxonomyQuery,
 } from "@/features/label";
-import { ProgressSummary } from "@/features/labelProgress";
+import { ProgressSummary, SessionMapStrip } from "@/features/labelProgress";
 import { DEFAULT_KEYMODE } from "@/features/players";
 import { handLayoutQuery } from "@/features/preferences";
 
@@ -48,5 +48,12 @@ function LabelPage() {
       void navigate({ search: (prev) => ({ ...prev, chart: undefined }), replace: true });
     }
   }, [chart, navigate]);
-  return <LabelScreen keymode={keymode} openChart={openChart} countersDetails={<ProgressSummary keymode={keymode} />} />;
+  return (
+    <LabelScreen
+      keymode={keymode}
+      openChart={openChart}
+      countersDetails={<ProgressSummary keymode={keymode} />}
+      sessionMap={(map) => <SessionMapStrip keymode={keymode} md5={map.md5} title={map.title} />}
+    />
+  );
 }

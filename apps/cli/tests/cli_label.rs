@@ -104,10 +104,15 @@ fn scripted_session_labels_undoes_and_exports() {
             "md5",
             "no_pattern",
             "patterns",
+            "selection",
             "t0_us",
             "t1_us",
             "thumb_pref"
         ]
+    );
+    assert_eq!(
+        row["selection"],
+        serde_json::json!({"pick": "sampled", "window": "sampled"})
     );
     assert_eq!(row["md5"], md5.as_str());
     let (t0, t1) = (
@@ -152,6 +157,33 @@ fn window_commands_redraw_and_eof_quits() {
         "EOF ends the session: {out}"
     );
     assert_eq!(env.json(&["label", "stats"])["total"], 0);
+}
+
+/// ADR 0021: the CLI always samples the chart; any reshape makes the window the labeller's.
+#[test]
+fn a_reshaped_window_is_stored_as_moved() {
+    let (env, _) = synced();
+    session(&env, "js\nw+\nw-\njs\nq\n");
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("g.jsonl");
+    env.json(&["label", "export", "--out", file.to_str().unwrap()]);
+    let mut windows: Vec<String> = std::fs::read_to_string(&file)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
+        .map(|r| format!("{}/{}", r["selection"]["pick"], r["selection"]["window"]))
+        .collect();
+    windows.sort();
+    assert_eq!(
+        windows,
+        ["\"sampled\"/\"moved\"", "\"sampled\"/\"sampled\""],
+        "a widen then narrow back still counts as moved"
+    );
+    let stats = env.json(&["label", "stats"]);
+    assert_eq!(
+        (&stats["total"], &stats["blind"]),
+        (&serde_json::json!(2), &serde_json::json!(1))
+    );
 }
 
 #[test]

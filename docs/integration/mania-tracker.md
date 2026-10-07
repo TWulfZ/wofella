@@ -15,6 +15,7 @@ One JSON object per label. This is the same shape `wolluf label export` writes t
 {"md5":"<chart md5>","t0_us":29356000,"t1_us":33356000,"cols":[1,2,4],
  "patterns":["regular.stream.bracket"],"no_pattern":false,
  "flags":["unsure"],"thumb_pref":null,"labelled_at":"2026-10-05T18:00:00Z",
+ "selection":{"pick":"sampled|random|now_playing|session|unknown","window":"sampled|moved|unknown"},
  "labeller":"<opaque id>","queue":"gold|correct","v":1}
 ```
 - `cols` are 1-based. Times are chart time in µs, at rate 1.0.

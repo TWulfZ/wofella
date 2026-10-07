@@ -1,8 +1,9 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { bootApp, leafRouteId } from "@/app/testing";
-import type { ChartWindowDto, LabelProgressDto, LabelStatsDto, LabelWindowDto } from "@/ipc/bindings";
+import { HOLD_BUTTON_PARAMS } from "@/features/label";
+import type { ChartWindowDto, LabelProgressDto, LabelStatsDto, LabelWindowDto, SessionPlayDto } from "@/ipc/bindings";
 import type { CommandHandlers, MockCall } from "@/ipc/mocks";
 
 const MD5 = "c".repeat(32);
@@ -43,11 +44,15 @@ const STATS: LabelStatsDto = {
   perPattern: [],
   perAxis: [],
   perStratum: [],
+  blind: 0,
+  perSelection: [],
 };
 
 const PROGRESS: LabelProgressDto = {
   goldTotal: 37,
   goldNoPattern: 0,
+  goldBlind: 0,
+  perSelection: [],
   perPattern: [],
   perAxis: [],
   sessionLabels: 0,
@@ -135,4 +140,114 @@ describe("/label", () => {
       expect(leafRouteId(router)).toBe("/label/progress");
     });
   });
+
+  it("offers the session map's dominant pattern under the map card; a gold save neither answers it nor goes stale", async () => {
+    const play: SessionPlayDto = {
+      playId: "cc01",
+      md5: MD5,
+      playedAt: "2026-10-07T11:00:00.000Z",
+      title: "Gamma Song",
+      artist: "Artist",
+      version: "Insane",
+      creator: "Mapper",
+      stars: 4.5,
+      keymode: 7,
+      setId: null,
+      label: null,
+      goldWindows: 0,
+    };
+    const { calls } = await bootApp(`/label?chart=${MD5}`, {
+      ...HANDLERS,
+      sessionPlays: () => ({ startedAt: "2026-10-07T10:00:00.000Z", plays: [play] }),
+      labelSubmit: () => ({ id: "01GOLD" }),
+      sessionLabelSubmit: () => ({ id: "01SESSION" }),
+    });
+    await screen.findByRole("heading", { name: "Gamma Song" });
+    const stripName = { name: "Map from this session: dominant pattern" };
+    expect(await within(await screen.findByRole("region", stripName)).findByTestId("session-status")).toHaveTextContent(
+      "Pending",
+    );
+    const sessionReads = argsOf(calls, "session_plays").length;
+
+    const answer = screen.getByRole("region", { name: "Answer" });
+    await userEvent.click(within(answer).getByRole("button", { name: "No pattern" }));
+    await holdPress(within(answer).getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(argsOf(calls, "label_submit")).toHaveLength(1);
+    });
+    await waitFor(() => {
+      expect(argsOf(calls, "session_plays").length).toBeGreaterThan(sessionReads);
+    });
+
+    // The saved window is left for the next one; back on it, the map still waits for its session answer.
+    await userEvent.click(await screen.findByRole("button", { name: "Previous" }));
+    const strip = await screen.findByRole("region", stripName);
+    expect(within(strip).getByTestId("session-status")).toHaveTextContent("Pending");
+    expect(argsOf(calls, "session_label_submit")).toEqual([]);
+
+    await userEvent.click(within(strip).getByRole("button", { name: "No clear pattern" }));
+    await holdPress(within(strip).getByRole("button", { name: "Save dominant pattern" }));
+    await waitFor(() => {
+      expect(argsOf(calls, "session_label_submit")).toEqual([
+        { req: { keymode: 7, md5: MD5, playId: "cc01", pattern: null } },
+      ]);
+    });
+  });
+
+  it("leaves the strip's pattern grid with Enter saving the gold window, not reopening the grid", async () => {
+    const { calls } = await bootApp(`/label?chart=${MD5}`, {
+      ...HANDLERS,
+      labelTaxonomy: () => [
+        { id: "7k.regular.jack.minijack", axis: "7k.regular.jack", key: "mj", description: "two notes in one column" },
+      ],
+      sessionPlays: () => ({ startedAt: "2026-10-07T10:00:00.000Z", plays: [SESSION_PLAY] }),
+      labelSubmit: () => ({ id: "01GOLD" }),
+    });
+    await screen.findByRole("heading", { name: "Gamma Song" });
+    const answer = screen.getByRole("region", { name: "Answer" });
+    await userEvent.click(within(answer).getByRole("button", { name: "No pattern" }));
+    const strip = await screen.findByRole("region", { name: "Map from this session: dominant pattern" });
+    await userEvent.click(
+      await within(strip).findByRole("button", { name: "Dominant pattern of Gamma Song: Choose pattern" }),
+    );
+    const picker = await screen.findByRole("dialog", { name: "Dominant pattern of Gamma Song" });
+    await userEvent.type(within(picker).getByRole("searchbox", { name: "Search patterns" }), "mini");
+    await userEvent.click(within(picker).getByRole("button", { name: "mj minijack" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    await userEvent.keyboard("{Enter>}");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, HOLD_BUTTON_PARAMS.defaultHoldMs + 100));
+    });
+    await userEvent.keyboard("{/Enter}");
+    await waitFor(() => {
+      expect(argsOf(calls, "label_submit")).toHaveLength(1);
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
 });
+
+const SESSION_PLAY: SessionPlayDto = {
+  playId: "cc01",
+  md5: MD5,
+  playedAt: "2026-10-07T11:00:00.000Z",
+  title: "Gamma Song",
+  artist: "Artist",
+  version: "Insane",
+  creator: "Mapper",
+  stars: 4.5,
+  keymode: 7,
+  setId: null,
+  label: null,
+  goldWindows: 0,
+};
+
+async function holdPress(button: HTMLElement): Promise<void> {
+  fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, HOLD_BUTTON_PARAMS.defaultHoldMs + 100));
+  });
+  fireEvent.pointerUp(button, { button: 0, pointerId: 1 });
+}

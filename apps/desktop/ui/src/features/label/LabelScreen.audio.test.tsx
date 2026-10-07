@@ -41,6 +41,8 @@ const STATS: LabelStatsDto = {
   perPattern: [],
   perAxis: [],
   perStratum: [],
+  blind: 0,
+  perSelection: [],
 };
 
 function chartWindow(md5: string, fromMs: number, toMs: number): ChartWindowDto {

@@ -29,3 +29,9 @@ export interface Span {
   t0Ms: number;
   t1Ms: number;
 }
+
+/** How a gold window was chosen (ADR 0021); blind only for a `sampled` or `random` pick of the offered window. */
+export interface LabelSelection {
+  pick: "sampled" | "random" | "now_playing" | "session";
+  window: "sampled" | "moved";
+}

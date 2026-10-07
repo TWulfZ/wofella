@@ -1,6 +1,6 @@
 // Display shaping only: every count comes from the progress and session DTOs (§8).
 import { groupByAxis, groupByFamily } from "@/features/label";
-import type { CountDto, DayCountDto, PatternDefDto, SessionPlayDto } from "@/ipc/bindings";
+import type { CountDto, DayCountDto, LabelProgressDto, PatternDefDto, SessionPlayDto } from "@/ipc/bindings";
 
 export interface SessionMapCounts {
   labelled: number;
@@ -27,6 +27,10 @@ export function pendingMaps(plays: readonly SessionPlayDto[]): SessionPlayDto[] 
     seen.add(play.md5);
     return true;
   });
+}
+
+export function newestPlayOf(plays: readonly SessionPlayDto[], md5: string): SessionPlayDto | null {
+  return plays.find((play) => play.md5 === md5) ?? null;
 }
 
 export interface SessionMap {
@@ -122,4 +126,18 @@ export function axisBars(
       patterns: patterns.map(({ id }) => ({ id, count: patternCount.get(id) ?? 0 })),
     })),
   }));
+}
+
+export interface GoldOrigins {
+  /** A `sampled` or `random` pick of the offered window (ADR 0021): what evaluation uses by default. */
+  blind: number;
+  /** Picked by the labeller or moved off the offered window. */
+  chosen: number;
+  /** Stored before the origin was recorded. */
+  unknown: number;
+}
+
+export function goldOrigins(progress: Pick<LabelProgressDto, "goldTotal" | "goldBlind" | "perSelection">): GoldOrigins {
+  const unknown = progress.perSelection.reduce((sum, row) => sum + (row.selection === null ? row.count : 0), 0);
+  return { blind: progress.goldBlind, chosen: progress.goldTotal - progress.goldBlind - unknown, unknown };
 }

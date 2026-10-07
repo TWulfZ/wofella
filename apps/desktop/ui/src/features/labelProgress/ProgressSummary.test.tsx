@@ -9,6 +9,8 @@ import { ProgressSummary } from "./ProgressSummary";
 const PROGRESS: LabelProgressDto = {
   goldTotal: 42,
   goldNoPattern: 0,
+  goldBlind: 0,
+  perSelection: [],
   perPattern: [],
   perAxis: [],
   sessionLabels: 6,
@@ -33,6 +35,7 @@ function play(n: number, labelled = false): SessionPlayDto {
     keymode: 7,
     setId: null,
     label: labelled ? { eventId: `01E${n}`, pattern: null, at: "2026-10-07T11:10:00.000Z" } : null,
+    goldWindows: 0,
   };
 }
 

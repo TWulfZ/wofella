@@ -48,6 +48,7 @@ impl<'a> SessionService<'a> {
             .catalog_charts(charts.into_iter().collect())
             .await?;
         let labels = self.ctx.labeling().session_label_states().await?;
+        let gold_windows = self.ctx.labeling().gold_windows().await?;
         let rows = plays
             .into_iter()
             .filter_map(|p| {
@@ -67,6 +68,7 @@ impl<'a> SessionService<'a> {
                     keymode: chart.keymode,
                     set_id: chart.set_id,
                     label: labels.get(&md5).cloned(),
+                    gold_windows: gold_windows.get(&md5).copied().unwrap_or(0),
                     md5,
                 })
             })

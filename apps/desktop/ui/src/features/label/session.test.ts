@@ -73,6 +73,7 @@ describe("sessionReducer history", () => {
     expect(currentEntry(s)).toEqual({
       window: labelWindow("a"),
       origin: { kind: "plan", round: 0 },
+      moved: false,
       status: { kind: "pending" },
     });
     expect(isSampling(s)).toBe(false);
@@ -246,8 +247,46 @@ describe("sessionReducer answer", () => {
       mixed: false,
       unsure: true,
       thumbPref: "right",
+      selection: { pick: "sampled", window: "sampled" },
     });
     expect(submitPayload(initialSession("1"))).toBeNull();
+  });
+
+  it.each<[string, string, WindowOrigin]>([
+    ["the plan", "sampled", { kind: "plan", round: 0 }],
+    ["Random", "random", { kind: "random" }],
+    ["osu!'s window", "now_playing", { kind: "nowPlaying", source: "osuWindow" }],
+    ["the last replay", "now_playing", { kind: "nowPlaying", source: "lastReplay" }],
+    ["the session list", "session", { kind: "session" }],
+  ])("declares a window from %s as picked %s, with the window it was offered", (_, pick, origin) => {
+    const s = run(loadedAs(initialSession("1"), "a", origin), { type: "noPatternToggled" });
+    expect(submitPayload(s)?.selection).toEqual({ pick, window: "sampled" });
+  });
+
+  it("declares a window the timeline reshaped as moved, even once it is back on its offered bounds", () => {
+    let s = run(loadedAs(initialSession("1"), "a", { kind: "random" }), { type: "noPatternToggled" });
+    s = sessionReducer(s, { type: "windowMoved", cursor: 0, anchor: anchor("a", 6000, 10_000) });
+    expect(submitPayload(s)?.selection).toEqual({ pick: "random", window: "moved" });
+    s = sessionReducer(s, { type: "windowMoved", cursor: 0, anchor: anchor("a") });
+    expect(submitPayload(s)?.selection).toEqual({ pick: "random", window: "moved" });
+  });
+
+  it("keeps a chosen, moved window's selection when it is undone and saved again", () => {
+    let s = loadedAs(initialSession("1"), "a", { kind: "nowPlaying", source: "osuWindow" });
+    s = sessionReducer(s, { type: "windowMoved", cursor: 0, anchor: anchor("a", 6000, 10_000) });
+    s = saved(run(s, { type: "noPatternToggled" }), "01A");
+    s = run(s, { type: "moved", to: "previous" }, { type: "undone", eventId: "01A" }, { type: "noPatternToggled" });
+    expect(submitPayload(s)?.selection).toEqual({ pick: "now_playing", window: "moved" });
+  });
+
+  it("keeps the moved mark on the window that was moved, not on the one shown next", () => {
+    let s = run(planned(initialSession("1"), "a"), { type: "moved", to: "next" });
+    s = planned(s, "b");
+    s = sessionReducer(s, { type: "windowMoved", cursor: 0, anchor: anchor("a", 6000, 10_000) });
+    s = run(s, { type: "noPatternToggled" });
+    expect(submitPayload(s)?.selection).toEqual({ pick: "sampled", window: "sampled" });
+    s = run(s, { type: "moved", to: "previous" }, { type: "noPatternToggled" });
+    expect(submitPayload(s)?.selection).toEqual({ pick: "sampled", window: "moved" });
   });
 
   it("clears the answer, and resets it whenever the shown window changes", () => {
