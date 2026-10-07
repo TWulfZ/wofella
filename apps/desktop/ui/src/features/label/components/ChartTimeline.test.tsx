@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ChartTimeline, type ChartTimelineProps } from "./ChartTimeline";
@@ -310,5 +310,113 @@ describe("ChartTimeline", () => {
       await userEvent.keyboard("{ArrowRight}");
       expect(onResize).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("ChartTimeline playhead", () => {
+  // The section plays 19.0–30.25 s (pre- and post-roll around the 20–30 s window): 1 px of the seek bar is 11.25 ms.
+  const LOOP = { startMs: 19_000, endMs: 30_250 };
+
+  function renderPlayhead(positionMs = 21_250, overrides: Partial<ChartTimelineProps> = {}) {
+    const position = { ms: positionMs };
+    const onSeek = vi.fn((ms: number) => {
+      position.ms = ms;
+    });
+    const rendered = renderTimeline({
+      playhead: { positionMs: () => position.ms, loop: LOOP, stepMs: 2000, onSeek },
+      ...overrides,
+    });
+    return { ...rendered, onSeek, position };
+  }
+
+  function playhead(): HTMLElement {
+    return screen.getByRole("slider", { name: "Playback position" });
+  }
+
+  function seekBar(): HTMLElement {
+    return screen.getByTestId("seek-bar");
+  }
+
+  it("is a slider over the playing section, voiced as mm:ss.mmm", () => {
+    renderPlayhead();
+    expect(screen.getByRole("group", { name: "Chart timeline" })).toContainElement(playhead());
+    expect(playhead()).toHaveAttribute("aria-valuemin", "19000");
+    expect(playhead()).toHaveAttribute("aria-valuemax", "30250");
+    expect(playhead()).toHaveAttribute("aria-valuenow", "21250");
+    expect(playhead()).toHaveAttribute("aria-valuetext", "00:21.250");
+    expect(playhead()).toHaveAttribute("tabindex", "0");
+  });
+
+  it("marks the position on the seek bar, which spans the section, and as a line inside the chart's window", () => {
+    renderPlayhead();
+    expect(playhead().style.left).toBe("20%");
+    expect(screen.getByTestId("seek-window").style.left).toBe(`${String(Math.round((1000 / 11_250) * 10_000) / 100)}%`);
+    expect(screen.getByTestId("timeline-playhead-line").style.left).toBe("21.25%");
+    expect(screen.getByTestId("timeline-playhead-line")).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("follows the playback position frame by frame", async () => {
+    const { position } = renderPlayhead();
+    position.ms = 24_625;
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+    expect(playhead().style.left).toBe("50%");
+  });
+
+  it("seeks where the seek bar is clicked, without moving the window", () => {
+    const { onSeek, onMove, onResize } = renderPlayhead();
+    // x = 100 + 400 px → 19 000 + 400 × 11.25 ms.
+    fireEvent.pointerDown(seekBar(), { button: 0, clientX: 500 });
+    fireEvent.pointerUp(window, { clientX: 500 });
+    expect(onSeek).toHaveBeenCalledWith(23_500);
+    expect(onSeek).toHaveBeenCalledTimes(1);
+    expect(onMove).not.toHaveBeenCalled();
+    expect(onResize).not.toHaveBeenCalled();
+  });
+
+  it("drags the playhead along the section, clamped to it, and seeks again on release", () => {
+    const { onSeek } = renderPlayhead();
+    fireEvent.pointerDown(seekBar(), { button: 0, clientX: 200 });
+    fireEvent.pointerMove(window, { clientX: 1500 });
+    expect(playhead().style.left).toBe("100%");
+    fireEvent.pointerUp(window, { clientX: 1500 });
+    expect(onSeek.mock.calls.map(([ms]) => ms)).toEqual([20_125, 30_250]);
+  });
+
+  it("goes to the section's end with End, which the clock holds just before it", async () => {
+    const user = userEvent.setup();
+    const { onSeek } = renderPlayhead(21_250);
+    playhead().focus();
+    await user.keyboard("{End}");
+    expect(onSeek).toHaveBeenLastCalledWith(30_250);
+  });
+
+  it("steps with the arrow keys on the focused playhead, wrapping inside the section, and Home goes to its start", async () => {
+    const user = userEvent.setup();
+    const { onSeek } = renderPlayhead(29_000);
+    playhead().focus();
+    await user.keyboard("{ArrowRight}");
+    expect(onSeek).toHaveBeenLastCalledWith(19_750);
+    await user.keyboard("{ArrowLeft}");
+    expect(onSeek).toHaveBeenLastCalledWith(29_000);
+    await user.keyboard("{ArrowLeft}");
+    expect(onSeek).toHaveBeenLastCalledWith(27_000);
+    await user.keyboard("{Home}");
+    expect(onSeek).toHaveBeenLastCalledWith(19_000);
+  });
+
+  it("still seeks on a saved window, since seeking stores nothing", () => {
+    const { onSeek } = renderPlayhead(21_250, { locked: true });
+    fireEvent.pointerDown(seekBar(), { button: 0, clientX: 500 });
+    fireEvent.pointerUp(window, { clientX: 500 });
+    expect(onSeek).toHaveBeenCalledWith(23_500);
+  });
+
+  it("draws no playhead without playback", () => {
+    renderTimeline();
+    expect(screen.queryByRole("slider", { name: "Playback position" })).toBeNull();
+    expect(screen.queryByTestId("seek-bar")).toBeNull();
   });
 });

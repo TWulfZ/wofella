@@ -5,6 +5,8 @@
     "hide": "Hide jobs",
     "running_one": "{{count}} running",
     "running_other": "{{count}} running",
+    "failed_one": "{{count}} failed",
+    "failed_other": "{{count}} failed",
     "empty": "No jobs yet.",
     "kind": {
       "sync_plays": "Sync plays",

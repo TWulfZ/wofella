@@ -7,7 +7,20 @@ import {
   createSilentLoopClock,
   decodeBase64Audio,
   type LoopSpan,
+  SEEK_END_GUARD_MS,
 } from "@/features/playfield";
+
+type SeekableClock = ReturnType<typeof createSilentLoopClock>;
+
+/** `fromMs` moved by `deltaMs`, wrapping inside the loop as playback does; a start outside the loop is clamped first. */
+export function skipWithin(fromMs: number, deltaMs: number, loop: LoopSpan): number {
+  const len = loop.endMs - loop.startMs;
+  if (len <= 0) {
+    return loop.startMs;
+  }
+  const from = Math.min(Math.max(fromMs, loop.startMs), loop.endMs) - loop.startMs;
+  return loop.startMs + ((((from + deltaMs) % len) + len) % len);
+}
 
 export type AudioInput = { kind: "pending" } | { kind: "data"; base64: string } | { kind: "missing" };
 
@@ -52,7 +65,9 @@ export class SectionPlayer {
   // One chart's buffer only: a decoded song is tens of MB of PCM, and window moves keep the same md5.
   private decoded: { md5: string; buffer: AudioBufferLike | null } | null = null;
   private decoding: string | null = null;
-  private clock: Clock | null = null;
+  private clock: SeekableClock | null = null;
+  // A seek made before a clock exists (never played, or decoding); the next clock starts there.
+  private pendingSeekMs: number | null = null;
   private audioClock: AudioLoopClock | null = null;
   private started = false;
   private wantPlaying = false;
@@ -83,6 +98,9 @@ export class SectionPlayer {
       this.loop.endMs === loop.endMs
     ) {
       return;
+    }
+    if (this.loop?.startMs !== loop.startMs || this.loop.endMs !== loop.endMs) {
+      this.pendingSeekMs = null;
     }
     this.md5 = md5;
     this.audio = audio;
@@ -126,6 +144,31 @@ export class SectionPlayer {
     this.emit();
   }
 
+  /** Chart time; neither the window nor anything stored moves. */
+  seek(chartMs: number): void {
+    if (this.loop === null) {
+      return;
+    }
+    if (this.clock === null) {
+      const { startMs, endMs } = this.loop;
+      this.pendingSeekMs = Math.max(startMs, Math.min(chartMs, endMs - SEEK_END_GUARD_MS));
+      return;
+    }
+    this.clock.seekMs(chartMs);
+  }
+
+  skip(deltaMs: number): void {
+    if (this.loop !== null) {
+      this.seek(skipWithin(this.positionMs(), deltaMs, this.loop));
+    }
+  }
+
+  /** Where playback is, or would start: read every frame by the timeline's playhead. */
+  positionMs = (): number => this.clock?.nowMs() ?? this.pendingSeekMs ?? this.loop?.startMs ?? 0;
+
+  /** What the preview draws while not playing; null until a seek or a clock, so an untouched window shows its start. */
+  pausedAtMs = (): number | null => this.clock?.nowMs() ?? this.pendingSeekMs;
+
   toggle(): void {
     if (this.wantPlaying) {
       this.pause();
@@ -144,6 +187,7 @@ export class SectionPlayer {
     this.decoding = null;
     this.started = false;
     this.wantPlaying = false;
+    this.pendingSeekMs = null;
     this.emit();
   }
 
@@ -182,6 +226,10 @@ export class SectionPlayer {
         this.clock = this.audioClock;
       } else if (this.audio.kind === "data" && ctx !== null) {
         this.startDecode(ctx, md5, this.audio.base64);
+      }
+      if (this.clock !== null && this.pendingSeekMs !== null) {
+        this.clock.seekMs(this.pendingSeekMs);
+        this.pendingSeekMs = null;
       }
       if (this.clock !== null && this.wantPlaying) {
         this.clock.play();

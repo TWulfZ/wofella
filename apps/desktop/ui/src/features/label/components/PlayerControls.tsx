@@ -1,4 +1,4 @@
-import { Pause, Play } from "lucide-react";
+import { Pause, Play, RotateCcw, RotateCw } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { Clock } from "@/features/playfield";
@@ -48,15 +48,23 @@ interface PlayerControlsProps {
   duration: string;
   rate: number;
   timeline: ReactNode;
+  /** Back is the negative step; both wrap inside the section. */
+  onSkip: (deltaMs: number) => void;
+  skipMs: number;
 }
 
+const MS_PER_SECOND = 1000;
+
 export function PlayerControls(props: PlayerControlsProps) {
-  const { playing, loading, onToggle, clock, windowStartMs, range, duration, rate, timeline } = props;
+  const { playing, loading, onToggle, clock, windowStartMs, range, duration, rate, timeline, onSkip, skipMs } = props;
   const { t } = useTranslation();
   const label = playing ? t("label.transport.pause") : t("label.transport.play");
+  const seconds = String(skipMs / MS_PER_SECOND);
+  const back = t("label.transport.back", { seconds });
+  const forward = t("label.transport.forward", { seconds });
   return (
     <>
-      {/* Play and time sit on the right: the left edge belongs to the settings tab and its hover. */}
+      {/* Transport and time sit on the right: the left edge belongs to the settings tab and its hover. */}
       <div className="flex items-center gap-3">
         {rate !== 1 && (
           <span
@@ -78,6 +86,19 @@ export function PlayerControls(props: PlayerControlsProps) {
         </div>
         <Button
           type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={back}
+          title={back}
+          onClick={() => {
+            onSkip(-skipMs);
+          }}
+          className="shrink-0 rounded-full"
+        >
+          <RotateCcw aria-hidden />
+        </Button>
+        <Button
+          type="button"
           size="icon-lg"
           aria-label={label}
           title={label}
@@ -86,6 +107,19 @@ export function PlayerControls(props: PlayerControlsProps) {
           className="size-10 shrink-0 rounded-full"
         >
           {playing ? <Pause aria-hidden className="fill-current" /> : <Play aria-hidden className="fill-current" />}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={forward}
+          title={forward}
+          onClick={() => {
+            onSkip(skipMs);
+          }}
+          className="shrink-0 rounded-full"
+        >
+          <RotateCw aria-hidden />
         </Button>
       </div>
       {timeline}

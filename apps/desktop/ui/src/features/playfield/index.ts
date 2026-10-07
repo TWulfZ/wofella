@@ -8,6 +8,7 @@ export {
   createSilentLoopClock,
   loopPosition,
   type LoopSpan,
+  SEEK_END_GUARD_MS,
 } from "./audioClock";
 export { COLUMN_COLORS, columnColor, PLAYFIELD_COLORS } from "./colors";
 export { decodeBase64Audio } from "./decodeAudio";

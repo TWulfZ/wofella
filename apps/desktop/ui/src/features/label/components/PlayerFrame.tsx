@@ -13,8 +13,10 @@ import { useTranslation } from "react-i18next";
 import { cn } from "@/shared/lib/utils";
 
 export const PLAYER_FRAME_PARAMS = {
-  /** A video player's habit: long enough to reach a control, short enough not to sit over the notes. */
-  idleMs: 2000,
+  /** How long the controls show on mount, so the player can be found; short, since they cover the judgement line. */
+  revealMs: 2000,
+  /** Once called, the controls stay while the pointer moves over the preview; a pointer resting this long dismisses them. */
+  idleMs: 15_000,
   /** A hover peek shorter than this is a pointer passing by, not a viewer finding the settings. */
   settingsFoundDwellMs: 500,
   /** Only the pointer this near the bottom edge calls the controls: a share of the stage, floored for short stages. */
@@ -41,49 +43,62 @@ export interface PlayerFrameProps {
   settingsHint?: string | null;
   /** Called when the viewer finds the settings: a press on the tab, a focused control, or a peek that lasts. */
   onSettingsOpen?: () => void;
+  /** A click on the preview itself (not its controls, settings or centre content), as a video player toggles playback. */
+  onStageClick?: () => void;
   idleMs?: number;
+  revealMs?: number;
   className?: string;
 }
 
-function useControlsVisibility(idleMs: number) {
+function useControlsVisibility(idleMs: number, revealMs: number) {
   const [awake, setAwake] = useState(true);
-  const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [dragging, setDragging] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Read by pointermove, which must not wake controls the bottom zone has not called.
+  const awakeRef = useRef(true);
 
-  const arm = useCallback(() => {
+  const arm = useCallback((ms: number) => {
     if (timer.current !== null) {
       clearTimeout(timer.current);
     }
     timer.current = setTimeout(() => {
       timer.current = null;
+      awakeRef.current = false;
       setAwake(false);
-    }, idleMs);
-  }, [idleMs]);
+    }, ms);
+  }, []);
 
   const wake = useCallback(() => {
+    awakeRef.current = true;
     setAwake(true);
-    arm();
-  }, [arm]);
+    arm(idleMs);
+  }, [arm, idleMs]);
+
+  const keepAwake = useCallback(() => {
+    if (awakeRef.current) {
+      arm(idleMs);
+    }
+  }, [arm, idleMs]);
 
   const sleep = useCallback(() => {
     if (timer.current !== null) {
       clearTimeout(timer.current);
       timer.current = null;
     }
+    awakeRef.current = false;
     setAwake(false);
   }, []);
 
   // Shown on mount (the initial state), so the player can be found before it first fades.
   useEffect(() => {
-    arm();
+    arm(revealMs);
     return () => {
       if (timer.current !== null) {
         clearTimeout(timer.current);
       }
     };
-  }, [arm]);
+  }, [arm, revealMs]);
 
   useEffect(() => {
     if (!dragging) {
@@ -102,10 +117,11 @@ function useControlsVisibility(idleMs: number) {
   }, [dragging, wake]);
 
   return {
-    visible: awake || hovered || focused || dragging,
+    // Hovering alone does not hold them: a pointer resting on them is idle too, and moving over them re-arms the timer.
+    visible: awake || focused || dragging,
     wake,
+    keepAwake,
     sleep,
-    setHovered,
     setFocused,
     startDrag: () => {
       setDragging(true);
@@ -120,9 +136,11 @@ interface SettingsFlyoutProps {
   children: ReactNode;
   hint: string | null;
   onOpen: (() => void) | undefined;
+  /** A press outside the panel closed it; the click that follows belongs to that dismissal. */
+  onPointerDismiss: () => void;
 }
 
-function SettingsFlyout({ children, hint, onOpen }: SettingsFlyoutProps) {
+function SettingsFlyout({ children, hint, onOpen, onPointerDismiss }: SettingsFlyoutProps) {
   const { t } = useTranslation();
   const panelId = useId();
   const hintId = useId();
@@ -178,13 +196,14 @@ function SettingsFlyout({ children, hint, onOpen }: SettingsFlyoutProps) {
       if (e.target instanceof Node && rootRef.current?.contains(e.target) !== true) {
         cancelFound();
         setMode("closed");
+        onPointerDismiss();
       }
     };
     document.addEventListener("pointerdown", onPointerDown);
     return () => {
       document.removeEventListener("pointerdown", onPointerDown);
     };
-  }, [mode]);
+  }, [mode, onPointerDismiss]);
 
   const onPanelKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
     if (e.key === "Escape") {
@@ -328,11 +347,25 @@ export function PlayerFrame({
   centre,
   settingsHint = null,
   onSettingsOpen,
+  onStageClick,
   idleMs = PLAYER_FRAME_PARAMS.idleMs,
+  revealMs = PLAYER_FRAME_PARAMS.revealMs,
   className,
 }: PlayerFrameProps) {
   const { t } = useTranslation();
-  const visibility = useControlsVisibility(idleMs);
+  const visibility = useControlsVisibility(idleMs, revealMs);
+  // Set by the settings' outside-press dismissal, which runs after this frame's own pointerdown and before the click.
+  const dismissing = useRef(false);
+  const onPointerDismiss = useCallback(() => {
+    dismissing.current = true;
+  }, []);
+  const stageClick = (): void => {
+    if (dismissing.current) {
+      dismissing.current = false;
+      return;
+    }
+    onStageClick?.();
+  };
   const onControlsBlur = (e: FocusEvent<HTMLDivElement>): void => {
     if (!(e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget))) {
       visibility.setFocused(false);
@@ -343,9 +376,17 @@ export function PlayerFrame({
     <div
       data-testid="player-frame"
       onPointerLeave={visibility.sleep}
+      onPointerMove={visibility.keepAwake}
+      // A press that ends without a click (a drag off the stage) must not swallow the next real click.
+      onPointerDownCapture={() => {
+        dismissing.current = false;
+      }}
       className={cn("bg-background relative isolate min-h-0 flex-1 overflow-hidden rounded-xl border", className)}
     >
-      {children}
+      {/* A pointer convenience only: Space and the play buttons do the same from the keyboard. */}
+      <div data-testid="player-stage" onClick={stageClick} className="size-full">
+        {children}
+      </div>
       {notices !== undefined && (
         <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-col items-center gap-1.5 p-2 *:pointer-events-auto">
           {notices}
@@ -365,6 +406,7 @@ export function PlayerFrame({
         data-testid="controls-hover-zone"
         onPointerEnter={visibility.wake}
         onPointerMove={visibility.wake}
+        onClick={stageClick}
         style={{
           height: `${String(PLAYER_FRAME_PARAMS.controlsHoverZoneShare * 100)}%`,
           minHeight: PLAYER_FRAME_PARAMS.controlsHoverZoneMinPx,
@@ -375,13 +417,7 @@ export function PlayerFrame({
         role="group"
         aria-label={t("label.player.controls")}
         data-visible={visibility.visible}
-        onPointerEnter={() => {
-          visibility.setHovered(true);
-        }}
-        onPointerLeave={() => {
-          visibility.setHovered(false);
-          visibility.wake();
-        }}
+        onPointerLeave={visibility.wake}
         onPointerDown={visibility.startDrag}
         onFocus={() => {
           visibility.setFocused(true);
@@ -397,7 +433,7 @@ export function PlayerFrame({
       >
         {controls}
       </div>
-      <SettingsFlyout hint={settingsHint} onOpen={onSettingsOpen}>
+      <SettingsFlyout hint={settingsHint} onOpen={onSettingsOpen} onPointerDismiss={onPointerDismiss}>
         {settings}
       </SettingsFlyout>
     </div>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { AudioBufferLike, AudioBufferSourceNodeLike, AudioContextLike } from "@/features/playfield";
-import { SectionPlayer, type SectionPlayerDeps } from "./sectionPlayer";
+import { type AudioBufferLike, type AudioBufferSourceNodeLike, type AudioContextLike, SEEK_END_GUARD_MS } from "@/features/playfield";
+import { SectionPlayer, type SectionPlayerDeps, skipWithin } from "./sectionPlayer";
 
 class FakeSource implements AudioBufferSourceNodeLike {
   buffer: AudioBufferLike | null = null;
@@ -303,5 +303,117 @@ describe("SectionPlayer", () => {
     player.play();
     expect(contexts).toHaveLength(2);
     expect(decodes).toHaveLength(2);
+  });
+});
+
+describe("skipWithin", () => {
+  it("steps forward and back inside the loop, wrapping at either end as the loop does", () => {
+    expect(skipWithin(1500, 1000, LOOP)).toBe(2500);
+    expect(skipWithin(2500, 1000, LOOP)).toBe(1500);
+    expect(skipWithin(1500, -1000, LOOP)).toBe(2500);
+    expect(skipWithin(1000, -2000, LOOP)).toBe(1000);
+    expect(skipWithin(2999, 1, LOOP)).toBe(1000);
+  });
+
+  it("brings a position outside the loop back into it", () => {
+    expect(skipWithin(400, 0, LOOP)).toBe(1000);
+    expect(skipWithin(4000, 0, LOOP)).toBe(1000);
+  });
+});
+
+describe("SectionPlayer seeking", () => {
+  it("reads the loop start before anything plays, and 0 without a section", () => {
+    const { player } = harness();
+    expect(player.positionMs()).toBe(0);
+    player.setSection("a", DATA, LOOP);
+    expect(player.positionMs()).toBe(1000);
+  });
+
+  it("keeps a seek made before the first play without opening an audio context, then plays from it", () => {
+    const { player, contexts, now } = harness();
+    player.setSection("a", { kind: "missing" }, LOOP);
+    player.seek(2200);
+    expect(contexts).toEqual([]);
+    expect(player.getSnapshot().clock).toBeNull();
+    expect(player.positionMs()).toBe(2200);
+
+    player.play();
+    now.ms = 100;
+    expect(player.getSnapshot().clock?.nowMs()).toBe(2300);
+    expect(player.positionMs()).toBe(2300);
+  });
+
+  it("seeks the playing clock in place: same clock, still playing, nothing rebuilt", () => {
+    const { player, now } = harness();
+    player.setSection("a", { kind: "missing" }, LOOP);
+    player.play();
+    const { clock } = player.getSnapshot();
+    now.ms = 300;
+    player.seek(2500);
+    expect(player.getSnapshot().clock).toBe(clock);
+    expect(clock?.playing).toBe(true);
+    expect(player.positionMs()).toBe(2500);
+  });
+
+  it("holds a seek made while the audio decodes and applies it to the clock that follows", async () => {
+    const { player, decodes, contexts } = harness();
+    player.setSection("a", DATA, LOOP);
+    player.play();
+    player.seek(2000);
+    expect(player.positionMs()).toBe(2000);
+    decodes[0]?.resolve(BUFFER);
+    await settle();
+    const ctx = onlyContext(contexts);
+    expect(ctx.sources[0]?.starts[0]?.offset).toBe(2);
+    expect(player.positionMs()).toBe(2000);
+  });
+
+  it("drops a pending seek when the section changes, since it belonged to the old loop", () => {
+    const { player } = harness();
+    player.setSection("a", DATA, LOOP);
+    player.seek(2000);
+    player.setSection("a", DATA, { startMs: 5000, endMs: 7000 });
+    expect(player.positionMs()).toBe(5000);
+  });
+
+  it("skips relative to where it is, wrapping inside the loop", () => {
+    const { player, now } = harness();
+    player.setSection("a", { kind: "missing" }, LOOP);
+    player.skip(-500);
+    expect(player.positionMs()).toBe(2500);
+    player.play();
+    now.ms = 200;
+    player.skip(2000);
+    expect(player.positionMs()).toBe(2700);
+  });
+
+  it("reports where the preview should stand: nothing before a seek or a clock, then the seek, then the clock", () => {
+    const { player, now } = harness();
+    player.setSection("a", { kind: "missing" }, LOOP);
+    expect(player.pausedAtMs()).toBeNull();
+    player.seek(2200);
+    expect(player.pausedAtMs()).toBe(2200);
+    player.play();
+    now.ms = 300;
+    player.pause();
+    expect(player.pausedAtMs()).toBe(2500);
+    player.seek(1500);
+    expect(player.pausedAtMs()).toBe(1500);
+  });
+
+  it("holds a seek to the loop end made before the first play just before the end, as the clock does", () => {
+    const { player } = harness();
+    player.setSection("a", { kind: "missing" }, LOOP);
+    player.seek(LOOP.endMs);
+    expect(player.positionMs()).toBe(LOOP.endMs - SEEK_END_GUARD_MS);
+    player.play();
+    expect(player.positionMs()).toBe(LOOP.endMs - SEEK_END_GUARD_MS);
+  });
+
+  it("ignores a seek with no section", () => {
+    const { player } = harness();
+    player.seek(1234);
+    player.skip(1000);
+    expect(player.positionMs()).toBe(0);
   });
 });

@@ -220,20 +220,44 @@ describe("Playfield", () => {
     expect(rec.ops).toEqual(expectedOps(1200, fitPxPerMs(WINDOW, H, JUDGE_Y)));
   });
 
-  it("shows the window from its start at the chosen speed while paused and follows the clock once it plays", () => {
+  it("shows a paused clock where it stands at the chosen speed, redraws only when it moves, and follows it once it plays", () => {
     const clock = fakeClock(1700, false);
     render(<Playfield window={WINDOW} clock={clock} scroll={PX} hitPosition={HIT_POSITION} />);
     observer().resize(CONTAINER_W, H);
     runFrame();
-    expect(rec.ops).toEqual(expectedOps(WINDOW.fromMs, 0.5));
+    expect(rec.ops).toEqual(expectedOps(1700, 0.5));
 
     rec.ops.length = 0;
     runFrame();
     expect(rec.ops).toEqual([]);
 
+    clock.nowMsValue = 1250;
+    runFrame();
+    expect(rec.ops).toEqual(expectedOps(1250, 0.5));
+
+    rec.ops.length = 0;
     clock.playing = true;
+    clock.nowMsValue = 1700;
     runFrame();
     expect(rec.ops).toEqual(expectedOps(1700, 0.5));
+  });
+
+  it("without a clock, shows where the caller says playback would start and follows it, else the window start", () => {
+    let position: number | null = null;
+    render(
+      <Playfield window={WINDOW} clock={null} position={() => position} scroll={PX} hitPosition={HIT_POSITION} />,
+    );
+    observer().resize(CONTAINER_W, H);
+    expect(rec.ops).toEqual(expectedOps(WINDOW.fromMs, 0.5));
+
+    rec.ops.length = 0;
+    position = 1400;
+    runFrame();
+    expect(rec.ops).toEqual(expectedOps(1400, 0.5));
+
+    rec.ops.length = 0;
+    runFrame();
+    expect(rec.ops).toEqual([]);
   });
 
   it("cancels the animation frame and the observer on unmount", () => {

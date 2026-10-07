@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "F0 main window: core IPC, folder picker, UI log forwarding, opening paths inside the wolluf data dir.",
+  "description": "F0 main window: core IPC, folder picker, UI log forwarding, opening paths inside the wolluf data dir and osu.ppy.sh pages.",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -10,6 +10,10 @@
     {
       "identifier": "opener:allow-open-path",
       "allow": [{ "path": "$LOCALDATA/wolluf/**" }]
+    },
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "https://osu.ppy.sh/*" }]
     }
   ]
 }

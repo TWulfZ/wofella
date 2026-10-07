@@ -5,6 +5,8 @@
     "hide": "Ocultar tareas",
     "running_one": "{{count}} en curso",
     "running_other": "{{count}} en curso",
+    "failed_one": "{{count}} fallida",
+    "failed_other": "{{count}} fallidas",
     "empty": "Todavía no hay tareas.",
     "kind": {
       "sync_plays": "Sincronizar jugadas",

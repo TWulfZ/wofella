@@ -3,9 +3,11 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { CentrePlayButton, PlayerControls } from "./PlayerControls";
 
-function renderControls(rate = 1) {
+function renderControls(rate = 1, onSkip = vi.fn()) {
   return render(
     <PlayerControls
+      onSkip={onSkip}
+      skipMs={2000}
       playing={false}
       loading={false}
       onToggle={vi.fn()}
@@ -20,15 +22,26 @@ function renderControls(rate = 1) {
 }
 
 describe("PlayerControls", () => {
-  it("ends the row with the time and then the play button, clear of the settings tab on the left", () => {
+  it("ends the row with the time, then back, play and forward, clear of the settings tab on the left", () => {
     renderControls(1.25);
     const play = screen.getByRole("button", { name: "Play" });
+    const back = screen.getByRole("button", { name: "Back 2 s" });
+    const forward = screen.getByRole("button", { name: "Forward 2 s" });
     const row = play.parentElement;
-    expect(row?.lastElementChild).toBe(play);
+    expect([...(row?.children ?? [])].slice(-3)).toEqual([back, play, forward]);
     const time = screen.getByTestId("playback-time");
-    expect(time.compareDocumentPosition(play) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(time.compareDocumentPosition(back) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByText("×1.25").compareDocumentPosition(time) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(time.closest("[data-testid='playback-readout']")).toHaveClass("ml-auto", "items-end");
+  });
+
+  it("skips back and forward by the step, like a video player", async () => {
+    const user = userEvent.setup();
+    const onSkip = vi.fn();
+    renderControls(1, onSkip);
+    await user.click(screen.getByRole("button", { name: "Back 2 s" }));
+    await user.click(screen.getByRole("button", { name: "Forward 2 s" }));
+    expect(onSkip.mock.calls).toEqual([[-2000], [2000]]);
   });
 });
 

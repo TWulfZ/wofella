@@ -1,6 +1,8 @@
 import {
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  type RefObject,
+  useCallback,
   useEffect,
   useId,
   useRef,
@@ -8,7 +10,8 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/shared/lib/utils";
-import { formatMinSec } from "../format";
+import { formatClock, formatMinSec } from "../format";
+import { skipWithin } from "../sectionPlayer";
 import type { Span } from "../types";
 
 export interface ChartTimelineParams {
@@ -23,6 +26,8 @@ export interface ChartTimelineParams {
   edgeInsidePx: number;
   /** The move grab never shrinks below this, so a few-px window on a long chart can still be dragged. */
   minMoveGrabPx: number;
+  /** The playhead moves every frame; its spoken value is rewritten at most this often, so a screen reader is not flooded. */
+  playheadAriaRefreshMs: number;
 }
 
 export const CHART_TIMELINE_PARAMS: ChartTimelineParams = {
@@ -33,6 +38,7 @@ export const CHART_TIMELINE_PARAMS: ChartTimelineParams = {
   edgeOutsidePx: 8,
   edgeInsidePx: 6,
   minMoveGrabPx: 16,
+  playheadAriaRefreshMs: 250,
 };
 
 type Grab = "move" | Edge | "outside";
@@ -71,7 +77,19 @@ export interface ChartTimelineProps {
   onMove: (t0Ms: number) => void;
   /** The window with one edge moved, committed once per gesture or key. */
   onResize: (span: Span) => void;
+  /** Playback inside the window; absent, no playhead is drawn. */
+  playhead?: Playhead | undefined;
   params?: ChartTimelineParams;
+}
+
+export interface Playhead {
+  /** Read every frame, so it must be cheap. */
+  positionMs: () => number;
+  /** The section playback loops over: the seek bar's range. */
+  loop: { startMs: number; endMs: number };
+  /** Arrow-key step, wrapping inside the loop. */
+  stepMs: number;
+  onSeek: (chartMs: number) => void;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -124,11 +142,179 @@ function trackPointer(onMove: (clientX: number) => void, onUp: () => void, onEnd
   return stop;
 }
 
+interface SeekBarProps {
+  playhead: Playhead;
+  window: Span;
+  /** The chart track's playhead line, positioned on the same frame as the bar's. */
+  lineRef: RefObject<HTMLDivElement | null>;
+  chartFraction: (ms: number) => number;
+  params: ChartTimelineParams;
+}
+
+/** A video player's progress bar, zoomed to the section: on the whole-chart track a short window is a few px wide. */
+function SeekBar({ playhead, window: current, lineRef, chartFraction, params }: SeekBarProps) {
+  const { t } = useTranslation();
+  const { loop, positionMs, onSeek, stepMs } = playhead;
+  const barRef = useRef<HTMLDivElement>(null);
+  const knobRef = useRef<HTMLDivElement>(null);
+  const progressRef = useRef<HTMLDivElement>(null);
+  const cleanup = useRef<(() => void) | null>(null);
+  // The pointer's time while dragging, shown in place of playback; committed on release.
+  const dragMs = useRef<number | null>(null);
+  // Set by a seek so the spoken value updates on the next frame instead of after the refresh interval.
+  const spokenStale = useRef(true);
+  const len = Math.max(1, loop.endMs - loop.startMs);
+  const loopStart = loop.startMs;
+  const fraction = useCallback((ms: number): number => clamp((ms - loopStart) / len, 0, 1), [loopStart, len]);
+
+  useEffect(
+    () => () => {
+      cleanup.current?.();
+    },
+    [],
+  );
+
+  // Writes the DOM directly: the position changes every frame, which must not re-render React.
+  const paint = useRef<(ms: number) => void>(() => undefined);
+  useEffect(() => {
+    let frame = 0;
+    let spokenAt = Number.NEGATIVE_INFINITY;
+    let spoken = "";
+    paint.current = (ms: number): void => {
+      const at = percent(fraction(ms));
+      if (knobRef.current !== null) {
+        knobRef.current.style.left = at;
+        const text = formatClock(ms);
+        const now = performance.now();
+        if (text !== spoken && (spokenStale.current || now - spokenAt >= params.playheadAriaRefreshMs)) {
+          knobRef.current.setAttribute("aria-valuenow", String(Math.round(ms)));
+          knobRef.current.setAttribute("aria-valuetext", text);
+          spoken = text;
+          spokenAt = now;
+          spokenStale.current = false;
+        }
+      }
+      if (progressRef.current !== null) {
+        progressRef.current.style.width = at;
+      }
+      if (lineRef.current !== null) {
+        lineRef.current.style.left = percent(chartFraction(ms));
+      }
+    };
+    const tick = (): void => {
+      paint.current(dragMs.current ?? positionMs());
+      frame = requestAnimationFrame(tick);
+    };
+    tick();
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, [positionMs, fraction, lineRef, params.playheadAriaRefreshMs, chartFraction]);
+
+  const seek = (ms: number): void => {
+    spokenStale.current = true;
+    onSeek(Math.round(ms));
+  };
+
+  const timeAt = (clientX: number): number => {
+    const rect = barRef.current?.getBoundingClientRect();
+    if (rect === undefined || rect.width <= 0) {
+      return positionMs();
+    }
+    return loop.startMs + clamp((clientX - rect.left) / rect.width, 0, 1) * len;
+  };
+
+  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    if (e.button !== 0) {
+      return;
+    }
+    e.preventDefault();
+    const first = timeAt(e.clientX);
+    dragMs.current = first;
+    seek(first);
+    paint.current(first);
+    let last = first;
+    cleanup.current?.();
+    cleanup.current = trackPointer(
+      (clientX) => {
+        last = timeAt(clientX);
+        dragMs.current = last;
+        paint.current(last);
+      },
+      () => {
+        if (last !== first) {
+          seek(last);
+        }
+      },
+      () => {
+        cleanup.current = null;
+        dragMs.current = null;
+      },
+    );
+  };
+
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
+    const step = keyStep(e.key, { ...params, stepMs, largeStepMs: stepMs });
+    if (step !== null) {
+      e.preventDefault();
+      seek(skipWithin(positionMs(), step, loop));
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      seek(loop.startMs);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      seek(loop.endMs);
+    }
+  };
+
+  const initial = positionMs();
+  return (
+    <div
+      ref={barRef}
+      data-testid="seek-bar"
+      onPointerDown={onPointerDown}
+      className="group/seek relative h-4 cursor-pointer touch-none select-none"
+    >
+      <div aria-hidden className="bg-muted/70 absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full" />
+      <div
+        aria-hidden
+        data-testid="seek-window"
+        style={{ left: percent(fraction(current.t0Ms)), width: percent(fraction(current.t1Ms) - fraction(current.t0Ms)) }}
+        className="bg-primary/30 absolute top-1/2 h-1 -translate-y-1/2"
+      />
+      <div
+        ref={progressRef}
+        aria-hidden
+        className="bg-primary absolute top-1/2 left-0 h-1 -translate-y-1/2 rounded-full group-hover/seek:h-1.5"
+      />
+      <div
+        ref={knobRef}
+        role="slider"
+        tabIndex={0}
+        aria-label={t("label.timeline.playhead")}
+        aria-orientation="horizontal"
+        aria-valuemin={loop.startMs}
+        aria-valuemax={loop.endMs}
+        aria-valuenow={Math.round(initial)}
+        aria-valuetext={formatClock(initial)}
+        onKeyDown={onKeyDown}
+        style={{ left: percent(fraction(initial)) }}
+        className={cn(
+          "bg-primary border-background absolute top-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 shadow outline-none",
+          "focus-visible:ring-ring focus-visible:ring-offset-background focus-visible:ring-2 focus-visible:ring-offset-1",
+        )}
+      />
+    </div>
+  );
+}
+
 export function ChartTimeline(props: ChartTimelineProps) {
-  const { span, window: current, density, labelled, locked, onMove, onResize, params = CHART_TIMELINE_PARAMS } = props;
+  const { span, window: current, density, labelled, locked, onMove, onResize, playhead } = props;
+  const params = props.params ?? CHART_TIMELINE_PARAMS;
   const { t } = useTranslation();
   const lockedId = useId();
   const trackRef = useRef<HTMLDivElement>(null);
+  const lineRef = useRef<HTMLDivElement>(null);
   const cleanup = useRef<(() => void) | null>(null);
   // The span on screen while a gesture runs; committed on release.
   const [drag, setDrag] = useState<Span | null>(null);
@@ -145,6 +331,7 @@ export function ChartTimeline(props: ChartTimelineProps) {
   const min = span.firstMs;
   const max = Math.max(min, span.endMs - (current.t1Ms - current.t0Ms));
   const at = (ms: number): number => (ms - span.firstMs) / total;
+  const chartFraction = useCallback((ms: number): number => clamp((ms - span.firstMs) / total, 0, 1), [span.firstMs, total]);
 
   // Each edge moves between the length bounds measured from the other edge, never outside the chart.
   const startMin = Math.max(span.firstMs, current.t1Ms - params.maxWindowMs);
@@ -272,6 +459,9 @@ export function ChartTimeline(props: ChartTimelineProps) {
 
   return (
     <div role="group" aria-label={t("label.timeline.label")} className="flex flex-col gap-1">
+      {playhead !== undefined && (
+        <SeekBar playhead={playhead} window={shown} lineRef={lineRef} chartFraction={chartFraction} params={params} />
+      )}
       <div
         ref={trackRef}
         data-testid="timeline-track"
@@ -335,6 +525,15 @@ export function ChartTimeline(props: ChartTimelineProps) {
             locked && "border-muted-foreground bg-muted-foreground/20",
           )}
         />
+        {playhead !== undefined && (
+          <div
+            ref={lineRef}
+            aria-hidden="true"
+            data-testid="timeline-playhead-line"
+            style={{ left: percent(chartFraction(playhead.positionMs())) }}
+            className="bg-foreground pointer-events-none absolute inset-y-0 z-10 w-px"
+          />
+        )}
         {(["start", "end"] as const).map((edge) => {
           const edgeMs = edge === "start" ? shown.t0Ms : shown.t1Ms;
           return (

@@ -58,7 +58,15 @@ export interface Clock {
   dispose(): void;
 }
 
-export interface AudioLoopClock extends Clock {
+export interface SeekableClock extends Clock {
+  /**
+   * Moves to a chart time inside the loop, playing or paused; `nowMs()` reads it right after. Outside the loop it
+   * clamps; a target at or past the end holds `SEEK_END_GUARD_MS` before it.
+   */
+  seekMs(chartMs: number): void;
+}
+
+export interface AudioLoopClock extends SeekableClock {
   /** Wall-clock ms whatever the playback rate, as the viewer's output latency is. */
   setOffsetMs(offsetMs: number): void;
 }
@@ -72,6 +80,18 @@ export interface LoopSpliceParams {
 }
 
 const MS_PER_S = 1000;
+
+/**
+ * How far before the loop end an absolute seek at or past it lands. Wrapping instead would send a drag to the seek bar's
+ * right edge, or a target within the latency compensation of it, back to the section's start.
+ */
+export const SEEK_END_GUARD_MS = 1;
+
+/** Where a seek to `chartMs` lands, as ms into the loop. */
+function seekElapsed(chartMs: number, loop: LoopSpan): number {
+  const len = loop.endMs - loop.startMs;
+  return Math.max(0, Math.min(chartMs - loop.startMs, len - SEEK_END_GUARD_MS));
+}
 
 /** Where `elapsedMs` of looped playback lands; before the first sample is heard and during the gap it stays at the start. */
 export function loopPosition(elapsedMs: number, loop: LoopSpan, gapMs = 0): number {
@@ -180,27 +200,42 @@ export function createAudioLoopClock(
     voices = [];
   };
 
+  const start = (): void => {
+    if (disposed || playing) {
+      return;
+    }
+    if (ctx.state === "suspended") {
+      void ctx.resume();
+    }
+    const nowS = ctx.currentTime;
+    startedAtS = nowS - pausedElapsedMs / rate / MS_PER_S;
+    iteration = 0;
+    playing = true;
+    schedule(nowS, span.startMs + pausedElapsedMs, lenMs - pausedElapsedMs);
+    scheduleNext();
+  };
+
   return {
     get playing() {
       return playing;
     },
     // The offset is a latency correction in wall ms; at rate r it covers r times as much chart.
     nowMs: () => heardMs() + offset * rate,
-    play() {
-      if (disposed || playing) {
+    play: start,
+    pause: stop,
+    seekMs(chartMs) {
+      if (disposed) {
         return;
       }
-      if (ctx.state === "suspended") {
-        void ctx.resume();
+      const resume = playing;
+      stop();
+      // The sound reaches the viewer a latency later and is drawn shifted by the offset; scheduling ahead of both makes
+      // the drawn position land on the target.
+      pausedElapsedMs = seekElapsed(chartMs + (latencyMs() - offset) * rate, span);
+      if (resume) {
+        start();
       }
-      const nowS = ctx.currentTime;
-      startedAtS = nowS - pausedElapsedMs / rate / MS_PER_S;
-      iteration = 0;
-      playing = true;
-      schedule(nowS, span.startMs + pausedElapsedMs, lenMs - pausedElapsedMs);
-      scheduleNext();
     },
-    pause: stop,
     dispose() {
       stop();
       disposed = true;
@@ -235,6 +270,9 @@ function contextSilentLoopClock(
     pause: () => {
       silent.pause();
     },
+    seekMs: (chartMs) => {
+      silent.seekMs(chartMs - offset * rate);
+    },
     dispose: () => {
       silent.dispose();
     },
@@ -250,7 +288,7 @@ export function createSilentLoopClock(
   nowFn: () => number = () => performance.now(),
   gapMs = 0,
   rate = 1,
-): Clock {
+): SeekableClock {
   let positionMs = loop.startMs;
   let startedAtMs: number | null = null;
   let disposed = false;
@@ -274,6 +312,17 @@ export function createSilentLoopClock(
       startedAtMs = nowFn() - (positionMs - loop.startMs) / rate;
     },
     pause: stop,
+    seekMs(chartMs) {
+      if (disposed) {
+        return;
+      }
+      const target = loop.startMs + seekElapsed(chartMs, loop);
+      if (startedAtMs === null) {
+        positionMs = target;
+      } else {
+        startedAtMs = nowFn() - (target - loop.startMs) / rate;
+      }
+    },
     dispose() {
       stop();
       disposed = true;

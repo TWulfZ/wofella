@@ -22,6 +22,7 @@ import type {
 } from "@/ipc/bindings";
 import { type CommandHandlers, type MockCall, mockCommands, mockIpcError } from "@/ipc/mocks";
 import { renderWithRouter } from "@/shared/testing/renderWithRouter";
+import { CHART_HEADER_PARAMS } from "./components/ChartHeader";
 import { writeOpenAxes } from "./components/patternGridPrefs";
 import { LABEL_SCREEN_PARAMS, LabelScreen, type LabelScreenParams, type LabelScreenProps } from "./LabelScreen";
 import { LABEL_PREFS } from "./prefs";
@@ -183,6 +184,8 @@ interface FakeSourceNode {
   started: number;
   stops: number;
   playbackRate: { value: number };
+  /** Seconds into the buffer each start asked for. */
+  offsets: (number | undefined)[];
 }
 
 class FakeAudioContext {
@@ -196,7 +199,7 @@ class FakeAudioContext {
     FakeAudioContext.created++;
   }
   createBufferSource() {
-    const node: FakeSourceNode = { started: 0, stops: 0, playbackRate: { value: 1 } };
+    const node: FakeSourceNode = { started: 0, stops: 0, playbackRate: { value: 1 }, offsets: [] };
     FakeAudioContext.sources.push(node);
     return {
       buffer: null,
@@ -204,8 +207,9 @@ class FakeAudioContext {
       onended: null,
       connect: () => undefined,
       disconnect: () => undefined,
-      start: () => {
+      start: (_when?: number, offset?: number) => {
         node.started++;
+        node.offsets.push(offset);
       },
       stop: () => {
         node.stops++;
@@ -662,22 +666,68 @@ describe("LabelScreen", () => {
     expect(bar).toHaveClass("sticky", "bottom-0");
     const list = screen.getByTestId("pattern-scroll");
     expect(list).toHaveClass("overflow-y-auto");
-    expect(list.lastElementChild).toBe(bar);
+    expect(bar.parentElement?.lastElementChild).toBe(bar);
+    expect(list.lastElementChild).toBe(bar.parentElement);
     expect(within(list).getByRole("region", { name: "Patterns" })).toBeInTheDocument();
   });
 
-  it("lays the map card edge to edge over the panel, above the scrolling list, so the scrollbar starts under it", async () => {
+  it("scrolls the map card with the panel, edge to edge, ahead of the pattern list", async () => {
     renderScreen();
     await roundLoaded();
     const panel = screen.getByTestId("pattern-panel");
-    const header = screen.getByRole("heading", { name: "Alpha Song" }).closest("header");
-    expect(header?.parentElement).toBe(panel);
-    expect(panel.className).not.toMatch(/(^|\s)(p|px|pl|pr|gap)-\S+/);
-    expect(panel).not.toHaveClass("overflow-y-auto");
     const list = screen.getByTestId("pattern-scroll");
-    expect(list).not.toContainElement(header);
-    expect((header?.compareDocumentPosition(list) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const header = screen.getByRole("heading", { name: "Alpha Song" }).closest("header");
+    expect(list.parentElement).toBe(panel);
+    expect(list).toContainElement(header);
+    expect(header?.parentElement).toBe(list);
+    for (const el of [panel, list]) {
+      expect(el.className).not.toMatch(/(^|\s)(p|px|pl|pr|gap)-\S+/);
+    }
     expect(header).toHaveClass("w-full", "border-b");
+    const patterns = within(list).getByRole("region", { name: "Patterns" });
+    expect((header?.compareDocumentPosition(patterns) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("keeps a focused card clear of the compact title bar the card collapses into", async () => {
+    renderScreen();
+    await roundLoaded();
+    expect(screen.getByTestId("pattern-scroll").style.scrollPaddingTop).toBe(`${String(CHART_HEADER_PARAMS.compactBarPx + 8)}px`);
+  });
+
+  it("paints the card's background under the panel's scrollbar, scrolling with it", async () => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(private readonly onResize: ResizeObserverCallback) {}
+        observe(target: Element): void {
+          if (target.tagName === "HEADER") {
+            this.onResize(
+              [{ target, borderBoxSize: [{ blockSize: 212, inlineSize: 300 }] } as unknown as ResizeObserverEntry],
+              this,
+            );
+          }
+        }
+        unobserve(): void {
+          // Nothing is held.
+        }
+        disconnect(): void {
+          // Nothing is held.
+        }
+      },
+    );
+    renderScreen([WINDOW_A, WINDOW_B], {
+      chartBackground: () => ({ mime: "image/png", base64: "iVBORw0KGgo=", width: 1920, height: 1080 }),
+    });
+    await roundLoaded();
+    const list = screen.getByTestId("pattern-scroll");
+    await waitFor(() => {
+      expect(list.style.backgroundImage).toContain("data:image/png;base64,iVBORw0KGgo=");
+    });
+    expect(list.style.backgroundAttachment).toBe("local");
+    expect(list.style.backgroundRepeat).toBe("no-repeat");
+    // The scrim over the image, both sized to the card.
+    expect(list.style.backgroundImage).toMatch(/^linear-gradient\(.*var\(--background\)\), url\(/);
+    expect(list.style.backgroundSize).toBe("100% 212px, 100% 212px");
   });
 
   it("pads the panel's scrolling by the answer bar's height, so a card focused with Tab never hides under it", async () => {
@@ -1479,7 +1529,7 @@ describe("LabelScreen player layout", () => {
   });
 
   it("fades the controls out when idle and brings them back on pointer movement or keyboard focus", async () => {
-    renderScreen(undefined, {}, { params: { ...TEST_PARAMS, controlsIdleMs: 30 } });
+    renderScreen(undefined, {}, { params: { ...TEST_PARAMS, controlsIdleMs: 30, controlsRevealMs: 30 } });
     await roundLoaded();
     await timelineShown();
     await waitFor(() => {
@@ -1561,13 +1611,117 @@ describe("LabelScreen player layout", () => {
     expect(await within(controls()).findByRole("button", { name: "Pause" })).toBeInTheDocument();
   });
 
-  it("puts the play button and the time at the right end of the controls row", async () => {
+  it("puts the time, then back, play and forward at the right end of the controls row", async () => {
     renderScreen();
     await roundLoaded();
     await timelineShown();
     const play = within(controls()).getByRole("button", { name: "Play" });
-    expect(play.parentElement?.lastElementChild).toBe(play);
+    const row = [...(play.parentElement?.children ?? [])];
+    expect(row.slice(-3)).toEqual([
+      within(controls()).getByRole("button", { name: "Back 2 s" }),
+      play,
+      within(controls()).getByRole("button", { name: "Forward 2 s" }),
+    ]);
     expect(within(controls()).getByTestId("playback-readout")).toHaveClass("ml-auto");
+  });
+
+  it("plays and pauses on a click on the preview", async () => {
+    renderScreen();
+    await roundLoaded();
+    await timelineShown();
+    await userEvent.click(screen.getByTestId("playfield"));
+    expect(await within(controls()).findByRole("button", { name: "Pause" })).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId("playfield"));
+    expect(await screen.findByRole("button", { name: "Play the section" })).toBeInTheDocument();
+  });
+
+  it("draws the preview where the playhead stands after a pause and after seeks made while paused or before playing", async () => {
+    renderScreen();
+    await roundLoaded();
+    await timelineShown();
+    const previewMs = (): number | null | undefined => vi.mocked(Playfield).mock.lastCall?.[0].position?.();
+    const playhead = within(controls()).getByRole("slider", { name: "Playback position" });
+    expect(previewMs()).toBeNull();
+
+    await userEvent.click(within(controls()).getByRole("button", { name: "Forward 2 s" }));
+    await waitFor(() => {
+      expect(playhead).toHaveAttribute("aria-valuenow", "2000");
+    });
+    expect(previewMs()).toBe(2000);
+
+    await userEvent.click(screen.getByTestId("playfield"));
+    expect(await within(controls()).findByRole("button", { name: "Pause" })).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId("playfield"));
+    await screen.findByRole("button", { name: "Play the section" });
+    await userEvent.click(within(controls()).getByRole("button", { name: "Back 2 s" }));
+    await waitFor(() => {
+      expect(playhead).toHaveAttribute("aria-valuenow", String(previewMs()));
+    });
+    expect(playhead).toHaveAttribute("aria-valuenow", "0");
+  });
+
+  it("keeps a right gutter for the job tray's edge tab, so the tab covers no part of the pattern panel", async () => {
+    renderScreen();
+    await roundLoaded();
+    const root = screen.getByTestId("pattern-panel").parentElement;
+    expect(root).toHaveClass("pr-[calc(var(--job-tray-tab-w)+0.25rem)]");
+    expect(root).not.toHaveClass("p-4");
+  });
+
+  it("seeks with the arrow keys from anywhere on the page, as a video player does, leaving sliders their own arrows", async () => {
+    renderScreen();
+    await roundLoaded();
+    await timelineShown();
+    const playhead = within(controls()).getByRole("slider", { name: "Playback position" });
+    fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    fireEvent.keyDown(document.body, { key: "ArrowRight", repeat: true });
+    await waitFor(() => {
+      expect(playhead).toHaveAttribute("aria-valuenow", "4000");
+    });
+    fireEvent.keyDown(document.body, { key: "ArrowLeft" });
+    await waitFor(() => {
+      expect(playhead).toHaveAttribute("aria-valuenow", "2000");
+    });
+
+    fireEvent.keyDown(playhead, { key: "ArrowRight" });
+    fireEvent.keyDown(screen.getByRole("button", { name: "Skip" }), { key: "ArrowRight" });
+    await settle();
+    expect(playhead).toHaveAttribute("aria-valuenow", "4000");
+  });
+
+  it("seeks inside the section with back, forward and the playhead, moving and storing nothing", async () => {
+    const calls = renderScreen();
+    await roundLoaded();
+    await timelineShown();
+    const playhead = within(controls()).getByRole("slider", { name: "Playback position" });
+    // Window 1–5 s with 1 s of preroll and 250 ms of postroll: the section loops 0–5.25 s.
+    expect(playhead).toHaveAttribute("aria-valuemin", "0");
+    expect(playhead).toHaveAttribute("aria-valuemax", "5250");
+
+    await userEvent.click(within(controls()).getByRole("button", { name: "Forward 2 s" }));
+    await waitFor(() => {
+      expect(playhead).toHaveAttribute("aria-valuenow", "2000");
+    });
+    await userEvent.click(within(controls()).getByRole("button", { name: "Back 2 s" }));
+    await userEvent.click(within(controls()).getByRole("button", { name: "Back 2 s" }));
+    await waitFor(() => {
+      expect(playhead).toHaveAttribute("aria-valuenow", "3250");
+    });
+    playhead.focus();
+    await userEvent.keyboard("{ArrowLeft}");
+    await waitFor(() => {
+      expect(playhead).toHaveAttribute("aria-valuetext", "00:01.250");
+    });
+
+    await userEvent.click(within(controls()).getByRole("button", { name: "Play" }));
+    await waitFor(() => {
+      expect(FakeAudioContext.sources[0]?.offsets).toEqual([1.25]);
+    });
+    await settle();
+    for (const cmd of ["label_move_window", "label_resize_window", "label_submit"]) {
+      expect(argsOf(calls, cmd), cmd).toEqual([]);
+    }
+    expect(screen.getByRole("slider", { name: "Window position" })).toHaveAttribute("aria-valuenow", "1000");
   });
 
   it("nudges a first-time viewer towards the settings tab until the flyout is opened, then never again", async () => {
@@ -1740,7 +1894,7 @@ describe("LabelScreen player layout", () => {
     });
     await userEvent.click(screen.getByRole("button", { name: "Show the full image and map details" }));
     const dialog = screen.getByRole("dialog", { name: "Alpha Song" });
-    expect(within(dialog).getByText("Length", { selector: "dt" }).nextElementSibling).toHaveTextContent("02:34");
+    expect(within(dialog).getByRole("list", { name: "Map statistics" })).toHaveTextContent("02:34Length");
     expect(within(dialog).getByText("Source", { selector: "dt" }).nextElementSibling).toHaveTextContent("Some Game");
   });
 

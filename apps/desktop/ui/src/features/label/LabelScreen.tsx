@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import {
+  type CSSProperties,
   type MouseEvent,
   useEffect,
   useEffectEvent,
@@ -24,7 +25,7 @@ import { useErrorText } from "@/ipc/errorText";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { AnswerBar, type AnswerFeedback, type AnswerMode } from "./components/AnswerBar";
-import { backgroundDataUrl, ChartHeader } from "./components/ChartHeader";
+import { backgroundDataUrl, CHART_HEADER_PARAMS, ChartHeader } from "./components/ChartHeader";
 import { ChartTimeline } from "./components/ChartTimeline";
 import { HeaderNav, type NavAction, type NavState } from "./components/HeaderNav";
 import { HOLD_BUTTON_PARAMS, type HoldButtonHandle } from "./components/HoldButton";
@@ -99,8 +100,12 @@ export interface LabelScreenParams {
   timelineBuckets: number;
   /** How long Save and Skip (and the Enter shortcut) must be held. */
   holdMs: number;
-  /** Pointer idle time before the playback controls fade from the playfield. */
+  /** Pointer idle time over the preview before the playback controls fade. */
   controlsIdleMs: number;
+  /** How long the controls show when a window's player appears. */
+  controlsRevealMs: number;
+  /** Back/forward and arrow-key step of the playhead, wrapping inside the section. */
+  seekStepMs: number;
 }
 
 export const LABEL_SCREEN_PARAMS: LabelScreenParams = {
@@ -112,6 +117,8 @@ export const LABEL_SCREEN_PARAMS: LabelScreenParams = {
   timelineBuckets: 240,
   holdMs: HOLD_BUTTON_PARAMS.defaultHoldMs,
   controlsIdleMs: PLAYER_FRAME_PARAMS.idleMs,
+  controlsRevealMs: PLAYER_FRAME_PARAMS.revealMs,
+  seekStepMs: 2000,
 };
 
 // osu!mania's in-game bindings: F3 slower, F4 faster.
@@ -119,7 +126,7 @@ const OSU_SPEED_KEYS: Readonly<Record<string, number>> = { F3: -1, F4: 1 };
 
 const MS_PER_SECOND = 1000;
 
-/** Room kept between a focused card and the answer bar pinned over the panel's bottom edge. */
+/** Room kept between a focused card and the bars pinned over the panel's edges (answer bar, compact title bar). */
 const ANSWER_BAR_CLEARANCE_PX = 8;
 
 export interface LabelScreenProps {
@@ -195,12 +202,35 @@ function isTextField(target: EventTarget | null): boolean {
 const OWN_KEY_CONTROLS =
   "button, select, a[href], input[type='checkbox'], [role='separator'], [role='option'], [role='checkbox']";
 
+/** Arrow keys these move themselves (sliders, range inputs, a select's options), on top of `OWN_KEY_CONTROLS`. */
+const OWN_ARROW_CONTROLS = `${OWN_KEY_CONTROLS}, input, [role='slider']`;
+
+// A video player's arrows: one seek step back or forward.
+const SEEK_ARROWS: Readonly<Record<string, number>> = { ArrowLeft: -1, ArrowRight: 1 };
+
 /** Hands focus back to the page, where Enter saves and Space plays. */
 function releaseFocus(): void {
   const active = document.activeElement;
   if (active instanceof HTMLElement && active !== document.body) {
     active.blur();
   }
+}
+
+/**
+ * The card's image under the panel's scrollbar gutter, which no child can paint into. `local` makes it scroll with the
+ * content, and the size matches the card, so the strip continues the card's top edge; the scrim keeps the same fade.
+ */
+function gutterBackdrop(background: string | null, headerPx: number | null): CSSProperties {
+  if (background === null || headerPx === null) {
+    return {};
+  }
+  const size = `100% ${String(headerPx)}px`;
+  return {
+    backgroundImage: `linear-gradient(to bottom, transparent 15%, color-mix(in oklch, var(--background) 70%, transparent) 55%, var(--background)), url("${background}")`,
+    backgroundSize: `${size}, ${size}`,
+    backgroundRepeat: "no-repeat",
+    backgroundAttachment: "local",
+  };
 }
 
 function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpeed, onRestart }: LabelSessionProps) {
@@ -212,6 +242,8 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
   const [sampleAttempt, setSampleAttempt] = useState(0);
   const panel = usePanelWidth();
   const [answerBarPx, setAnswerBarPx] = useState<number | null>(null);
+  const [headerPx, setHeaderPx] = useState<number | null>(null);
+  const patternScroll = useRef<HTMLDivElement>(null);
   // The entry a save runs against, kept after the save moves past it: an Enter that lands before the next render
   // still holds that entry in its closure, and isPending only flips on that render.
   const actedOn = useRef<HistoryEntry | null>(null);
@@ -505,6 +537,15 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
       clearAnswer();
       return;
     }
+    const seekDirection = SEEK_ARROWS[e.key];
+    if (seekDirection !== undefined) {
+      if (!(e.target instanceof Element && e.target.closest(OWN_ARROW_CONTROLS) !== null)) {
+        e.preventDefault();
+        // Not repeat-gated: holding the arrow scrubs, as in a video player.
+        player.skip(seekDirection * params.seekStepMs);
+      }
+      return;
+    }
     if (e.target instanceof Element && e.target.closest(OWN_KEY_CONTROLS) !== null) {
       return;
     }
@@ -612,7 +653,8 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
     <div
       onMouseDown={keepFocus}
       className={cn(
-        "flex h-[calc(100dvh-4rem)] min-h-[32rem] gap-2 p-4",
+        // The right gutter is the job tray's edge tab's, which would otherwise sit over the panel's scrollbar.
+        "flex h-[calc(100dvh-4rem)] min-h-[32rem] gap-2 py-4 pr-[calc(var(--job-tray-tab-w)+0.25rem)] pl-4",
         panel.dragging && "cursor-col-resize select-none",
       )}
     >
@@ -651,6 +693,10 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
         ) : (
           <PlayerFrame
             idleMs={params.controlsIdleMs}
+            revealMs={params.controlsRevealMs}
+            onStageClick={() => {
+              player.toggle();
+            }}
             settingsHint={settingsHintSeen ? null : t("label.player.hint")}
             onSettingsOpen={settingsFound}
             centre={
@@ -687,6 +733,10 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
                 range={rangeText}
                 duration={durationText}
                 rate={rate}
+                onSkip={(deltaMs) => {
+                  player.skip(deltaMs);
+                }}
+                skipMs={params.seekStepMs}
                 timeline={
                   timelineWindow !== null && (
                     <ChartTimeline
@@ -703,6 +753,14 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
                       locked={entry?.status.kind === "saved"}
                       onMove={runMove}
                       onResize={runResize}
+                      playhead={{
+                        positionMs: player.positionMs,
+                        loop: { startMs: loopStart, endMs: loopEnd },
+                        stepMs: params.seekStepMs,
+                        onSeek: (chartMs) => {
+                          player.seek(chartMs);
+                        },
+                      }}
                     />
                   )
                 }
@@ -753,6 +811,7 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
               <Playfield
                 window={chart.data}
                 clock={playback.clock}
+                position={player.pausedAtMs}
                 scroll={scrollFromPrefs(effectiveScroll)}
                 zoom={zoom}
                 effects={effects}
@@ -767,101 +826,110 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
       <PanelResizer panel={panel} />
 
       <aside data-testid="pattern-panel" style={{ width: panel.width }} className="flex min-h-0 shrink-0 flex-col">
-        {/* Outside the scrolling list, so the card spans the panel and the scrollbar starts under it. */}
-        {entry !== null ? (
-          <ChartHeader
-            window={entry.window}
-            origin={entry.origin}
-            background={backgroundDataUrl(background.data)}
-            details={details.data}
-            nav={nav}
-            counters={{
-              labelled: state.counts.labelled,
-              skipped: state.counts.skipped,
-              undone: state.counts.undone,
-              gold: stats.data?.total ?? 0,
-            }}
-          />
-        ) : (
+        {entry === null && (
           // Between windows (sampling, plan finished) the navigation still has to be reachable.
           <div className="bg-card flex w-full shrink-0 items-center rounded-t-xl border-b px-2 py-1.5">{nav}</div>
         )}
         <div
+          ref={patternScroll}
           data-testid="pattern-scroll"
-          style={{ scrollPaddingBottom: answerBarPx === null ? undefined : answerBarPx + ANSWER_BAR_CLEARANCE_PX }}
-          className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pt-3 pr-2 pl-1 [scrollbar-gutter:stable]"
+          style={{
+            scrollPaddingTop: CHART_HEADER_PARAMS.compactBarPx + ANSWER_BAR_CLEARANCE_PX,
+            scrollPaddingBottom: answerBarPx === null ? undefined : answerBarPx + ANSWER_BAR_CLEARANCE_PX,
+            ...gutterBackdrop(entry === null ? null : backgroundDataUrl(background.data), headerPx),
+          }}
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto rounded-t-xl [scrollbar-gutter:stable]"
         >
-          {notice !== null && (
-            <p
-              role={notice.tone === "error" ? "alert" : "status"}
-              className={cn(
-                "self-start rounded-md px-2.5 py-1 text-xs",
-                notice.tone === "error" ? "bg-destructive/10 text-destructive" : "bg-muted/60 text-muted-foreground",
-              )}
-            >
-              {notice.text}
-            </p>
+          {entry !== null && (
+            <ChartHeader
+              window={entry.window}
+              origin={entry.origin}
+              background={backgroundDataUrl(background.data)}
+              details={details.data}
+              nav={nav}
+              counters={{
+                labelled: state.counts.labelled,
+                skipped: state.counts.skipped,
+                undone: state.counts.undone,
+                gold: stats.data?.total ?? 0,
+              }}
+              scrollRoot={patternScroll}
+              onBlockSize={setHeaderPx}
+            />
           )}
-
-          <section aria-label={t("label.patterns")} className="flex flex-col gap-2 pb-4">
-            <h3 className="sr-only">{t("label.patterns")}</h3>
-            {taxonomy.isError ? (
-              <p role="alert" className="text-destructive text-sm">
-                {errorText(taxonomy.error)}
+          <div className="flex flex-1 flex-col gap-4 pt-3 pr-2 pl-1">
+            {notice !== null && (
+              <p
+                role={notice.tone === "error" ? "alert" : "status"}
+                className={cn(
+                  "self-start rounded-md px-2.5 py-1 text-xs",
+                  notice.tone === "error" ? "bg-destructive/10 text-destructive" : "bg-muted/60 text-muted-foreground",
+                )}
+              >
+                {notice.text}
               </p>
-            ) : taxonomy.data === undefined ? (
-              <p className="text-muted-foreground text-sm">{t("common.loading")}</p>
-            ) : (
-              <PatternGrid
-                ref={patternGrid}
-                taxonomy={taxonomy.data}
-                examples={examples.isError ? NO_EXAMPLES : examples.data}
-                isActive={(pattern) => shownAnswer.patterns.includes(pattern.id)}
-                onToggle={(pattern) => {
-                  dispatch({ type: "patternToggled", id: pattern.id });
-                }}
-              />
             )}
-          </section>
 
-          <AnswerBar
-            taxonomy={taxonomy.data ?? NO_TAXONOMY}
-            answer={shownAnswer}
-            mode={answerMode}
-            busy={busy}
-            feedback={feedback}
-            onPick={(pattern) => {
-              dispatch({ type: "patternAdded", id: pattern.id });
-            }}
-            onRemove={(id) => {
-              dispatch({ type: "patternRemoved", id });
-            }}
-            onNoPattern={() => {
-              dispatch({ type: "noPatternToggled" });
-            }}
-            onFlag={(toggle) => {
-              dispatch({ type: "flagsToggled", toggle });
-            }}
-            onSave={() => {
-              void save();
-            }}
-            onClear={clearAnswer}
-            onUndo={() => {
-              void runUndo();
-            }}
-            onSkip={() => {
-              setNotice(null);
-              setFeedback(null);
-              dispatch({ type: "skipped" });
-            }}
-            canSkip={canSkip}
-            onChipFocus={(id, how) => {
-              patternGrid.current?.focusPattern(id, how);
-            }}
-            holdMs={params.holdMs}
-            saveRef={saveHold}
-            onBlockSize={setAnswerBarPx}
-          />
+            <section aria-label={t("label.patterns")} className="flex flex-col gap-2 pb-4">
+              <h3 className="sr-only">{t("label.patterns")}</h3>
+              {taxonomy.isError ? (
+                <p role="alert" className="text-destructive text-sm">
+                  {errorText(taxonomy.error)}
+                </p>
+              ) : taxonomy.data === undefined ? (
+                <p className="text-muted-foreground text-sm">{t("common.loading")}</p>
+              ) : (
+                <PatternGrid
+                  ref={patternGrid}
+                  taxonomy={taxonomy.data}
+                  examples={examples.isError ? NO_EXAMPLES : examples.data}
+                  isActive={(pattern) => shownAnswer.patterns.includes(pattern.id)}
+                  onToggle={(pattern) => {
+                    dispatch({ type: "patternToggled", id: pattern.id });
+                  }}
+                />
+              )}
+            </section>
+
+            <AnswerBar
+              taxonomy={taxonomy.data ?? NO_TAXONOMY}
+              answer={shownAnswer}
+              mode={answerMode}
+              busy={busy}
+              feedback={feedback}
+              onPick={(pattern) => {
+                dispatch({ type: "patternAdded", id: pattern.id });
+              }}
+              onRemove={(id) => {
+                dispatch({ type: "patternRemoved", id });
+              }}
+              onNoPattern={() => {
+                dispatch({ type: "noPatternToggled" });
+              }}
+              onFlag={(toggle) => {
+                dispatch({ type: "flagsToggled", toggle });
+              }}
+              onSave={() => {
+                void save();
+              }}
+              onClear={clearAnswer}
+              onUndo={() => {
+                void runUndo();
+              }}
+              onSkip={() => {
+                setNotice(null);
+                setFeedback(null);
+                dispatch({ type: "skipped" });
+              }}
+              canSkip={canSkip}
+              onChipFocus={(id, how) => {
+                patternGrid.current?.focusPattern(id, how);
+              }}
+              holdMs={params.holdMs}
+              saveRef={saveHold}
+              onBlockSize={setAnswerBarPx}
+            />
+          </div>
         </div>
       </aside>
     </div>

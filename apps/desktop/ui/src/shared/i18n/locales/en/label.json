@@ -20,7 +20,8 @@
       "locked": "Undo the label to move a saved window.",
       "start": "Window start",
       "end": "Window end",
-      "edgeValueText": "{{time}}, window {{seconds}} s"
+      "edgeValueText": "{{time}}, window {{seconds}} s",
+      "playhead": "Playback position"
     },
     "header": {
       "mappedBy": "mapped by {{creator}}",
@@ -49,7 +50,14 @@
         "skipped": "Skipped: {{count}}",
         "undone": "Undone: {{count}}",
         "gold": "Gold set: {{count}}"
-      }
+      },
+      "compact": "Current map",
+      "openOnOsu": "Open on osu!",
+      "stats": "Map statistics",
+      "copyMd5": "Copy MD5",
+      "copied": "MD5 copied",
+      "copyFailed": "Could not copy the MD5",
+      "openFailed": "Could not open the osu! website"
     },
     "transport": {
       "play": "Play",
@@ -68,7 +76,9 @@
       "zoomValue": "×{{value}}",
       "rate": "Playback rate",
       "rateValue": "×{{value}}",
-      "playSection": "Play the section"
+      "playSection": "Play the section",
+      "back": "Back {{seconds}} s",
+      "forward": "Forward {{seconds}} s"
     },
     "skin": {
       "label": "Skin",

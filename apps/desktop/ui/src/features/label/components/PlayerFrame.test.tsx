@@ -69,11 +69,11 @@ describe("PlayerFrame controls overlay", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Audio missing");
   });
 
-  it("shows the controls at first and fades them out after the idle time", () => {
+  it("shows the controls at first and fades them out after the reveal time", () => {
     vi.useFakeTimers();
     renderFrame();
     expect(shown()).toBe(true);
-    advance(PLAYER_FRAME_PARAMS.idleMs - 1);
+    advance(PLAYER_FRAME_PARAMS.revealMs - 1);
     expect(shown()).toBe(true);
     advance(1);
     expect(shown()).toBe(false);
@@ -82,7 +82,7 @@ describe("PlayerFrame controls overlay", () => {
   it("shows them again when the pointer moves over the bottom zone, and hides them when it leaves the player", () => {
     vi.useFakeTimers();
     renderFrame();
-    advance(PLAYER_FRAME_PARAMS.idleMs);
+    advance(PLAYER_FRAME_PARAMS.revealMs);
     fireEvent.pointerMove(hoverZone());
     expect(shown()).toBe(true);
     advance(PLAYER_FRAME_PARAMS.idleMs / 2);
@@ -93,10 +93,35 @@ describe("PlayerFrame controls overlay", () => {
     expect(shown()).toBe(false);
   });
 
-  it("ignores the pointer over the rest of the stage, as a video player does", () => {
+  it("once called, keeps them while the pointer moves anywhere over the preview, leaving the bottom zone", () => {
     vi.useFakeTimers();
     renderFrame();
-    advance(PLAYER_FRAME_PARAMS.idleMs);
+    advance(PLAYER_FRAME_PARAMS.revealMs);
+    fireEvent.pointerMove(hoverZone());
+    fireEvent.pointerLeave(hoverZone(), { relatedTarget: screen.getByTestId("stage") });
+    for (let i = 0; i < 4; i++) {
+      advance(PLAYER_FRAME_PARAMS.idleMs - 1);
+      fireEvent.pointerMove(screen.getByTestId("stage"));
+    }
+    expect(shown()).toBe(true);
+  });
+
+  it("hides them after 15 s without pointer movement over the preview", () => {
+    vi.useFakeTimers();
+    expect(PLAYER_FRAME_PARAMS.idleMs).toBe(15_000);
+    renderFrame();
+    fireEvent.pointerMove(hoverZone());
+    fireEvent.pointerMove(screen.getByTestId("stage"));
+    advance(PLAYER_FRAME_PARAMS.idleMs - 1);
+    expect(shown()).toBe(true);
+    advance(1);
+    expect(shown()).toBe(false);
+  });
+
+  it("ignores the pointer over the rest of the stage until the bottom zone calls them, as a video player does", () => {
+    vi.useFakeTimers();
+    renderFrame();
+    advance(PLAYER_FRAME_PARAMS.revealMs);
     fireEvent.pointerMove(screen.getByTestId("stage"));
     fireEvent.pointerMove(frame());
     expect(shown()).toBe(false);
@@ -118,13 +143,16 @@ describe("PlayerFrame controls overlay", () => {
     expect(controls()).toHaveClass("pl-8");
   });
 
-  it("keeps them while the pointer rests on them", () => {
+  it("keeps them while the pointer moves over them, and hides them once it rests there for the idle time", () => {
     vi.useFakeTimers();
     renderFrame();
+    fireEvent.pointerMove(hoverZone());
     fireEvent.pointerEnter(controls());
-    advance(PLAYER_FRAME_PARAMS.idleMs * 3);
+    for (let i = 0; i < 3; i++) {
+      advance(PLAYER_FRAME_PARAMS.idleMs - 1);
+      fireEvent.pointerMove(controls());
+    }
     expect(shown()).toBe(true);
-    fireEvent.pointerLeave(controls());
     advance(PLAYER_FRAME_PARAMS.idleMs);
     expect(shown()).toBe(false);
   });
@@ -164,6 +192,49 @@ describe("PlayerFrame controls overlay", () => {
     advance(PLAYER_FRAME_PARAMS.idleMs);
     expect(controls()).not.toHaveAttribute("aria-hidden");
     expect(controls()).not.toHaveAttribute("inert");
+  });
+});
+
+describe("PlayerFrame stage clicks", () => {
+  function renderClickable() {
+    const onStageClick = vi.fn();
+    renderFrame(undefined, { onStageClick, centre: <button type="button">Play the section</button> });
+    return onStageClick;
+  }
+
+  it("toggles playback on a click anywhere on the preview, the bottom zone included", async () => {
+    const user = userEvent.setup();
+    const onStageClick = renderClickable();
+    await user.click(screen.getByTestId("stage"));
+    await user.click(hoverZone());
+    expect(onStageClick).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves clicks on the controls, the settings and the centre button to them", async () => {
+    const user = userEvent.setup();
+    const onStageClick = renderClickable();
+    await user.click(screen.getByRole("button", { name: "Play" }));
+    await user.click(controls());
+    await user.click(tab());
+    await user.click(screen.getByRole("button", { name: "Play the section" }));
+    expect(onStageClick).not.toHaveBeenCalled();
+  });
+});
+
+describe("PlayerFrame stage clicks with the settings open", () => {
+  it("only closes the settings on the click that dismisses them, then toggles playback again", async () => {
+    const user = userEvent.setup();
+    const onStageClick = vi.fn();
+    renderFrame(undefined, { onStageClick });
+    await user.click(tab());
+    expect(screen.getByRole("dialog", { name: "Playback settings" })).toBeInTheDocument();
+
+    await user.click(screen.getByTestId("stage"));
+    expect(screen.queryByRole("dialog", { name: "Playback settings" })).not.toBeInTheDocument();
+    expect(onStageClick).not.toHaveBeenCalled();
+
+    await user.click(screen.getByTestId("stage"));
+    expect(onStageClick).toHaveBeenCalledTimes(1);
   });
 });
 

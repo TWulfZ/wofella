@@ -22,6 +22,8 @@ import type { ChartWindow } from "./types";
 export interface PlayfieldProps {
   window: ChartWindow;
   clock: Clock | null;
+  /** Where paused or not-yet-started playback stands, polled each frame; null shows the window's start. Defaults to the clock. */
+  position?: () => number | null;
   /** "fit" scales the whole window above the judgement line; any other mode is used paused and playing alike. */
   scroll: ScrollMode | "fit";
   /** In stable's 480-px space (skin.ini HitPosition). */
@@ -38,7 +40,7 @@ export interface PlayfieldProps {
 }
 
 export function Playfield(props: PlayfieldProps) {
-  const { window: chartWindow, clock, scroll, className } = props;
+  const { window: chartWindow, clock, position, scroll, className } = props;
   const {
     hitPosition = DEFAULT_STAGE_PARAMS.defaultHitPosition,
     columnWidths,
@@ -120,25 +122,27 @@ export function Playfield(props: PlayfieldProps) {
         drawSkinned(ctx, projection, layout, skin, DEFAULT_PLAYFIELD_THEME, view, undefined, stage, fx);
       }
     };
-    // Paused at the chosen speed, so pressing play does not rescale what was just read.
-    const renderStatic = (): void => {
-      render(chartWindow.fromMs);
-    };
+    // Paused at the chosen speed, so pressing play does not rescale what was just read; at the playhead, so a pause or
+    // a seek shows the moment the seek bar points at.
+    const pausedMs = (): number => (position === undefined ? clock?.nowMs() : position()) ?? chartWindow.fromMs;
 
-    if (clock === null) {
-      renderStatic();
+    if (clock === null && position === undefined) {
+      render(chartWindow.fromMs);
       return;
     }
-    // Clock exposes no change events, so play/pause is picked up by polling `playing` each frame.
-    let staticDrawn = false;
+    // Clock exposes no change events, so play/pause and paused seeks are picked up by polling each frame.
+    let drawnMs: number | null = null;
     let frame = 0;
     const tick = (): void => {
-      if (clock.playing) {
-        render(clock.nowMs());
-        staticDrawn = false;
-      } else if (!staticDrawn) {
-        renderStatic();
-        staticDrawn = true;
+      if (clock?.playing === true) {
+        drawnMs = clock.nowMs();
+        render(drawnMs);
+      } else {
+        const nowMs = pausedMs();
+        if (nowMs !== drawnMs) {
+          render(nowMs);
+          drawnMs = nowMs;
+        }
       }
       frame = requestAnimationFrame(tick);
     };
@@ -146,7 +150,7 @@ export function Playfield(props: PlayfieldProps) {
     return () => {
       cancelAnimationFrame(frame);
     };
-  }, [chartWindow, clock, pxPerMs, judgeY, width, height, skin, layout, stageBackground, flags, timeline]);
+  }, [chartWindow, clock, position, pxPerMs, judgeY, width, height, skin, layout, stageBackground, flags, timeline]);
 
   return (
     <div ref={containerRef} className={cn("relative overflow-hidden", className)}>

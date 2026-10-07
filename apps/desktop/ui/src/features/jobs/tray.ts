@@ -1,9 +1,10 @@
 import { useStore } from "zustand";
 import type { JobEventSink } from "@/ipc/eventBridge";
 import { createJobTrayStore, type JobTrayState } from "./store";
+import { localJobTrayPrefs } from "./trayParams";
 
 // One tray per window: jobs outlive the view that started them, so the state is global (§8).
-export const jobTrayStore = createJobTrayStore();
+export const jobTrayStore = createJobTrayStore({ prefs: localJobTrayPrefs });
 
 export const jobTraySink: JobEventSink = {
   applyProgress: (progress) => {

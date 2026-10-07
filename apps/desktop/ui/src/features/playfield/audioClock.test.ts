@@ -8,6 +8,7 @@ import {
   createSilentLoopClock,
   type GainNodeLike,
   loopPosition,
+  SEEK_END_GUARD_MS,
 } from "./audioClock";
 
 const LOOP = { startMs: 1000, endMs: 2000 };
@@ -590,5 +591,109 @@ describe("createSilentLoopClock", () => {
     clock.play();
     expect(clock.playing).toBe(false);
     expect(clock.nowMs()).toBe(1000);
+  });
+});
+
+describe("seeking", () => {
+  it("moves a paused audio loop so the clock reads the target, and resumes the sound from there", () => {
+    const ctx = fakeContext({ outputLatency: 0.05 });
+    const clock = createAudioLoopClock(ctx, BUFFER, LOOP, 20, SPLICE);
+    clock.seekMs(1600);
+    expect(clock.nowMs()).toBeCloseTo(1600);
+    expect(ctx.sources).toEqual([]);
+
+    clock.play();
+    const resumed = nth(ctx.sources, 0);
+    // Scheduled ahead by the latency and back by the offset, so the drawn position lands on the target.
+    expect(resumed.starts[0]?.offset).toBeCloseTo(1.63);
+    expect(resumed.starts[0]?.duration).toBeCloseTo(0.37);
+  });
+
+  it("restarts a playing audio loop at the target on new nodes, keeping the loop's grid from there", () => {
+    const ctx = fakeContext();
+    const clock = createAudioLoopClock(ctx, BUFFER, LOOP, 0, SPLICE);
+    clock.play();
+    ctx.currentTime = 10.2;
+    clock.seekMs(1700);
+    expect(clock.playing).toBe(true);
+    expect(ctx.sources.slice(0, 2).every((s) => s.stops === 1)).toBe(true);
+    expect(live(ctx)).toHaveLength(2);
+    const [now, next] = [nth(ctx.sources, 2), nth(ctx.sources, 3)];
+    expect(now.starts).toEqual([{ when: 10.2, offset: 1.7, duration: expect.closeTo(0.3) as number }]);
+    expect(next.starts[0]?.when).toBeCloseTo(10.2 - 0.7 + PERIOD_S);
+    expect(clock.nowMs()).toBeCloseTo(1700);
+    ctx.currentTime = 10.4;
+    expect(clock.nowMs()).toBeCloseTo(1900);
+  });
+
+  it("clamps a target outside the loop, holding one at or past the end just before it instead of wrapping", () => {
+    const ctx = fakeContext();
+    const clock = createAudioLoopClock(ctx, BUFFER, LOOP, 0, SPLICE);
+    clock.seekMs(400);
+    expect(clock.nowMs()).toBe(1000);
+    clock.seekMs(2000);
+    expect(clock.nowMs()).toBe(2000 - SEEK_END_GUARD_MS);
+    clock.seekMs(9000);
+    expect(clock.nowMs()).toBe(2000 - SEEK_END_GUARD_MS);
+    clock.seekMs(1999);
+    expect(clock.nowMs()).toBeCloseTo(1999);
+  });
+
+  it("does not wrap a target within latency × rate of the end", () => {
+    const ctx = fakeContext({ outputLatency: 0.04 });
+    const clock = createAudioLoopClock(ctx, BUFFER, LOOP, 0, SPLICE, 1.5);
+    clock.seekMs(1970);
+    expect(clock.nowMs()).toBeGreaterThan(1900);
+  });
+
+  it("holds a seek into the tail past the audio at the audio's end, not the section's start", () => {
+    const ctx = fakeContext();
+    const clock = createAudioLoopClock(ctx, { duration: 1.5 }, LOOP, 0, SPLICE);
+    clock.seekMs(1800);
+    expect(clock.nowMs()).toBe(1500 - SEEK_END_GUARD_MS);
+  });
+
+  it("scales the offset with the rate, as the clock does", () => {
+    const ctx = fakeContext();
+    const clock = createAudioLoopClock(ctx, BUFFER, LOOP, 20, SPLICE, 1.5);
+    clock.seekMs(1500);
+    expect(clock.nowMs()).toBeCloseTo(1500);
+    clock.play();
+    expect(nth(ctx.sources, 0).starts[0]?.offset).toBeCloseTo(1.47);
+  });
+
+  it("ignores a seek once disposed", () => {
+    const ctx = fakeContext();
+    const clock = createAudioLoopClock(ctx, BUFFER, LOOP, 0, SPLICE);
+    clock.dispose();
+    clock.seekMs(1500);
+    expect(ctx.sources).toEqual([]);
+    expect(clock.nowMs()).toBe(1000);
+  });
+
+  it("seeks the context's silent loop when the section lies past the audio", () => {
+    const ctx = fakeContext();
+    const clock = createAudioLoopClock(ctx, { duration: 0.5 }, LOOP, 20, SPLICE);
+    clock.seekMs(1500);
+    expect(clock.nowMs()).toBeCloseTo(1500);
+    clock.play();
+    ctx.currentTime = 10.1;
+    expect(clock.nowMs()).toBeCloseTo(1600);
+  });
+
+  it("seeks a wall-clock loop paused or playing, at any rate", () => {
+    let now = 0;
+    const clock = createSilentLoopClock(LOOP, () => now, 150, 2);
+    clock.seekMs(1400);
+    expect(clock.nowMs()).toBe(1400);
+    clock.play();
+    now = 100;
+    expect(clock.nowMs()).toBe(1600);
+    clock.seekMs(1200);
+    expect(clock.nowMs()).toBe(1200);
+    now = 150;
+    expect(clock.nowMs()).toBe(1300);
+    clock.seekMs(5000);
+    expect(clock.nowMs()).toBe(2000 - SEEK_END_GUARD_MS);
   });
 });

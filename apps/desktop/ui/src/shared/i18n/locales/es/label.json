@@ -20,7 +20,8 @@
       "locked": "Deshaz la etiqueta para mover una ventana guardada.",
       "start": "Inicio de la ventana",
       "end": "Fin de la ventana",
-      "edgeValueText": "{{time}}, ventana de {{seconds}} s"
+      "edgeValueText": "{{time}}, ventana de {{seconds}} s",
+      "playhead": "Posición de reproducción"
     },
     "header": {
       "mappedBy": "mapeado por {{creator}}",
@@ -49,7 +50,14 @@
         "skipped": "Saltadas: {{count}}",
         "undone": "Deshechas: {{count}}",
         "gold": "Gold set: {{count}}"
-      }
+      },
+      "compact": "Mapa actual",
+      "openOnOsu": "Abrir en osu!",
+      "stats": "Estadísticas del mapa",
+      "copyMd5": "Copiar MD5",
+      "copied": "MD5 copiado",
+      "copyFailed": "No se pudo copiar el MD5",
+      "openFailed": "No se pudo abrir la web de osu!"
     },
     "transport": {
       "play": "Reproducir",
@@ -68,7 +76,9 @@
       "zoomValue": "×{{value}}",
       "rate": "Velocidad de reproducción",
       "rateValue": "×{{value}}",
-      "playSection": "Reproducir la sección"
+      "playSection": "Reproducir la sección",
+      "back": "Retroceder {{seconds}} s",
+      "forward": "Avanzar {{seconds}} s"
     },
     "skin": {
       "label": "Skin",

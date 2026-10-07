@@ -1,5 +1,5 @@
 import { StrictMode } from "react";
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, configure, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -14,6 +14,12 @@ import { mockCommands } from "@/ipc/mocks";
 import { renderWithRouter } from "@/shared/testing/renderWithRouter";
 import { LABEL_SCREEN_PARAMS, LabelScreen, type LabelScreenParams } from "./LabelScreen";
 import type { ClosableAudioContext } from "./sectionPlayer";
+
+// Each case mounts the whole screen and walks several IPC round trips; on a loaded runner (cargo building alongside) the
+// 1 s findBy and 5 s test defaults ran out on screens that were merely slow. Vitest isolates files, so this stays here.
+const SCREEN_WAIT_MS = 5000;
+const SCREEN_TEST_MS = 20_000;
+configure({ asyncUtilTimeout: SCREEN_WAIT_MS });
 
 // Live audio nodes across the whole label screen: React effects (StrictMode's double run included), window moves and
 // window changes must never leave more than the playing iteration plus the one scheduled ahead.
@@ -190,7 +196,7 @@ function oldestLive(audio: Audio): FakeSource {
   return source;
 }
 
-describe("LabelScreen section audio", () => {
+describe("LabelScreen section audio", { timeout: SCREEN_TEST_MS }, () => {
   for (const strict of [false, true]) {
     it(`keeps one playing and one scheduled source through toggles, iterations, a timeline move and skip (strict=${strict})`, async () => {
       const audio = new Audio();
@@ -229,6 +235,26 @@ describe("LabelScreen section audio", () => {
         expect(audio.live).toBe(2);
       });
       expect(audio.maxLive).toBe(2);
+      expect(audio.maxContexts).toBe(1);
+    });
+  }
+
+  for (const strict of [false, true]) {
+    it(`restarts at each seek on fresh nodes, never more than two live (strict=${strict})`, async () => {
+      const audio = new Audio();
+      render(audio, strict);
+      await userEvent.click(await screen.findByRole("button", { name: "Play" }));
+      await waitFor(() => {
+        expect(audio.live).toBe(2);
+      });
+      await userEvent.click(screen.getByRole("button", { name: "Forward 2 s" }));
+      await userEvent.click(screen.getByRole("button", { name: "Forward 2 s" }));
+      screen.getByRole("slider", { name: "Playback position" }).focus();
+      await userEvent.keyboard("{ArrowLeft}");
+      expect(audio.live).toBe(2);
+      expect(audio.maxLive).toBe(2);
+      // The context clock stands at 0 here, so each seek lands exactly: 0 → 2 → 4 → 2 s.
+      expect(audio.sources.filter((s) => s.live).map((s) => s.starts[0]?.offset)).toEqual([2, 0]);
       expect(audio.maxContexts).toBe(1);
     });
   }

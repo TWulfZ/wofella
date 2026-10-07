@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { JobDto, JobProgressDto } from "@/ipc/bindings";
 import { createJobTrayStore, FINISHED_CAP, type JobTrayStore } from "./store";
 
@@ -45,9 +45,29 @@ beforeEach(() => {
 });
 
 describe("job tray store", () => {
-  it("creates a running job from its first progress event and opens the tray", () => {
+  it("creates a running job from its first progress event, leaving the tray collapsed behind its tab", () => {
     state().applyProgress(progress("a", 3, 12));
     expect(state().jobs.get("a")).toMatchObject({ status: "running", kind: "sync_plays", done: 3, total: 12, etaMs: 2000 });
+    expect(state().open).toBe(false);
+  });
+
+  it("a background job does not reopen the tray after it auto-collapsed, by event or by hydration", () => {
+    state().setOpen(true);
+    state().applyProgress(progress("a"));
+    state().applyFinished({ jobId: "a", status: "ok", failedItems: 0 });
+    state().setOpen(false);
+    state().applyProgress(progress("b"));
+    state().hydrate([jobDto("c", "running")]);
+    expect(state().open).toBe(false);
+  });
+
+  it("reopens for each new job only for a viewer who chose to keep it expanded", () => {
+    store = createJobTrayStore({ prefs: { read: () => true, write: () => undefined } });
+    state().setOpen(false);
+    state().applyProgress(progress("a"));
+    expect(state().open).toBe(true);
+    state().setOpen(false);
+    state().hydrate([jobDto("b", "running")]);
     expect(state().open).toBe(true);
   });
 
@@ -102,5 +122,34 @@ describe("job tray store", () => {
     state().hydrate(history);
     expect(state().jobs.has("h0")).toBe(false);
     expect(state().jobs.size).toBe(FINISHED_CAP);
+  });
+
+  it("a remembered collapse keeps new jobs from expanding the tray", () => {
+    store = createJobTrayStore({ prefs: { read: () => false, write: () => undefined } });
+    state().applyProgress(progress("a"));
+    state().hydrate([jobDto("b", "running")]);
+    expect(state().open).toBe(false);
+  });
+
+  it("starts from the remembered choice and persists only the user's choices", () => {
+    const write = vi.fn();
+    store = createJobTrayStore({ prefs: { read: () => true, write } });
+    expect(state().open).toBe(true);
+
+    state().setOpen(false);
+    expect(write).not.toHaveBeenCalled();
+
+    state().chooseOpen(true);
+    expect(state().open).toBe(true);
+    expect(write).toHaveBeenCalledWith(true);
+  });
+
+  it("reset re-reads the remembered choice", () => {
+    let remembered: boolean | null = null;
+    store = createJobTrayStore({ prefs: { read: () => remembered, write: () => undefined } });
+    expect(state().open).toBe(false);
+    remembered = true;
+    state().reset();
+    expect(state().open).toBe(true);
   });
 });

@@ -1,8 +1,20 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { createRef } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { mockCommands } from "@/ipc/mocks";
 import type { LabelWindow } from "../types";
-import { backgroundDataUrl, type ChartDetails, ChartHeader, type ChartHeaderProps } from "./ChartHeader";
+import {
+  backgroundDataUrl,
+  CHART_HEADER_PARAMS,
+  type ChartDetails,
+  ChartHeader,
+  type ChartHeaderProps,
+} from "./ChartHeader";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 const WINDOW: LabelWindow = {
   anchor: { md5: "a".repeat(32), t0Ms: 1000, t1Ms: 5000, cols: [1, 2, 3, 4, 5, 6, 7] },
@@ -50,6 +62,25 @@ function renderHeader(overrides: Partial<ChartHeaderProps> = {}) {
       {...overrides}
     />,
   );
+}
+
+/** One stat of the dialog's osu!web-style row, found by its visible caption. */
+function stat(dialog: HTMLElement, caption: string): HTMLElement {
+  const row = within(dialog).getByRole("list", { name: "Map statistics" });
+  const item = within(row)
+    .getAllByRole("listitem")
+    .find((li) => li.querySelector("[data-stat-caption]")?.textContent === caption);
+  if (item === undefined) {
+    throw new Error(`no stat ${caption}`);
+  }
+  return item;
+}
+
+async function openDetails(overrides: Partial<ChartHeaderProps> = {}) {
+  const user = userEvent.setup();
+  renderHeader({ background: IMAGE, details: DETAILS, ...overrides });
+  await user.click(screen.getByRole("button", { name: "Show the full image and map details" }));
+  return { user, dialog: screen.getByRole("dialog", { name: "Alpha Song" }) };
 }
 
 function rgb(hex: string): string {
@@ -200,12 +231,8 @@ describe("ChartHeader details dialog", () => {
     expect(term("Mapper")).toHaveTextContent("Mapper");
     expect(term("Difficulty")).toHaveTextContent("Insane");
     expect(within(term("Star rating")).getByTestId("star-rating")).toHaveTextContent("4.52");
-    expect(term("Length")).toHaveTextContent("02:34");
-    expect(term("BPM")).toHaveTextContent("150–180");
     expect(term("OD")).toHaveTextContent("8");
     expect(term("HP")).toHaveTextContent("7.5");
-    expect(term("Notes")).toHaveTextContent("2345");
-    expect(term("Long notes")).toHaveTextContent("120");
     expect(term("Source")).toHaveTextContent("Some Game");
     expect(within(term("Tags")).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["dan", "reform"]);
     expect(term("Beatmap set ID")).toHaveTextContent("123456");
@@ -236,12 +263,12 @@ describe("ChartHeader details dialog", () => {
     await user.click(screen.getByRole("button", { name: "Show the full image and map details" }));
 
     const dialog = screen.getByRole("dialog");
-    const bpm = within(dialog).getByText("BPM", { selector: "dt" }).nextElementSibling;
-    expect(bpm).toHaveTextContent(/^180$/);
+    expect(stat(dialog, "BPM")).toHaveTextContent(/^180BPM$/);
     for (const name of ["Source", "Tags", "Beatmap set ID", "Beatmap ID", "OD", "HP"]) {
       expect(within(dialog).queryByText(name, { selector: "dt" })).toBeNull();
     }
     expect(within(dialog).queryByRole("img", { name: /Background of/ })).toBeNull();
+    expect(within(dialog).queryByRole("button", { name: "Open on osu!" })).toBeNull();
   });
 
   it("falls back to the window's metadata before the details arrive", async () => {
@@ -252,7 +279,7 @@ describe("ChartHeader details dialog", () => {
 
     const dialog = screen.getByRole("dialog", { name: "Alpha Song" });
     expect(within(dialog).getByText("Difficulty", { selector: "dt" }).nextElementSibling).toHaveTextContent("Insane");
-    expect(within(dialog).queryByText("Length", { selector: "dt" })).toBeNull();
+    expect(within(dialog).queryByRole("list", { name: "Map statistics" })).toBeNull();
   });
 
   it("names the dialog's close button in the interface language", async () => {
@@ -263,5 +290,230 @@ describe("ChartHeader details dialog", () => {
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }));
 
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("ChartHeader details dialog layout", () => {
+  it("leads with osu!web's stat row: length, BPM, notes and long notes, each iconed in osu! yellow and captioned", async () => {
+    const { dialog } = await openDetails();
+    const row = within(dialog).getByRole("list", { name: "Map statistics" });
+    expect(within(row).getAllByRole("listitem")).toHaveLength(4);
+    expect(stat(dialog, "Length")).toHaveTextContent("02:34");
+    expect(stat(dialog, "BPM")).toHaveTextContent("150–180");
+    expect(stat(dialog, "Notes")).toHaveTextContent("2,345");
+    expect(stat(dialog, "Long notes")).toHaveTextContent("120");
+    for (const item of within(row).getAllByRole("listitem")) {
+      const icon = item.querySelector("svg");
+      expect(icon).toHaveAttribute("aria-hidden", "true");
+      expect(icon?.getAttribute("class")).toMatch(/\btext-osu-yellow\b/);
+    }
+    // The image sits above the stats, the definition grid below them.
+    const image = within(dialog).getByRole("img", { name: "Background of Alpha Song" });
+    const grid = within(dialog).getByText("Mapper", { selector: "dt" }).closest("dl");
+    expect(image.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(row.compareDocumentPosition(grid as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("is wide and lays the details out in two columns, tags as chips and the MD5 in monospace", async () => {
+    const { dialog } = await openDetails();
+    expect(dialog).toHaveClass("sm:max-w-3xl");
+    const grid = within(dialog).getByText("Mapper", { selector: "dt" }).closest("dl");
+    expect(grid).toHaveClass("sm:grid-cols-2");
+    const tags = within(dialog).getByText("Tags", { selector: "dt" }).nextElementSibling as HTMLElement;
+    for (const chip of within(tags).getAllByRole("listitem")) {
+      expect(chip).toHaveClass("rounded-full");
+    }
+    expect(within(dialog).getByText(DETAILS.md5)).toHaveClass("font-mono");
+  });
+
+  it("copies the MD5 and says so", async () => {
+    const { user, dialog } = await openDetails();
+    await user.click(within(dialog).getByRole("button", { name: "Copy MD5" }));
+    await expect(navigator.clipboard.readText()).resolves.toBe(DETAILS.md5);
+    expect(within(dialog).getByRole("status")).toHaveTextContent("MD5 copied");
+  });
+
+  it("opens the difficulty on osu.ppy.sh through the opener plugin", async () => {
+    const calls = mockCommands({}, { "plugin:opener|open_url": () => null });
+    const { user, dialog } = await openDetails();
+    await user.click(within(dialog).getByRole("button", { name: "Open on osu!" }));
+    await waitFor(() => {
+      expect(calls.filter((c) => c.cmd === "plugin:opener|open_url").map((c) => c.args["url"])).toEqual([
+        "https://osu.ppy.sh/beatmapsets/123456#mania/654321",
+      ]);
+    });
+  });
+
+  it("opens the beatmap set when the difficulty has no ID, and reports a failure to open", async () => {
+    const calls = mockCommands(
+      {},
+      {
+        "plugin:opener|open_url": () => {
+          throw new Error("not allowed");
+        },
+      },
+    );
+    const { user, dialog } = await openDetails({ details: { ...DETAILS, beatmapId: null } });
+    await user.click(within(dialog).getByRole("button", { name: "Open on osu!" }));
+    await waitFor(() => {
+      expect(within(dialog).getByRole("alert")).toHaveTextContent("Could not open the osu! website");
+    });
+    expect(calls.find((c) => c.cmd === "plugin:opener|open_url")?.args["url"]).toBe("https://osu.ppy.sh/beatmapsets/123456");
+  });
+});
+
+interface ObserverCall {
+  callback: IntersectionObserverCallback;
+  options: IntersectionObserverInit | undefined;
+  targets: Element[];
+}
+
+function stubIntersectionObserver(): ObserverCall[] {
+  const observers: ObserverCall[] = [];
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      private readonly call: ObserverCall;
+      constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+        this.call = { callback, options, targets: [] };
+        observers.push(this.call);
+      }
+      observe(target: Element): void {
+        this.call.targets.push(target);
+      }
+      unobserve(): void {
+        // Nothing is held.
+      }
+      disconnect(): void {
+        // Nothing is held.
+      }
+    },
+  );
+  return observers;
+}
+
+function report(observer: ObserverCall | undefined, isIntersecting: boolean) {
+  act(() => {
+    observer?.callback(
+      observer.targets.map((target) => ({ target, isIntersecting }) as unknown as IntersectionObserverEntry),
+      observer as unknown as IntersectionObserver,
+    );
+  });
+}
+
+describe("ChartHeader compact bar", () => {
+  function renderInPanel(overrides: Partial<ChartHeaderProps> = {}) {
+    const root = document.createElement("div");
+    document.body.append(root);
+    const scrollRoot = createRef<HTMLElement>();
+    (scrollRoot as { current: HTMLElement | null }).current = root;
+    const view = renderHeader({ background: IMAGE, scrollRoot, origin: { kind: "plan", round: 0 }, ...overrides });
+    return { view, root };
+  }
+
+  it("stays out of the way while the card is in view", () => {
+    stubIntersectionObserver();
+    renderInPanel();
+    expect(screen.queryByTestId("header-compact")).toBeNull();
+  });
+
+  it("watches the card's title against the panel's top edge, under the bar's own height", () => {
+    const observers = stubIntersectionObserver();
+    const { root } = renderInPanel();
+    expect(observers).toHaveLength(1);
+    expect(observers[0]?.options?.root).toBe(root);
+    expect(observers[0]?.options?.rootMargin).toBe(`-${String(CHART_HEADER_PARAMS.compactBarPx)}px 0px 0px 0px`);
+    expect(observers[0]?.targets).toEqual([screen.getByTestId("header-sentinel")]);
+    expect(screen.getByTestId("header-sentinel").closest("header")).not.toBeNull();
+  });
+
+  it("collapses into a sticky title bar once the card scrolls away, with the round badge moved into it", () => {
+    const observers = stubIntersectionObserver();
+    renderInPanel();
+    report(observers[0], false);
+
+    const bar = screen.getByTestId("header-compact");
+    expect(bar.parentElement).toHaveClass("sticky", "top-0");
+    expect(bar).toHaveStyle({ height: `${String(CHART_HEADER_PARAMS.compactBarPx)}px` });
+    expect(bar.getAttribute("class")).toMatch(/motion-safe:animate-in/);
+    expect(bar.getAttribute("class")).not.toMatch(/(^|\s)animate-in/);
+    expect(within(bar).getByText("Alpha Song")).toBeInTheDocument();
+    expect(within(bar).queryByRole("heading")).toBeNull();
+    expect(within(bar).getByTestId("star-rating")).toHaveTextContent("4.52");
+    expect(within(bar).getByText("Round 1")).toBeInTheDocument();
+    expect(within(bar).getByTestId("header-compact-thumb")).toHaveAttribute("src", IMAGE);
+    expect(within(bar).getByTestId("header-compact-thumb")).toHaveAttribute("alt", "");
+    expect(within(bar).getByRole("button", { name: "Show the full image and map details" })).toBeInTheDocument();
+
+    report(observers[0], true);
+    expect(screen.queryByTestId("header-compact")).toBeNull();
+  });
+
+  it("carries the navigation into the bar, so Previous, Random and Now playing stay in reach while scrolled", () => {
+    const observers = stubIntersectionObserver();
+    renderInPanel();
+    report(observers[0], false);
+    expect(within(screen.getByTestId("header-compact")).getByRole("button", { name: "Next window" })).toBeInTheDocument();
+  });
+
+  it("takes the scrolled-away card's controls out of reach while collapsed, so each one exists once", () => {
+    const observers = stubIntersectionObserver();
+    const { view } = renderInPanel();
+    const header = view.container.querySelector("header");
+    if (header === null) {
+      throw new Error("no card");
+    }
+    const cardControls = (): HTMLElement[] =>
+      within(header).getAllByRole("button", { name: /Next window|Show the full image and map details/ });
+    expect(cardControls().every((b) => b.closest("[inert]") === null)).toBe(true);
+
+    report(observers[0], false);
+    expect(cardControls()).toHaveLength(2);
+    expect(cardControls().every((b) => b.closest("[inert]") !== null)).toBe(true);
+    expect(within(header).getByText("Round 1").closest("[inert]")).not.toBeNull();
+  });
+
+  it("collapses only once the card's navigation row has passed under the bar, so no visible control is inert", () => {
+    stubIntersectionObserver();
+    const { view } = renderInPanel();
+    const header = view.container.querySelector("header");
+    expect(header?.lastElementChild).toBe(screen.getByTestId("header-sentinel"));
+  });
+
+  it("opens the details from the compact bar too", async () => {
+    const user = userEvent.setup();
+    const observers = stubIntersectionObserver();
+    renderInPanel({ details: DETAILS });
+    report(observers[0], false);
+    await user.click(within(screen.getByTestId("header-compact")).getByRole("button", { name: "Show the full image and map details" }));
+    expect(screen.getByRole("dialog", { name: "Alpha Song" })).toBeInTheDocument();
+  });
+
+  it("keeps the full card where the browser has no IntersectionObserver", () => {
+    vi.stubGlobal("IntersectionObserver", undefined);
+    renderInPanel();
+    expect(screen.queryByTestId("header-compact")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Alpha Song" })).toBeInTheDocument();
+  });
+
+  it("reports the card's height, so the panel can paint its background under the scrollbar", () => {
+    const sizes: number[] = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(private readonly onResize: ResizeObserverCallback) {}
+        observe(target: Element): void {
+          this.onResize([{ target, borderBoxSize: [{ blockSize: 212, inlineSize: 300 }] } as unknown as ResizeObserverEntry], this);
+        }
+        unobserve(): void {
+          // Nothing is held.
+        }
+        disconnect(): void {
+          // Nothing is held.
+        }
+      },
+    );
+    renderHeader({ onBlockSize: (px) => sizes.push(px) });
+    expect(sizes).toEqual([212]);
   });
 });

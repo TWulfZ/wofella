@@ -111,6 +111,8 @@
     --chart-4: var(--osu-yellow);
     --chart-5: var(--osu-purple);
     --radius: 0.625rem;
+    /* The collapsed job tray's edge tab; full-width screens keep this much right gutter so it covers no scrollbar. */
+    --job-tray-tab-w: 1.75rem;
     --sidebar: var(--header);
     --sidebar-foreground: var(--foreground);
     --sidebar-primary: var(--osu-pink);

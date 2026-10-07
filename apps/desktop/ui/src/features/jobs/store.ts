@@ -9,6 +9,7 @@ import type {
   JobStageDto,
   JobStatusDto,
 } from "@/ipc/bindings";
+import type { JobTrayPrefs } from "./trayParams";
 
 // Spec 005 Behaviour "Job tray": finished jobs stay until dismissed or pushed out by this many newer ones.
 export const FINISHED_CAP = 20;
@@ -41,7 +42,10 @@ export interface JobTrayState {
   applyFinished: (finished: JobFinishedDto) => void;
   hydrate: (jobs: readonly JobDto[]) => void;
   dismiss: (id: JobId) => void;
+  /** Transient: automatic opens and closes that must not overwrite what the viewer chose. */
   setOpen: (open: boolean) => void;
+  /** The viewer's own toggle, remembered across launches. */
+  chooseOpen: (open: boolean) => void;
   reset: () => void;
 }
 
@@ -71,14 +75,20 @@ function evictOldestFinished(jobs: Map<JobId, TrayJob>): void {
   }
 }
 
-export function createJobTrayStore(): JobTrayStore {
-  // Dismissals and the finish counter live outside React state: they only steer future updates.
+const NO_PREFS: JobTrayPrefs = { read: () => null, write: () => undefined };
+
+export function createJobTrayStore({ prefs = NO_PREFS }: { prefs?: JobTrayPrefs } = {}): JobTrayStore {
+  // Dismissals, the finish counter and the remembered choice live outside React state: they only steer future updates.
   let dismissed = new Set<JobId>();
   let seq = 0;
+  let remembered = prefs.read();
+  // Background jobs (the session watcher syncs after every map) must not cover the screen: only a viewer who chose the
+  // expanded tray gets it back for a new job; everyone else sees the edge tab's running count.
+  const autoOpen = () => remembered === true;
 
   return createStore<JobTrayState>()((set, get) => ({
     jobs: new Map(),
-    open: false,
+    open: remembered === true,
 
     applyProgress: (progress) => {
       if (dismissed.has(progress.jobId)) {
@@ -99,7 +109,7 @@ export function createJobTrayStore(): JobTrayStore {
         total: progress.total,
         etaMs: progress.etaMs,
       });
-      set({ jobs, open: current === undefined ? true : get().open });
+      set({ jobs, open: get().open || (current === undefined && autoOpen()) });
     },
 
     applyFinished: (finished) => {
@@ -149,7 +159,7 @@ export function createJobTrayStore(): JobTrayStore {
       }
       evictOldestFinished(jobs);
       // A job already running at startup (or after a lagged stream) should be visible, like a freshly started one.
-      set({ jobs, open: get().open || sawNewActive });
+      set({ jobs, open: get().open || (sawNewActive && autoOpen()) });
     },
 
     dismiss: (id) => {
@@ -163,10 +173,17 @@ export function createJobTrayStore(): JobTrayStore {
       set({ open });
     },
 
+    chooseOpen: (open) => {
+      remembered = open;
+      prefs.write(open);
+      set({ open });
+    },
+
     reset: () => {
       dismissed = new Set();
       seq = 0;
-      set({ jobs: new Map(), open: false });
+      remembered = prefs.read();
+      set({ jobs: new Map(), open: remembered === true });
     },
   }));
 }

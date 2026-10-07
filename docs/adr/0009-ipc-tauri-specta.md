@@ -53,3 +53,6 @@ Spec 005 also made shell decisions that deviate from architecture §3 or extend 
 - wolluf depends on an RC. Spec 005 T10–T12 may need adjusting to rc.25 specifics, and the fallback cost is bounded by thin, uniformly named commands.
 - 64-bit integers can never silently reach JavaScript.
 - The capability surface in F0 is only dialog, log and a scoped opener. Adding shell later needs a reason (a sidecar) and an update to this ADR.
+
+## Amendment 2026-10-07: opening osu! beatmap pages
+- The capability gains `opener:allow-open-url` scoped to `https://osu.ppy.sh/*` only, so the Label screen's details dialog can open a map's beatmapset page (`/beatmapsets/{setId}#mania/{beatmapId}`) in the system browser. The UI calls it through `ui/src/ipc/opener.ts` like `openPath`; no other host is reachable and nothing is fetched by the webview.
