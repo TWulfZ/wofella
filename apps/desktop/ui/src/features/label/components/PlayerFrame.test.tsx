@@ -1,16 +1,19 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PLAYER_FRAME_PARAMS, PlayerFrame } from "./PlayerFrame";
+import { PLAYER_FRAME_PARAMS, PlayerFrame, type PlayerFrameProps } from "./PlayerFrame";
 
 afterEach(() => {
   vi.useRealTimers();
 });
 
-function renderFrame(idleMs = PLAYER_FRAME_PARAMS.idleMs) {
+function renderFrame(idleMs = PLAYER_FRAME_PARAMS.idleMs, extra: Partial<PlayerFrameProps> = {}) {
   return render(
     <PlayerFrame
       idleMs={idleMs}
+      {...extra}
       controls={
         <>
           <button type="button">Play</button>
@@ -44,6 +47,10 @@ function frame(): HTMLElement {
   return screen.getByTestId("player-frame");
 }
 
+function hoverZone(): HTMLElement {
+  return screen.getByTestId("controls-hover-zone");
+}
+
 function tab(): HTMLElement {
   return screen.getByRole("button", { name: "Playback settings" });
 }
@@ -72,18 +79,43 @@ describe("PlayerFrame controls overlay", () => {
     expect(shown()).toBe(false);
   });
 
-  it("shows them again when the pointer moves over the player, and hides them when it leaves", () => {
+  it("shows them again when the pointer moves over the bottom zone, and hides them when it leaves the player", () => {
     vi.useFakeTimers();
     renderFrame();
     advance(PLAYER_FRAME_PARAMS.idleMs);
-    fireEvent.pointerMove(frame());
+    fireEvent.pointerMove(hoverZone());
     expect(shown()).toBe(true);
     advance(PLAYER_FRAME_PARAMS.idleMs / 2);
-    fireEvent.pointerMove(frame());
+    fireEvent.pointerMove(hoverZone());
     advance(PLAYER_FRAME_PARAMS.idleMs / 2);
     expect(shown()).toBe(true);
     fireEvent.pointerLeave(frame());
     expect(shown()).toBe(false);
+  });
+
+  it("ignores the pointer over the rest of the stage, as a video player does", () => {
+    vi.useFakeTimers();
+    renderFrame();
+    advance(PLAYER_FRAME_PARAMS.idleMs);
+    fireEvent.pointerMove(screen.getByTestId("stage"));
+    fireEvent.pointerMove(frame());
+    expect(shown()).toBe(false);
+  });
+
+  it("sizes the hover zone to the stage's bottom quarter, under the controls", () => {
+    renderFrame();
+    expect(hoverZone()).toHaveClass("bottom-0");
+    expect(hoverZone()).toHaveStyle({
+      height: `${String(PLAYER_FRAME_PARAMS.controlsHoverZoneShare * 100)}%`,
+      minHeight: `${String(PLAYER_FRAME_PARAMS.controlsHoverZoneMinPx)}px`,
+    });
+    expect(frame()).toContainElement(hoverZone());
+    expect(hoverZone().compareDocumentPosition(controls()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("keeps the controls off the left edge, where the settings tab takes the pointer", () => {
+    renderFrame();
+    expect(controls()).toHaveClass("pl-8");
   });
 
   it("keeps them while the pointer rests on them", () => {
@@ -135,7 +167,146 @@ describe("PlayerFrame controls overlay", () => {
   });
 });
 
+describe("PlayerFrame centre slot", () => {
+  it("lays its content over the middle of the stage, leaving the rest of the stage to the pointer", () => {
+    renderFrame(undefined, { centre: <button type="button">Play the section</button> });
+    const layer = screen.getByTestId("player-centre");
+    expect(layer).toContainElement(screen.getByRole("button", { name: "Play the section" }));
+    expect(layer).toHaveClass("pointer-events-none", "items-center", "justify-center");
+  });
+
+  it("draws no layer when there is nothing to centre", () => {
+    renderFrame();
+    expect(screen.queryByTestId("player-centre")).toBeNull();
+  });
+});
+
+type Rgb = [number, number, number];
+
+function themeColour(css: string, token: string): Rgb {
+  const hue = Number(/--hue:\s*([\d.]+)/.exec(css)?.[1]);
+  const m = new RegExp(`--${token}:\\s*hsl\\(var\\(--hue\\) ([\\d.]+)% ([\\d.]+)%\\)`).exec(css);
+  const s = Number(m?.[1]) / 100;
+  const l = Number(m?.[2]) / 100;
+  const f = (n: number): number => {
+    const k = (n + hue / 30) % 12;
+    return 255 * (l - s * Math.min(l, 1 - l) * Math.max(-1, Math.min(k - 3, 9 - k, 1)));
+  };
+  return [f(0), f(8), f(4)];
+}
+
+const over = (top: Rgb, below: Rgb, alpha: number): Rgb =>
+  top.map((v, i) => alpha * v + (1 - alpha) * (below[i] ?? 0)) as Rgb;
+
+function contrast(a: Rgb, b: Rgb): number {
+  const lum = (c: Rgb): number => {
+    const [r, g, bl] = c.map((v) => (v / 255 <= 0.04045 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (bl ?? 0);
+  };
+  const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+  return ((hi ?? 0) + 0.05) / ((lo ?? 0) + 0.05);
+}
+
 describe("PlayerFrame settings flyout", () => {
+  it("lets the map show through its panel", async () => {
+    const user = userEvent.setup();
+    renderFrame();
+    await user.click(tab());
+    const panel = screen.getByRole("dialog", { name: "Playback settings" });
+    expect(panel.className).toMatch(/\bbg-surface-raised\/[1-8]\d\b/);
+    expect(panel.className).toMatch(/\bbackdrop-blur/);
+  });
+
+  it("keeps the panel's faintest text above 4.5:1 even over a white stage", async () => {
+    // The faintest text the flyout's content uses: foreground at 80% (the seed line, the close button).
+    const faintestTextAlpha = 0.8;
+    const css = readFileSync(resolve(import.meta.dirname, "../../../app/styles.css"), "utf8");
+    const user = userEvent.setup();
+    renderFrame();
+    await user.click(tab());
+    const tint = /\bbg-surface-raised\/(\d+)\b/.exec(screen.getByRole("dialog").className)?.[1];
+    const panel = over(themeColour(css, "surface-raised"), [255, 255, 255], Number(tint) / 100);
+    const text = over(themeColour(css, "foreground"), panel, faintestTextAlpha);
+    expect(contrast(text, panel)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("nudges a first-time viewer towards the tab until the panel opens", async () => {
+    const user = userEvent.setup();
+    const onSettingsOpen = vi.fn();
+    const { rerender } = renderFrame(undefined, { settingsHint: "Settings live here", onSettingsOpen });
+    expect(tab()).toHaveAttribute("data-hint", "true");
+    const bubble = screen.getByText("Settings live here");
+    expect(tab()).toHaveAttribute("aria-describedby", bubble.id);
+    expect(screen.getByTestId("settings-hint-arrow").getAttribute("class")).toMatch(/motion-safe:animate-out/);
+    expect(screen.getByTestId("settings-hint-arrow").getAttribute("class")).toMatch(/motion-safe:repeat-infinite/);
+    expect(screen.getByTestId("settings-hint-arrow").getAttribute("class")).not.toMatch(/(^|\s)animate-out/);
+    expect(screen.getByTestId("settings-hint-arrow")).toHaveStyle({
+      animationDuration: `${String(PLAYER_FRAME_PARAMS.hintPeriodMs)}ms`,
+    });
+
+    await user.click(tab());
+    expect(onSettingsOpen).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Settings live here")).toBeNull();
+
+    rerender(
+      <PlayerFrame controls={null} settings={<input aria-label="Audio offset" />} settingsHint={null}>
+        <canvas data-testid="stage" />
+      </PlayerFrame>,
+    );
+    await user.keyboard("{Escape}");
+    expect(tab()).not.toHaveAttribute("data-hint");
+    expect(screen.queryByTestId("settings-hint-arrow")).toBeNull();
+  });
+
+  it("lets the pointer through the flyout's full-height strip, so only the tab and the panel take it", async () => {
+    const user = userEvent.setup();
+    renderFrame();
+    expect(screen.getByTestId("settings-flyout")).toHaveClass("pointer-events-none");
+    expect(tab()).toHaveClass("pointer-events-auto");
+    await user.click(tab());
+    expect(screen.getByRole("dialog")).toHaveClass("pointer-events-auto");
+  });
+
+  it("neither peeks nor counts the settings as found when the pointer only crosses the flyout's edge strip", () => {
+    const onSettingsOpen = vi.fn();
+    renderFrame(undefined, { settingsHint: "Settings live here", onSettingsOpen });
+    fireEvent.pointerEnter(screen.getByTestId("settings-flyout"));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(onSettingsOpen).not.toHaveBeenCalled();
+  });
+
+  it("counts a hover peek as finding the settings only once it lasts a moment", () => {
+    vi.useFakeTimers();
+    const onSettingsOpen = vi.fn();
+    renderFrame(undefined, { settingsHint: "Settings live here", onSettingsOpen });
+    fireEvent.pointerEnter(tab());
+    expect(screen.getByRole("dialog", { name: "Playback settings" })).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(PLAYER_FRAME_PARAMS.settingsFoundDwellMs - 1);
+    });
+    fireEvent.pointerLeave(screen.getByTestId("settings-flyout"));
+    act(() => {
+      vi.advanceTimersByTime(PLAYER_FRAME_PARAMS.settingsFoundDwellMs);
+    });
+    expect(onSettingsOpen).not.toHaveBeenCalled();
+
+    fireEvent.pointerEnter(tab());
+    act(() => {
+      vi.advanceTimersByTime(PLAYER_FRAME_PARAMS.settingsFoundDwellMs);
+    });
+    expect(onSettingsOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts pinning a peeked panel by focusing a control in it as finding the settings", () => {
+    const onSettingsOpen = vi.fn();
+    renderFrame(undefined, { settingsHint: "Settings live here", onSettingsOpen });
+    fireEvent.pointerEnter(tab());
+    act(() => {
+      screen.getByRole("combobox", { name: "Scroll mode" }).focus();
+    });
+    expect(onSettingsOpen).toHaveBeenCalledTimes(1);
+  });
+
   it("opens from the edge tab into a labelled panel, focusing its first control", async () => {
     const user = userEvent.setup();
     renderFrame();
@@ -197,7 +368,7 @@ describe("PlayerFrame settings flyout", () => {
 
   it("peeks open while the pointer is on the tab or the panel, and closes when it leaves", () => {
     renderFrame();
-    fireEvent.pointerEnter(screen.getByTestId("settings-flyout"));
+    fireEvent.pointerEnter(tab());
     const panel = screen.getByRole("dialog", { name: "Playback settings" });
     expect(panel).not.toContainElement(document.activeElement as HTMLElement);
     fireEvent.pointerLeave(screen.getByTestId("settings-flyout"));
@@ -206,7 +377,7 @@ describe("PlayerFrame settings flyout", () => {
 
   it("pins a peeked panel once a control in it takes focus, leaving the focus on that control", () => {
     renderFrame();
-    fireEvent.pointerEnter(screen.getByTestId("settings-flyout"));
+    fireEvent.pointerEnter(tab());
     const mode = screen.getByRole("combobox", { name: "Scroll mode" });
     act(() => {
       mode.focus();

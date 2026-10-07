@@ -58,7 +58,6 @@
       "offset": "Desfase de audio",
       "offsetValue": "{{value}} ms",
       "scroll": "Velocidad de scroll",
-      "fit": "Ajustar a la ventana",
       "scrollValue": "{{value}} px/ms",
       "scrollMode": "Modo de scroll",
       "modeOsu": "osu!",
@@ -68,7 +67,8 @@
       "zoom": "Zoom",
       "zoomValue": "×{{value}}",
       "rate": "Velocidad de reproducción",
-      "rateValue": "×{{value}}"
+      "rateValue": "×{{value}}",
+      "playSection": "Reproducir la sección"
     },
     "skin": {
       "label": "Skin",
@@ -77,6 +77,25 @@
       "reload": "Recargar skin",
       "decodeFailed": "Algunas imágenes de la skin no se pudieron decodificar y se dibujan sin skin: {{slots}}",
       "bpmScaleIgnored": "osu! escala tu velocidad con el BPM; aquí la velocidad es fija, porque ese escalado no se reproduce."
+    },
+    "effects": {
+      "title": "Efectos de la skin",
+      "percyOff": "Desactivar percy",
+      "judgements": "Mostrar juicios",
+      "combo": "Mostrar combo",
+      "keyPress": "Efecto al presionar teclas",
+      "lighting": "Efecto de iluminación",
+      "autoplay": "Los efectos siguen un autoplay perfecto simulado: cada nota es un MAX.",
+      "skinLoading": "Cargando la skin…",
+      "textFallback": {
+        "judgements": "Esta skin no tiene imágenes de juicio: se muestran como texto.",
+        "combo": "Esta skin no tiene fuente de combo: se muestra como texto."
+      },
+      "unsupported": {
+        "percy": "Necesita una skin con cuerpo de nota larga estilo percy.",
+        "keyPress": "Necesita una skin con imágenes de tecla presionada.",
+        "lighting": "Necesita una skin con imágenes de iluminación."
+      }
     },
     "audio": {
       "decodeFailed": "No se pudo decodificar el audio de este mapa, así que la ventana se reproduce sin sonido."
@@ -180,7 +199,8 @@
       "controls": "Controles de reproducción",
       "settings": "Ajustes de reproducción",
       "closeSettings": "Cerrar los ajustes de reproducción",
-      "seed": "Semilla {{seed}}"
+      "seed": "Semilla {{seed}}",
+      "hint": "Aquí están los ajustes de reproducción: offset, velocidad, skin y más"
     }
   }
 }

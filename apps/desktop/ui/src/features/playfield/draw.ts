@@ -1,9 +1,11 @@
 import { columnColor, PLAYFIELD_COLORS } from "./colors";
+import { drawSkinEffects, drawStageLights, drawTextEffects, keySprite, type PlayfieldFx } from "./drawEffects";
 import type { NoteSpan, Projection, ProjectView } from "./project";
 import {
   DEFAULT_SKIN_LAYOUT_PARAMS,
   displayHeight,
   displayWidth,
+  isStripBody,
   noteImage,
   type SkinFill,
   type SkinLayout,
@@ -22,6 +24,8 @@ export interface PlayfieldTheme {
   handSeparator: string;
   judgementLine: string;
   shade: string;
+  maxText: string;
+  comboText: string;
   lnBodyAlpha: number;
   columnColor: (keymode: number, col: number) => string;
   columnSeparatorPx: number;
@@ -44,11 +48,18 @@ export const DEFAULT_PLAYFIELD_THEME: PlayfieldTheme = {
   noteGapPx: 1,
 };
 
-/** The slice of CanvasRenderingContext2D the playfield draws with: filled rects, and skin images. */
+/** The slice of CanvasRenderingContext2D the playfield draws with: filled rects, skin images and effect text. */
 export interface Draw2D {
   fillStyle: string | CanvasGradient | CanvasPattern;
   globalAlpha: number;
+  globalCompositeOperation: GlobalCompositeOperation;
+  font: string;
+  textAlign: CanvasTextAlign;
+  textBaseline: CanvasTextBaseline;
   fillRect(x: number, y: number, w: number, h: number): void;
+  fillText(text: string, x: number, y: number): void;
+  save(): void;
+  restore(): void;
   drawImage(
     image: CanvasImageSource,
     sx: number,
@@ -67,7 +78,7 @@ export interface Draw2D {
 export type DrawView = Pick<ProjectView, "width" | "height" | "judgeY">;
 
 /** Draws in CSS px; the caller owns the device-pixel transform. */
-export function draw(ctx: Draw2D, projection: Projection, theme: PlayfieldTheme, view: DrawView): void {
+export function draw(ctx: Draw2D, projection: Projection, theme: PlayfieldTheme, view: DrawView, fx?: PlayfieldFx): void {
   const { width, height, judgeY } = view;
   const fill = (style: string, x: number, y: number, w: number, h: number): void => {
     ctx.fillStyle = style;
@@ -114,12 +125,14 @@ export function draw(ctx: Draw2D, projection: Projection, theme: PlayfieldTheme,
     fill(theme.shade, 0, region.y0, width, region.y1 - region.y0);
   }
   hLine(theme.judgementLine, judgeY, theme.judgementLinePx);
+  drawTextEffects(ctx, view, theme, fx);
 }
 
 /**
  * Draws the chart with a legacy skin, after lazer's legacy pieces (research 06, "Geometry"). Each element whose slot
  * the skin does not resolve is drawn as the procedural playfield draws it, one slot at a time (ADR 0019). With
- * `stage`, the opaque background is painted once offscreen and blitted every frame.
+ * `stage`, the opaque background is painted once offscreen and blitted every frame. `fx` adds the preview's toggles
+ * and autoplay effects; without it the picture is the same as with `DEFAULT_PLAYFIELD_EFFECTS`.
  */
 export function drawSkinned(
   ctx: Draw2D,
@@ -130,6 +143,7 @@ export function drawSkinned(
   view: DrawView,
   params: SkinLayoutParams = DEFAULT_SKIN_LAYOUT_PARAMS,
   stage?: { background: StageBackground; dpr: number },
+  fx?: PlayfieldFx,
 ): void {
   const { width, height } = view;
   const { stageX, stageWidth } = layout;
@@ -144,8 +158,11 @@ export function drawSkinned(
     }
   };
   const keys = (): void => {
-    for (const [i, column] of layout.columns.entries()) {
-      slotImage(skin.images.get(SKIN_SLOT.key(i)), column.key);
+    for (const i of layout.columns.keys()) {
+      const key = keySprite(skin, layout, i, fx, params);
+      if (key !== null) {
+        image(key.img, key.rect);
+      }
     }
   };
 
@@ -182,12 +199,14 @@ export function drawSkinned(
     const { fill: f, x, y, w, h } = layout.judgementLine;
     skinFill(f, x, y, w, h);
   }
+  drawStageLights(ctx, layout, skin, fx);
   if (skin.keysUnderNotes) {
     keys();
   }
   const keymode = layout.columns.length;
+  const plainPercy = fx?.flags.percy === false;
   for (const span of projection.spans) {
-    drawSpan(ctx, span, { layout, skin, theme, params, keymode, height, fill, image });
+    drawSpan(ctx, span, { layout, skin, theme, params, keymode, height, fill, image, plainPercy });
   }
   if (!skin.keysUnderNotes) {
     keys();
@@ -202,6 +221,7 @@ export function drawSkinned(
     fill(theme.judgementLine, 1, stageX, view.judgeY - theme.judgementLinePx / 2, stageWidth, theme.judgementLinePx);
   }
   ctx.globalAlpha = 1;
+  drawSkinEffects(ctx, layout, skin, theme, fx);
 }
 
 interface Painter {
@@ -262,6 +282,8 @@ interface SpanContext {
   height: number;
   fill: Fill;
   image: (img: SkinImage, r: SkinRect) => void;
+  /** Percy switched off: percy bodies give way to a plain bar and a visible tail cap, for reading. */
+  plainPercy: boolean;
 }
 
 function drawSpan(ctx: Draw2D, span: NoteSpan, sc: SpanContext): void {
@@ -291,6 +313,19 @@ function drawSpan(ctx: Draw2D, span: NoteSpan, sc: SpanContext): void {
   const top = span.tailY;
   const bottom = span.headY;
   const body = skin.images.get(SKIN_SLOT.body(span.col));
+  if (sc.plainPercy && body !== undefined && isStripBody(body, sc.params)) {
+    // Percy's art hides the tail behind a transparent lead-in; the procedural LN shows where the hold ends.
+    if (bottom > top && top < height) {
+      const y0 = Math.max(top, 0);
+      fill(colour, theme.lnBodyAlpha, x + gap, y0, w - 2 * gap, Math.min(bottom, height) - y0);
+    }
+    const capH = sc.params.fallbackTailHeightPx;
+    if (top > 0 && top - capH < height) {
+      fill(colour, 1, x + gap, top - capH, w - 2 * gap, capH);
+    }
+    sprite(noteImage(skin, span.col, "lnHead"), bottom, column.headH);
+    return;
+  }
   if (bottom > top && top < height) {
     if (body === undefined) {
       const y0 = Math.max(top, 0);
@@ -351,7 +386,7 @@ function drawBody(
     strip((body.h * img.height) / img.sourceHeight);
     return;
   }
-  if (cropped || displayHeight(img) >= params.stripBodyAspect * displayWidth(img)) {
+  if (isStripBody(img, params)) {
     strip(tileH);
     return;
   }

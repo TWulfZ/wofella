@@ -58,7 +58,6 @@
       "offset": "Audio offset",
       "offsetValue": "{{value}} ms",
       "scroll": "Scroll speed",
-      "fit": "Fit window",
       "scrollValue": "{{value}} px/ms",
       "scrollMode": "Scroll mode",
       "modeOsu": "osu!",
@@ -68,7 +67,8 @@
       "zoom": "Zoom",
       "zoomValue": "×{{value}}",
       "rate": "Playback rate",
-      "rateValue": "×{{value}}"
+      "rateValue": "×{{value}}",
+      "playSection": "Play the section"
     },
     "skin": {
       "label": "Skin",
@@ -77,6 +77,25 @@
       "reload": "Reload skin",
       "decodeFailed": "Some skin images could not be decoded and are drawn plainly: {{slots}}",
       "bpmScaleIgnored": "osu! scales your speed with the BPM; here the speed stays fixed, since that scaling is not reproduced."
+    },
+    "effects": {
+      "title": "Skin effects",
+      "percyOff": "Disable percy",
+      "judgements": "Show judgements",
+      "combo": "Show combo",
+      "keyPress": "Key press effect",
+      "lighting": "Lighting effect",
+      "autoplay": "Effects follow a simulated perfect autoplay: every note is a MAX.",
+      "skinLoading": "Loading the skin…",
+      "textFallback": {
+        "judgements": "This skin has no judgement images: they show as text.",
+        "combo": "This skin has no combo font: it shows as text."
+      },
+      "unsupported": {
+        "percy": "Needs a skin whose long-note body is percy-style.",
+        "keyPress": "Needs a skin with pressed-key images.",
+        "lighting": "Needs a skin with lighting images."
+      }
     },
     "audio": {
       "decodeFailed": "This chart's audio could not be decoded, so the window plays without sound."
@@ -180,7 +199,8 @@
       "controls": "Playback controls",
       "settings": "Playback settings",
       "closeSettings": "Close playback settings",
-      "seed": "Seed {{seed}}"
+      "seed": "Seed {{seed}}",
+      "hint": "Playback settings live here: offset, speed, skin and more"
     }
   }
 }

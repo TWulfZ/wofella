@@ -1,7 +1,7 @@
 // Synthetic skin DTOs and a fake createImageBitmap for loader tests; no user skin or ppy asset is used (ADR 0019).
 
 import { vi } from "vitest";
-import type { ManiaConfigDto, SkinDto, SkinFileDto } from "@/ipc/bindings";
+import type { ManiaConfigDto, SkinDto, SkinEffectsDto, SkinFileDto } from "@/ipc/bindings";
 
 /** A file whose decode the fake rejects, standing in for a corrupt PNG the header check let through. */
 export const BROKEN_MIME = "image/x-broken";
@@ -52,12 +52,26 @@ export function config7k(overrides: Partial<ManiaConfigDto> = {}): ManiaConfigDt
   };
 }
 
+/** What the server sends for a skin.ini without effect keys: lazer's defaults already applied. */
+export function skinEffects(keys = 7, overrides: Partial<SkinEffectsDto> = {}): SkinEffectsDto {
+  return {
+    scorePosition: 300,
+    comboPosition: 111,
+    lightingNWidth: Array.from({ length: keys }, () => 0),
+    lightingLWidth: Array.from({ length: keys }, () => 0),
+    lightColours: Array.from({ length: keys }, () => null),
+    comboOverlap: 0,
+    ...overrides,
+  };
+}
+
 export function skinDto(overrides: Partial<SkinDto> = {}): SkinDto {
   return {
     folder: "Pilot Skin",
     name: "Pilot",
     version: 2.5,
     config: config7k(),
+    effects: skinEffects(),
     images: [],
     files: [],
     diagnostics: [],

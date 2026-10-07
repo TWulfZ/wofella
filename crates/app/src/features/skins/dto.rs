@@ -43,6 +43,25 @@ pub struct SkinDto {
     /// Each resolved file once, shared by every slot that resolves to it.
     pub files: Vec<SkinFileDto>,
     pub diagnostics: Vec<SkinDiagnosticDto>,
+    pub effects: SkinEffectsDto,
+}
+
+/// What the Label preview's autoplay effects need besides images, in stable's 480-high units
+/// with lazer's defaults applied (research 06).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SkinEffectsDto {
+    /// `[Mania] ScorePosition`: hit-burst centre, y from the top.
+    pub score_position: f32,
+    /// `[Mania] ComboPosition`: combo counter centre, y from the top.
+    pub combo_position: f32,
+    /// Per column; 0 means the column width.
+    pub lighting_n_width: Vec<f32>,
+    pub lighting_l_width: Vec<f32>,
+    /// `ColourLight1` is `[0]`, the stage light's tint; alpha 0 already sent as 255.
+    pub light_colours: Vec<Option<RgbaDto>>,
+    /// `[Fonts] ComboOverlap`: px the combo digits overlap; negative adds a gap.
+    pub combo_overlap: f32,
 }
 
 /// The `[Mania]` block for the requested key count, or lazer's all-defaults block when the skin
@@ -93,7 +112,8 @@ pub struct ManiaColoursDto {
 }
 
 /// `slot` ids: `note.{i}`, `note.{i}.head`, `note.{i}.tail`, `body.{i}`, `key.{i}`,
-/// `key.{i}.down`, `stage.{left,right,bottom,hint,light}`, with 0-based columns.
+/// `key.{i}.down`, `stage.{left,right,bottom,hint,light}`, with 0-based columns, and
+/// `hit.{0,50,100,200,300,300g}`, `combo.{0-9}`, `lighting.{n,l}.{frame}` with 0-based frames.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SkinImageRefDto {

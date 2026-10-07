@@ -1,6 +1,13 @@
 // Per-viewer conveniences only: a blocked or cleared storage must leave the screen working on defaults.
 
-import { clampOsuSpeed, clampZoom, DEFAULT_STAGE_PARAMS, type ScrollMode } from "@/features/playfield";
+import {
+  clampOsuSpeed,
+  clampZoom,
+  DEFAULT_PLAYFIELD_EFFECTS,
+  DEFAULT_STAGE_PARAMS,
+  type PlayfieldEffects,
+  type ScrollMode,
+} from "@/features/playfield";
 import { SKIN_CHOICE_KEY } from "@/features/preferences";
 
 // Settings owns the default skin; the screen's picker writes the same key, so both always agree.
@@ -12,7 +19,6 @@ export interface ScrollPrefs {
   kind: ScrollKind;
   osuSpeed: number;
   pxPerMs: number;
-  fit: boolean;
 }
 
 export interface ScrollDefaults {
@@ -26,12 +32,19 @@ export const LABEL_PREFS = {
   scrollKindKey: "wolluf.label.scrollKind",
   osuSpeedKey: "wolluf.label.osuSpeed",
   pxPerMsKey: "wolluf.label.pxPerMs",
-  fitKey: "wolluf.label.fit",
   zoomKey: "wolluf.label.zoom",
   /** Pixels, clamped on use: the screen it was stored on may have been wider. */
   panelWidthKey: "wolluf.label.panelWidthPx",
   skinKey: SKIN_CHOICE_KEY,
   playbackRateKey: "wolluf.label.playbackRate",
+  effectKeys: {
+    percy: "wolluf.label.effect.percy",
+    judgements: "wolluf.label.effect.judgements",
+    combo: "wolluf.label.effect.combo",
+    keyPress: "wolluf.label.effect.keyPress",
+    lighting: "wolluf.label.effect.lighting",
+  } satisfies Record<keyof PlayfieldEffects, string>,
+  settingsHintSeenKey: "wolluf.label.settingsHintSeen",
   /** Before scroll modes it held a px/ms number or "fit". */
   legacyScrollKey: "wolluf.label.scroll",
   minOffsetMs: -100,
@@ -92,7 +105,6 @@ export function readScrollPrefs(defaults: ScrollDefaults): ScrollPrefs {
     kind,
     osuSpeed: clampOsuSpeed(osuSpeed),
     pxPerMs: clamp(pxPerMs, LABEL_PREFS.minPxPerMs, LABEL_PREFS.maxPxPerMs),
-    fit: read(LABEL_PREFS.fitKey) === "true",
   };
 }
 
@@ -113,14 +125,7 @@ export function writePxPerMs(pxPerMs: number): void {
   write(LABEL_PREFS.pxPerMsKey, String(pxPerMs));
 }
 
-export function writeFit(fit: boolean): void {
-  write(LABEL_PREFS.fitKey, String(fit));
-}
-
-export function scrollFromPrefs(prefs: ScrollPrefs): ScrollMode | "fit" {
-  if (prefs.fit) {
-    return "fit";
-  }
+export function scrollFromPrefs(prefs: ScrollPrefs): ScrollMode {
   return prefs.kind === "osu" ? { kind: "osu", speed: prefs.osuSpeed } : { kind: "pxPerMs", value: prefs.pxPerMs };
 }
 
@@ -156,4 +161,44 @@ export function readPanelWidthPx(fallback: number): number {
 
 export function writePanelWidthPx(widthPx: number): void {
   write(LABEL_PREFS.panelWidthKey, String(Math.round(widthPx)));
+}
+
+const EFFECTS = Object.keys(LABEL_PREFS.effectKeys) as (keyof PlayfieldEffects)[];
+
+export function readPlayfieldEffects(): PlayfieldEffects {
+  const effects = { ...DEFAULT_PLAYFIELD_EFFECTS };
+  for (const effect of EFFECTS) {
+    const raw = read(LABEL_PREFS.effectKeys[effect]);
+    if (raw === "true" || raw === "false") {
+      effects[effect] = raw === "true";
+    }
+  }
+  return effects;
+}
+
+export function writePlayfieldEffects(effects: PlayfieldEffects): void {
+  for (const effect of EFFECTS) {
+    write(LABEL_PREFS.effectKeys[effect], String(effects[effect]));
+  }
+}
+
+// A stored playback setting means the viewer already found where these live, before the nudge existed.
+const PLAYBACK_KEYS: readonly string[] = [
+  LABEL_PREFS.offsetKey,
+  LABEL_PREFS.scrollKindKey,
+  LABEL_PREFS.osuSpeedKey,
+  LABEL_PREFS.pxPerMsKey,
+  LABEL_PREFS.legacyScrollKey,
+  LABEL_PREFS.zoomKey,
+  LABEL_PREFS.playbackRateKey,
+  LABEL_PREFS.skinKey,
+  ...Object.values(LABEL_PREFS.effectKeys),
+];
+
+export function readSettingsHintSeen(): boolean {
+  return read(LABEL_PREFS.settingsHintSeenKey) === "true" || PLAYBACK_KEYS.some((key) => read(key) !== null);
+}
+
+export function writeSettingsHintSeen(): void {
+  write(LABEL_PREFS.settingsHintSeenKey, "true");
 }

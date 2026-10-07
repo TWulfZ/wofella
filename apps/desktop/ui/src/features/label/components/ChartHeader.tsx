@@ -227,7 +227,8 @@ function DetailsDialog({ window, background, details }: Pick<ChartHeaderProps, "
 export function ChartHeader({ window, origin, background = null, details, nav, counters }: ChartHeaderProps) {
   const { t } = useTranslation();
   return (
-    <header className="relative isolate flex shrink-0 flex-col overflow-hidden rounded-xl border">
+    // Full-bleed: the image is the panel's top background, so the card adds no frame or inset of its own.
+    <header className="relative isolate flex w-full shrink-0 flex-col overflow-hidden rounded-t-xl border-b">
       {background === null ? (
         <div
           aria-hidden

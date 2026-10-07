@@ -131,6 +131,14 @@ export function displayHeight(img: SkinImage): number {
   return img.height / img.scale;
 }
 
+/**
+ * A percy-style LN body: cropped by the loader, or at least `stripBodyAspect` times taller than wide. Its art is drawn
+ * once from the tail, never tiled (research 06).
+ */
+export function isStripBody(img: SkinImage, params: SkinLayoutParams = DEFAULT_SKIN_LAYOUT_PARAMS): boolean {
+  return img.sourceHeight > img.height || displayHeight(img) >= params.stripBodyAspect * displayWidth(img);
+}
+
 /** Column backgrounds and lines take the alpha twice, so alpha 0 hides them (`LegacyColourCompatibility.cs` L38–42). */
 export function doubledAlpha(c: SkinRgba): number {
   return (c.a / 255) ** 2;

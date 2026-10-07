@@ -9,7 +9,15 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { type ChartWindow, clampOsuSpeed, DEFAULT_STAGE_PARAMS, Playfield, useLoadedSkin } from "@/features/playfield";
+import {
+  type ChartWindow,
+  clampOsuSpeed,
+  DEFAULT_STAGE_PARAMS,
+  Playfield,
+  type PlayfieldEffects,
+  skinEffectSupport,
+  useLoadedSkin,
+} from "@/features/playfield";
 import { handLayoutQuery, selectedSkinFolder, skinOptions } from "@/features/preferences";
 import type { PatternDefDto } from "@/ipc/bindings";
 import { useErrorText } from "@/ipc/errorText";
@@ -23,7 +31,7 @@ import { HOLD_BUTTON_PARAMS, type HoldButtonHandle } from "./components/HoldButt
 import { PanelResizer, usePanelWidth } from "./components/PanelResizer";
 import { PatternGrid, type PatternGridHandle } from "./components/PatternGrid";
 import { PlaybackSettings } from "./components/PlaybackSettings";
-import { PlayerControls } from "./components/PlayerControls";
+import { CentrePlayButton, PlayerControls } from "./components/PlayerControls";
 import { PLAYER_FRAME_PARAMS, PlayerFrame } from "./components/PlayerFrame";
 import { formatClock } from "./format";
 import {
@@ -31,17 +39,20 @@ import {
   hasStoredOsuSpeed,
   readOffsetMs,
   readPlaybackRate,
+  readPlayfieldEffects,
   readScrollPrefs,
+  readSettingsHintSeen,
   readSkinChoice,
   readZoom,
   scrollFromPrefs,
   type ScrollPrefs,
-  writeFit,
   writeOffsetMs,
   writeOsuSpeed,
   writePlaybackRate,
+  writePlayfieldEffects,
   writePxPerMs,
   writeScrollKind,
+  writeSettingsHintSeen,
   writeSkinChoice,
   writeZoom,
 } from "./prefs";
@@ -280,6 +291,15 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
     player.setSection(md5, input, { startMs: loopStart, endMs: loopEnd });
   }, [player, md5, audioKind, base64, loopStart, loopEnd]);
 
+  // The first-run nudge on the settings tab ends once the viewer finds the flyout or changes a setting another way.
+  const [settingsHintSeen, setSettingsHintSeen] = useState(readSettingsHintSeen);
+  const settingsFound = (): void => {
+    if (!settingsHintSeen) {
+      setSettingsHintSeen(true);
+      writeSettingsHintSeen();
+    }
+  };
+
   const [offsetMs, setOffsetMs] = useState(readOffsetMs);
   useEffect(() => {
     player.setOffsetMs(offsetMs);
@@ -317,7 +337,14 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
     ? scroll
     : { ...scroll, osuSpeed: clampOsuSpeed(defaultOsuSpeed ?? cfgOsuSpeed ?? params.defaultOsuSpeed) };
   const [zoom, setZoom] = useState(readZoom);
+  const [effects, setEffects] = useState(readPlayfieldEffects);
+  const updateEffects = (patch: Partial<PlayfieldEffects>): void => {
+    const next = { ...effects, ...patch };
+    setEffects(next);
+    writePlayfieldEffects(next);
+  };
   const updateScroll = (patch: Partial<ScrollPrefs>): void => {
+    settingsFound();
     setScroll((current) => ({ ...current, ...patch }));
     if (patch.kind !== undefined) {
       writeScrollKind(patch.kind);
@@ -328,9 +355,6 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
     }
     if (patch.pxPerMs !== undefined) {
       writePxPerMs(patch.pxPerMs);
-    }
-    if (patch.fit !== undefined) {
-      writeFit(patch.fit);
     }
   };
 
@@ -470,7 +494,7 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
       e.preventDefault();
       if (effectiveScroll.kind === "osu") {
         const osuSpeed = clampOsuSpeed(effectiveScroll.osuSpeed + speedStep * DEFAULT_STAGE_PARAMS.osuSpeedStep);
-        updateScroll(effectiveScroll.fit ? { osuSpeed, fit: false } : { osuSpeed });
+        updateScroll({ osuSpeed });
       }
       return;
     }
@@ -569,6 +593,8 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
       : []),
   ];
   const skin = loadedSkin.skin;
+  // Until the chosen skin arrives the support describes the procedural stage, whose gaps are not the skin's.
+  const skinLoading = skinFolder !== null && skin === null && !skinFile.isError;
   const skinProps = skin === null ? {} : { skin, hitPosition: skin.hitPosition, columnWidths: skin.columnWidth };
   const audioNotice = audio.isError
     ? errorText(audio.error)
@@ -625,6 +651,17 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
         ) : (
           <PlayerFrame
             idleMs={params.controlsIdleMs}
+            settingsHint={settingsHintSeen ? null : t("label.player.hint")}
+            onSettingsOpen={settingsFound}
+            centre={
+              playback.playing ? undefined : (
+                <CentrePlayButton
+                  onPlay={() => {
+                    player.toggle();
+                  }}
+                />
+              )
+            }
             notices={
               notices.length === 0
                 ? undefined
@@ -691,6 +728,10 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
                   setRate(next);
                   writePlaybackRate(next);
                 }}
+                effects={effects}
+                onEffects={updateEffects}
+                effectSupport={skinEffectSupport(skin)}
+                skinLoading={skinLoading}
                 skin={{
                   options: skinOptions(skinList.data, keymode),
                   folder: skinFolder,
@@ -714,6 +755,7 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
                 clock={playback.clock}
                 scroll={scrollFromPrefs(effectiveScroll)}
                 zoom={zoom}
+                effects={effects}
                 {...skinProps}
                 className="h-full w-full"
               />
@@ -724,14 +766,8 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
 
       <PanelResizer panel={panel} />
 
-      <aside
-        data-testid="pattern-panel"
-        style={{
-          width: panel.width,
-          scrollPaddingBottom: answerBarPx === null ? undefined : answerBarPx + ANSWER_BAR_CLEARANCE_PX,
-        }}
-        className="flex min-h-0 shrink-0 flex-col gap-4 overflow-y-auto pr-2 pl-1 [scrollbar-gutter:stable]"
-      >
+      <aside data-testid="pattern-panel" style={{ width: panel.width }} className="flex min-h-0 shrink-0 flex-col">
+        {/* Outside the scrolling list, so the card spans the panel and the scrollbar starts under it. */}
         {entry !== null ? (
           <ChartHeader
             window={entry.window}
@@ -748,79 +784,85 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
           />
         ) : (
           // Between windows (sampling, plan finished) the navigation still has to be reachable.
-          <div className="bg-card flex shrink-0 items-center rounded-xl border px-2 py-1.5">{nav}</div>
+          <div className="bg-card flex w-full shrink-0 items-center rounded-t-xl border-b px-2 py-1.5">{nav}</div>
         )}
-        {notice !== null && (
-          <p
-            role={notice.tone === "error" ? "alert" : "status"}
-            className={cn(
-              "-mt-2 self-start rounded-md px-2.5 py-1 text-xs",
-              notice.tone === "error" ? "bg-destructive/10 text-destructive" : "bg-muted/60 text-muted-foreground",
-            )}
-          >
-            {notice.text}
-          </p>
-        )}
-
-        <section aria-label={t("label.patterns")} className="flex flex-col gap-2 pb-4">
-          <h3 className="sr-only">{t("label.patterns")}</h3>
-          {taxonomy.isError ? (
-            <p role="alert" className="text-destructive text-sm">
-              {errorText(taxonomy.error)}
+        <div
+          data-testid="pattern-scroll"
+          style={{ scrollPaddingBottom: answerBarPx === null ? undefined : answerBarPx + ANSWER_BAR_CLEARANCE_PX }}
+          className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pt-3 pr-2 pl-1 [scrollbar-gutter:stable]"
+        >
+          {notice !== null && (
+            <p
+              role={notice.tone === "error" ? "alert" : "status"}
+              className={cn(
+                "self-start rounded-md px-2.5 py-1 text-xs",
+                notice.tone === "error" ? "bg-destructive/10 text-destructive" : "bg-muted/60 text-muted-foreground",
+              )}
+            >
+              {notice.text}
             </p>
-          ) : taxonomy.data === undefined ? (
-            <p className="text-muted-foreground text-sm">{t("common.loading")}</p>
-          ) : (
-            <PatternGrid
-              ref={patternGrid}
-              taxonomy={taxonomy.data}
-              examples={examples.isError ? NO_EXAMPLES : examples.data}
-              isActive={(pattern) => shownAnswer.patterns.includes(pattern.id)}
-              onToggle={(pattern) => {
-                dispatch({ type: "patternToggled", id: pattern.id });
-              }}
-            />
           )}
-        </section>
 
-        <AnswerBar
-          taxonomy={taxonomy.data ?? NO_TAXONOMY}
-          answer={shownAnswer}
-          mode={answerMode}
-          busy={busy}
-          feedback={feedback}
-          onPick={(pattern) => {
-            dispatch({ type: "patternAdded", id: pattern.id });
-          }}
-          onRemove={(id) => {
-            dispatch({ type: "patternRemoved", id });
-          }}
-          onNoPattern={() => {
-            dispatch({ type: "noPatternToggled" });
-          }}
-          onFlag={(toggle) => {
-            dispatch({ type: "flagsToggled", toggle });
-          }}
-          onSave={() => {
-            void save();
-          }}
-          onClear={clearAnswer}
-          onUndo={() => {
-            void runUndo();
-          }}
-          onSkip={() => {
-            setNotice(null);
-            setFeedback(null);
-            dispatch({ type: "skipped" });
-          }}
-          canSkip={canSkip}
-          onChipFocus={(id, how) => {
-            patternGrid.current?.focusPattern(id, how);
-          }}
-          holdMs={params.holdMs}
-          saveRef={saveHold}
-          onBlockSize={setAnswerBarPx}
-        />
+          <section aria-label={t("label.patterns")} className="flex flex-col gap-2 pb-4">
+            <h3 className="sr-only">{t("label.patterns")}</h3>
+            {taxonomy.isError ? (
+              <p role="alert" className="text-destructive text-sm">
+                {errorText(taxonomy.error)}
+              </p>
+            ) : taxonomy.data === undefined ? (
+              <p className="text-muted-foreground text-sm">{t("common.loading")}</p>
+            ) : (
+              <PatternGrid
+                ref={patternGrid}
+                taxonomy={taxonomy.data}
+                examples={examples.isError ? NO_EXAMPLES : examples.data}
+                isActive={(pattern) => shownAnswer.patterns.includes(pattern.id)}
+                onToggle={(pattern) => {
+                  dispatch({ type: "patternToggled", id: pattern.id });
+                }}
+              />
+            )}
+          </section>
+
+          <AnswerBar
+            taxonomy={taxonomy.data ?? NO_TAXONOMY}
+            answer={shownAnswer}
+            mode={answerMode}
+            busy={busy}
+            feedback={feedback}
+            onPick={(pattern) => {
+              dispatch({ type: "patternAdded", id: pattern.id });
+            }}
+            onRemove={(id) => {
+              dispatch({ type: "patternRemoved", id });
+            }}
+            onNoPattern={() => {
+              dispatch({ type: "noPatternToggled" });
+            }}
+            onFlag={(toggle) => {
+              dispatch({ type: "flagsToggled", toggle });
+            }}
+            onSave={() => {
+              void save();
+            }}
+            onClear={clearAnswer}
+            onUndo={() => {
+              void runUndo();
+            }}
+            onSkip={() => {
+              setNotice(null);
+              setFeedback(null);
+              dispatch({ type: "skipped" });
+            }}
+            canSkip={canSkip}
+            onChipFocus={(id, how) => {
+              patternGrid.current?.focusPattern(id, how);
+            }}
+            holdMs={params.holdMs}
+            saveRef={saveHold}
+            onBlockSize={setAnswerBarPx}
+          />
+        </div>
       </aside>
     </div>
   );

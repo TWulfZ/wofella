@@ -651,6 +651,25 @@ export type SkinDto = {
 	/**  Each resolved file once, shared by every slot that resolves to it. */
 	files: SkinFileDto[],
 	diagnostics: SkinDiagnosticDto[],
+	effects: SkinEffectsDto,
+};
+
+/**
+ *  What the Label preview's autoplay effects need besides images, in stable's 480-high units
+ *  with lazer's defaults applied (research 06).
+ */
+export type SkinEffectsDto = {
+	/**  `[Mania] ScorePosition`: hit-burst centre, y from the top. */
+	scorePosition: number | null,
+	/**  `[Mania] ComboPosition`: combo counter centre, y from the top. */
+	comboPosition: number | null,
+	/**  Per column; 0 means the column width. */
+	lightingNWidth: (number | null)[],
+	lightingLWidth: (number | null)[],
+	/**  `ColourLight1` is `[0]`, the stage light's tint; alpha 0 already sent as 255. */
+	lightColours: ([number, number, number, number] | null)[],
+	/**  `[Fonts] ComboOverlap`: px the combo digits overlap; negative adds a gap. */
+	comboOverlap: number | null,
 };
 
 export type SkinEntryDto = {
@@ -676,7 +695,8 @@ export type SkinFileDto = {
 
 /**
  *  `slot` ids: `note.{i}`, `note.{i}.head`, `note.{i}.tail`, `body.{i}`, `key.{i}`,
- *  `key.{i}.down`, `stage.{left,right,bottom,hint,light}`, with 0-based columns.
+ *  `key.{i}.down`, `stage.{left,right,bottom,hint,light}`, with 0-based columns, and
+ *  `hit.{0,50,100,200,300,300g}`, `combo.{0-9}`, `lighting.{n,l}.{frame}` with 0-based frames.
  */
 export type SkinImageRefDto = {
 	slot: string,

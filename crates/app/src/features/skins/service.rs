@@ -11,7 +11,7 @@ use wolluf_source_osu::skins::{LoadedSkin, SkinError, list_skins, load_skin};
 use super::SkinParams;
 use super::dto::{
     ManiaColoursDto, ManiaConfigDto, NoteBodyStyleDto, RgbaDto, SkinDiagnosticDto, SkinDto,
-    SkinEntryDto, SkinFileDto, SkinImageRefDto, SkinListDto,
+    SkinEffectsDto, SkinEntryDto, SkinFileDto, SkinImageRefDto, SkinListDto,
 };
 use crate::base64;
 use crate::context::{AppContext, blocking_join_error, catalog_install, newest_user_cfg};
@@ -127,6 +127,7 @@ fn skin_error(e: SkinError, folder: &str) -> AppError {
 }
 
 fn skin_dto(skin: LoadedSkin) -> Result<SkinDto, AppError> {
+    let effects = effects_dto(&skin);
     let images = skin
         .images
         .into_iter()
@@ -141,6 +142,7 @@ fn skin_dto(skin: LoadedSkin) -> Result<SkinDto, AppError> {
         name: skin.name,
         version: skin.version,
         config: config_dto(&skin.config),
+        effects,
         images,
         files: skin
             .files
@@ -192,6 +194,23 @@ fn note_height_scale(c: &ManiaConfig) -> f32 {
     c.width_for_note_height_scale
         .filter(|w| *w > 0.0)
         .unwrap_or_else(|| c.column_width.iter().copied().fold(f32::INFINITY, f32::min))
+}
+
+fn effects_dto(skin: &LoadedSkin) -> SkinEffectsDto {
+    let c = &skin.config;
+    SkinEffectsDto {
+        score_position: c.score_position,
+        combo_position: c.combo_position,
+        lighting_n_width: c.lighting_n_width.clone(),
+        lighting_l_width: c.lighting_l_width.clone(),
+        light_colours: c
+            .colours
+            .light
+            .iter()
+            .map(|l| l.map(|l| rgba(l.disallow_zero_alpha())))
+            .collect(),
+        combo_overlap: skin.fonts.combo_overlap,
+    }
 }
 
 fn rgba(c: Rgba) -> RgbaDto {
@@ -424,6 +443,55 @@ mod tests {
             }),
             "{:?}",
             skin.diagnostics
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn skin_get_carries_playback_effect_config_and_slots() {
+        let f = fixture("").await;
+        f.write(
+            "Skins/Fx/skin.ini",
+            b"[General]\r\nVersion: 2.5\r\n[Fonts]\r\nComboOverlap: 3\r\n[Mania]\r\nKeys: 7\r\n\
+              ScorePosition: 250\r\nComboPosition: 140\r\nLightingNWidth: 40,0,40,40,40,40,40\r\n\
+              ColourLight1: 10,20,30,0\r\nColourLight2: 1,2,3\r\n",
+        );
+        f.write("Skins/Fx/mania-hit300g.png", &png(64, 32));
+        f.write("Skins/Fx/score-7.png", &png(8, 12));
+        f.write("Skins/Fx/lightingN-0.png", &png(50, 50));
+        f.write("Skins/Fx/lightingN-1.png", &png(51, 51));
+        let skin = f.ctx.skins().get("Fx", 7).await.unwrap();
+
+        let mut light = vec![None; 7];
+        light[0] = Some([10, 20, 30, 255]);
+        light[1] = Some([1, 2, 3, 255]);
+        assert_eq!(
+            skin.effects,
+            SkinEffectsDto {
+                score_position: 250.0,
+                combo_position: 140.0,
+                lighting_n_width: vec![40.0, 0.0, 40.0, 40.0, 40.0, 40.0, 40.0],
+                lighting_l_width: vec![0.0; 7],
+                light_colours: light,
+                combo_overlap: 3.0,
+            }
+        );
+        assert_eq!(file_of(&skin, "hit.300g").width, 64);
+        assert_eq!(file_of(&skin, "combo.7").height, 12);
+        assert_eq!(file_of(&skin, "lighting.n.0").width, 50);
+        assert_eq!(file_of(&skin, "lighting.n.1").width, 51);
+
+        let bare = f.ctx.skins().get("Bare", 7).await.unwrap();
+        assert_eq!(
+            bare.effects,
+            SkinEffectsDto {
+                score_position: 300.0,
+                combo_position: 111.0,
+                lighting_n_width: vec![0.0; 7],
+                lighting_l_width: vec![0.0; 7],
+                light_colours: vec![None; 7],
+                combo_overlap: 0.0,
+            },
+            "lazer's defaults (LegacyManiaSkinConfiguration.cs L37-38)"
         );
     }
 

@@ -7,6 +7,8 @@ export interface FillOp {
   h: number;
   fill: string;
   alpha: number;
+  /** Present only when not "source-over", so ops drawn the default way compare as before. */
+  composite?: string;
 }
 
 export interface ImageOp {
@@ -22,13 +24,32 @@ export interface ImageOp {
   alpha: number;
   /** Current transform as [a, b, c, d, e, f], with -0 read as 0. */
   transform: number[];
+  composite?: string;
 }
 
-export type Op = ({ type: "fill" } & FillOp) | ({ type: "image" } & ImageOp);
+export interface TextOp {
+  text: string;
+  x: number;
+  y: number;
+  font: string;
+  fill: string;
+  alpha: number;
+  align: string;
+  baseline: string;
+  transform: number[];
+  composite?: string;
+}
+
+export type Op = ({ type: "fill" } & FillOp) | ({ type: "image" } & ImageOp) | ({ type: "text" } & TextOp);
 
 export interface RecordingContext {
   fillStyle: string;
   globalAlpha: number;
+  globalCompositeOperation: GlobalCompositeOperation;
+  font: string;
+  textAlign: CanvasTextAlign;
+  textBaseline: CanvasTextBaseline;
+  fillText(text: string, x: number, y: number): void;
   fillRect(x: number, y: number, w: number, h: number): void;
   drawImage(
     image: CanvasImageSource,
@@ -52,34 +73,78 @@ export function recordingContext(): {
   ctx: RecordingContext;
   ops: FillOp[];
   images: ImageOp[];
+  texts: TextOp[];
   all: Op[];
   transforms: number[][];
 } {
   const ops: FillOp[] = [];
   const images: ImageOp[] = [];
+  const texts: TextOp[] = [];
   const all: Op[] = [];
   const transforms: number[][] = [];
   let m = [1, 0, 0, 1, 0, 0];
-  const stack: number[][] = [];
   const at = (i: number): number => m[i] ?? 0;
+  const composite = (): { composite?: string } =>
+    ctx.globalCompositeOperation === "source-over" ? {} : { composite: ctx.globalCompositeOperation };
+  // Like a real context, save/restore covers the transform and the drawing state.
+  const stack: { m: number[]; alpha: number; op: GlobalCompositeOperation; fill: string }[] = [];
   const ctx: RecordingContext = {
     fillStyle: "#000000",
     globalAlpha: 1,
+    globalCompositeOperation: "source-over",
+    font: "10px sans-serif",
+    textAlign: "start",
+    textBaseline: "alphabetic",
     fillRect(x, y, w, h) {
-      const op = { x, y, w, h, fill: ctx.fillStyle, alpha: ctx.globalAlpha };
+      const op = { x, y, w, h, fill: ctx.fillStyle, alpha: ctx.globalAlpha, ...composite() };
       ops.push(op);
       all.push({ type: "fill", ...op });
     },
     drawImage(image, sx, sy, sw, sh, dx, dy, dw, dh) {
-      const op = { image, sx, sy, sw, sh, dx, dy, dw, dh, alpha: ctx.globalAlpha, transform: m.map((v) => v + 0) };
+      const op = {
+        image,
+        sx,
+        sy,
+        sw,
+        sh,
+        dx,
+        dy,
+        dw,
+        dh,
+        alpha: ctx.globalAlpha,
+        transform: m.map((v) => v + 0),
+        ...composite(),
+      };
       images.push(op);
       all.push({ type: "image", ...op });
     },
+    fillText(text, x, y) {
+      const op = {
+        text,
+        x,
+        y,
+        font: ctx.font,
+        fill: ctx.fillStyle,
+        alpha: ctx.globalAlpha,
+        align: ctx.textAlign,
+        baseline: ctx.textBaseline,
+        transform: m.map((v) => v + 0),
+        ...composite(),
+      };
+      texts.push(op);
+      all.push({ type: "text", ...op });
+    },
     save() {
-      stack.push([...m]);
+      stack.push({ m: [...m], alpha: ctx.globalAlpha, op: ctx.globalCompositeOperation, fill: ctx.fillStyle });
     },
     restore() {
-      m = stack.pop() ?? m;
+      const top = stack.pop();
+      if (top !== undefined) {
+        m = top.m;
+        ctx.globalAlpha = top.alpha;
+        ctx.globalCompositeOperation = top.op;
+        ctx.fillStyle = top.fill;
+      }
     },
     translate(x, y) {
       m = [at(0), at(1), at(2), at(3), at(4) + at(0) * x + at(2) * y, at(5) + at(1) * x + at(3) * y];
@@ -92,7 +157,7 @@ export function recordingContext(): {
       m = [a, b, c, d, e, f];
     },
   };
-  return { ctx, ops, images, all, transforms };
+  return { ctx, ops, images, texts, all, transforms };
 }
 
 export interface FakeSurfaceCanvas {

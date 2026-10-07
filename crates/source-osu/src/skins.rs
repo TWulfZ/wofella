@@ -14,9 +14,19 @@
 //!   `.jpg` (osu-framework `TextureLoaderStore`), `\` as `/` and case-insensitive files
 //!   (`RealmBackedResourceStore.cs` L52-59), frame `-0` before the plain name for animated
 //!   elements only (`LegacySkinExtensions.cs` L69, the `FindProvider` order);
-//! - no `skin.ini` means the latest version (`Skin.cs` L110-117).
+//! - no `skin.ini` means the latest version (`Skin.cs` L110-117);
+//! - playback effects: hit bursts `ManiaLegacySkinTransformer.cs` L33-57 (names) and L204-207
+//!   (explicit name or default, animatable), lighting `LegacyHitExplosion.cs` L33-34 and
+//!   `LegacyBodyPiece.cs` L48-49 (`lightingN`, `lightingL`), frames read until the first gap
+//!   (`LegacySkinExtensions.cs` L93-107), combo digits `{prefix}-{digit}`
+//!   (`LegacySpriteText.cs` L93-95) with the prefix `score` by default
+//!   (`LegacySkinExtensions.cs` L150-151).
 //!
-//! Deliberate deviations: only frame 0 is read, and a file that fails the magic, header or cap
+//! Deliberate deviations: only frame 0 is read, except for lighting, whose frames are capped; a
+//! playback-effect image that would take the skin past its byte cap is dropped with a diagnostic
+//! instead of failing the load, so effects never cost a skin its playfield; an effect whose
+//! explicit reference resolves nothing falls back to its default name in the same skin, where
+//! lazer would fall back to its own default skin, which cannot ship (ADR 0019); and a file that fails the magic, header or cap
 //! checks counts as absent so the chain moves on, as lazer does for a texture it cannot load. Containment is
 //! textual (ADR 0018): references are split into single entries matched against directory
 //! listings, and symlinks and junctions are followed on purpose.
@@ -52,6 +62,9 @@ pub struct SkinsParams {
     pub max_image_pixels: u64,
     /// Decoded size of one skin's distinct files: what the webview's `ImageBitmap`s will hold.
     pub max_total_pixels: u64,
+    /// lazer reads lighting frames until the first gap with no limit; a cap keeps a stray
+    /// `-0` … `-999` sequence from filling the payload.
+    pub max_effect_frames: usize,
     pub ini: SkinIniParams,
 }
 
@@ -66,6 +79,7 @@ impl Default for SkinsParams {
             max_skin_bytes: 8 * 1_024 * 1_024,
             max_image_pixels: 8 * 1_024 * 1_024,
             max_total_pixels: 64 * 1_024 * 1_024,
+            max_effect_frames: 60,
             ini: SkinIniParams::default(),
         }
     }
@@ -110,6 +124,7 @@ stable_str_enum! {
         ImageBadHeader => "skin.image_bad_header",
         ImageTooManyPixels => "skin.image_too_many_pixels",
         PixelBudgetExceeded => "skin.pixel_budget_exceeded",
+        EffectBudgetExceeded => "skin.effect_budget_exceeded",
     }
 }
 
@@ -159,7 +174,9 @@ pub struct SkinFile {
 }
 
 /// `slot` ids are stable across IPC: `note.{i}`, `note.{i}.head`, `note.{i}.tail`, `body.{i}`,
-/// `key.{i}`, `key.{i}.down`, `stage.{left,right,bottom,hint,light}`, with 0-based columns.
+/// `key.{i}`, `key.{i}.down`, `stage.{left,right,bottom,hint,light}`, with 0-based columns, and
+/// for playback effects `hit.{0,50,100,200,300,300g}`, `combo.{0-9}` and
+/// `lighting.{n,l}.{frame}` with 0-based frames.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkinImage {
     pub slot: String,
@@ -173,10 +190,18 @@ pub struct LoadedSkin {
     pub name: Option<String>,
     pub version: f64,
     pub config: ManiaConfig,
+    pub fonts: FontConfig,
     /// Resolved slots only; a slot that is absent here is drawn procedurally.
     pub images: Vec<SkinImage>,
     pub files: Vec<SkinFile>,
     pub diagnostics: Vec<SkinDiagnostic>,
+}
+
+/// `[Fonts]` with lazer's defaults applied (`LegacySkinExtensions.cs` L176-177).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FontConfig {
+    /// Pixels the combo digits overlap; negative adds a gap.
+    pub combo_overlap: f32,
 }
 
 const SKIN_INI: &str = "skin.ini";
@@ -190,6 +215,10 @@ const EXTENSIONS: [&str; 3] = ["", ".png", ".jpg"];
 const NOTE: &str = "mania-note";
 const KEY: &str = "mania-key";
 const STAGE: &str = "mania-stage-";
+const HIT: &str = "mania-hit";
+const COMBO_PREFIX: &str = "score";
+const LIGHTING_N: &str = "lightingN";
+const LIGHTING_L: &str = "lightingL";
 const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 const PNG_IHDR: &[u8] = b"IHDR";
 const PNG_IHDR_LEN: u32 = 13;
@@ -288,25 +317,20 @@ pub fn load_skin(
     let config = ini.mania_or_default(keymode, &params.ini);
     let mut images = Vec::new();
     for slot in slots(&config) {
-        let mut found = None;
-        for reference in &slot.chain {
-            found = resolver.resolve(&slot.key, reference, slot.animated)?;
-            if found.is_some() {
-                break;
-            }
-        }
-        match found {
-            Some(file) => images.push(SkinImage {
-                slot: slot.key,
-                file,
-            }),
-            None => resolver.diag(SkinDiagCode::ImageMissing, Some(&slot.key)),
-        }
+        resolver.resolve_slot(slot, &mut images)?;
+    }
+    // Resolved last so the playfield's own images claim the byte budget first.
+    resolver.soft_budget = true;
+    for slot in effect_slots(&config, ini.fonts.combo_prefix.as_deref()) {
+        resolver.resolve_slot(slot, &mut images)?;
     }
     Ok(LoadedSkin {
         folder,
         name: ini.name,
         version: ini.version,
+        fonts: FontConfig {
+            combo_overlap: ini.fonts.combo_overlap.unwrap_or(0.0),
+        },
         config,
         images,
         files: resolver.files,
@@ -390,6 +414,8 @@ struct Slot {
     /// References tried in order; each is an explicit `skin.ini` value or a default name.
     chain: Vec<String>,
     animated: bool,
+    /// Every frame is resolved, as `{key}.{frame}`; otherwise frame 0 only, as `key`.
+    frames: bool,
 }
 
 fn column_type(column: usize, keys: usize) -> &'static str {
@@ -408,6 +434,7 @@ fn slots(config: &ManiaConfig) -> Vec<Slot> {
         key,
         chain,
         animated,
+        frames: false,
     };
     let pick = |explicit: &Option<String>, default: String| explicit.clone().unwrap_or(default);
     let mut out = Vec::new();
@@ -451,6 +478,56 @@ fn slots(config: &ManiaConfig) -> Vec<Slot> {
     out
 }
 
+/// The explicit reference, then the default name: the pilot's active skin names `mania/stage/…`
+/// paths that do not exist while the files sit in its root.
+fn explicit_then_default(explicit: &Option<String>, default: String) -> Vec<String> {
+    explicit
+        .iter()
+        .cloned()
+        .chain((explicit.as_ref() != Some(&default)).then_some(default))
+        .collect()
+}
+
+/// What the Label preview's autoplay effects draw: judgement bursts, combo digits and lighting.
+fn effect_slots(config: &ManiaConfig, combo_prefix: Option<&str>) -> Vec<Slot> {
+    let hits = &config.hits;
+    let mut out: Vec<Slot> = [
+        ("0", &hits.h0),
+        ("50", &hits.h50),
+        ("100", &hits.h100),
+        ("200", &hits.h200),
+        ("300", &hits.h300),
+        ("300g", &hits.h300g),
+    ]
+    .into_iter()
+    .map(|(result, explicit)| Slot {
+        key: format!("hit.{result}"),
+        chain: explicit_then_default(explicit, format!("{HIT}{result}")),
+        animated: true,
+        frames: false,
+    })
+    .collect();
+    let prefix = combo_prefix.unwrap_or(COMBO_PREFIX);
+    out.extend((0..10).map(|digit| Slot {
+        key: format!("combo.{digit}"),
+        chain: vec![format!("{prefix}-{digit}")],
+        animated: false,
+        frames: false,
+    }));
+    for (kind, explicit, default) in [
+        ("n", &config.stage.lighting_n, LIGHTING_N),
+        ("l", &config.stage.lighting_l, LIGHTING_L),
+    ] {
+        out.push(Slot {
+            key: format!("lighting.{kind}"),
+            chain: explicit_then_default(explicit, default.to_owned()),
+            animated: true,
+            frames: true,
+        });
+    }
+    out
+}
+
 /// lazer inserts `@2x` before the extension of the last segment (`Path.ChangeExtension`).
 fn high_res(name: &str) -> String {
     match name.rfind('.') {
@@ -472,6 +549,8 @@ struct Resolver<'p> {
     files: Vec<SkinFile>,
     total_bytes: u64,
     total_pixels: u64,
+    /// Past the byte cap, an image becomes a missing slot instead of failing the load.
+    soft_budget: bool,
     diagnostics: Vec<SkinDiagnostic>,
 }
 
@@ -485,8 +564,46 @@ impl<'p> Resolver<'p> {
             files: Vec::new(),
             total_bytes: 0,
             total_pixels: 0,
+            soft_budget: false,
             diagnostics: Vec::new(),
         }
+    }
+
+    fn resolve_slot(&mut self, slot: Slot, images: &mut Vec<SkinImage>) -> Result<(), SkinError> {
+        if slot.frames {
+            let mut frames = Vec::new();
+            for reference in &slot.chain {
+                frames = self.resolve_frames(&slot.key, reference)?;
+                if !frames.is_empty() {
+                    break;
+                }
+            }
+            if frames.is_empty() {
+                self.diag(SkinDiagCode::ImageMissing, Some(&format!("{}.0", slot.key)));
+            }
+            for (frame, file) in frames.into_iter().enumerate() {
+                images.push(SkinImage {
+                    slot: format!("{}.{frame}", slot.key),
+                    file,
+                });
+            }
+            return Ok(());
+        }
+        let mut found = None;
+        for reference in &slot.chain {
+            found = self.resolve(&slot.key, reference, slot.animated)?;
+            if found.is_some() {
+                break;
+            }
+        }
+        match found {
+            Some(file) => images.push(SkinImage {
+                slot: slot.key,
+                file,
+            }),
+            None => self.diag(SkinDiagCode::ImageMissing, Some(&slot.key)),
+        }
+        Ok(())
     }
 
     fn diag(&mut self, code: SkinDiagCode, slot: Option<&str>) {
@@ -548,15 +665,12 @@ impl<'p> Resolver<'p> {
             .collect()
     }
 
-    fn resolve(
-        &mut self,
-        slot: &str,
-        reference: &str,
-        animated: bool,
-    ) -> Result<Option<usize>, SkinError> {
+    /// The folder (`/`-joined, on-disk spelling) and last component of `reference`, or `None`
+    /// when it is blank, rejected or names a folder that does not exist.
+    fn locate(&mut self, slot: &str, reference: &str) -> Option<(String, String)> {
         let normalized = reference.replace('\\', "/").replace(HIGH_RES, "");
         if normalized.trim().is_empty() {
-            return Ok(None);
+            return None;
         }
         let parts: Vec<&str> = normalized.split(SEPARATOR).collect();
         // `:` is a drive prefix or an alternate data stream on Windows; refusing it everywhere
@@ -564,34 +678,68 @@ impl<'p> Resolver<'p> {
         let entries_only = parts
             .iter()
             .all(|p| is_single_entry_name(p) && !p.contains(':'));
-        let Some((&last, dirs)) = parts.split_last() else {
-            return Ok(None);
-        };
+        let (&last, dirs) = parts.split_last()?;
         if !entries_only || parts.len() > self.params.max_ref_depth {
             self.diag(SkinDiagCode::RefRejected, Some(slot));
-            return Ok(None);
+            return None;
         }
         let mut dir = String::new();
         for name in dirs {
-            let Some(next) = self.find(&dir, name, true).into_iter().next() else {
-                return Ok(None);
-            };
-            dir = next;
+            dir = self.find(&dir, name, true).into_iter().next()?;
         }
-        let frame = format!("{last}{FIRST_FRAME}");
-        let stems: &[&str] = if animated { &[&frame, last] } else { &[last] };
-        for &stem in stems {
-            for (scale, name) in [(HIGH_RES_SCALE, high_res(stem)), (1, stem.to_owned())] {
-                for ext in EXTENSIONS {
-                    for rel in self.find(&dir, &format!("{name}{ext}"), false) {
-                        if let Some(file) = self.load(slot, rel, scale)? {
-                            return Ok(Some(file));
-                        }
+        Some((dir, last.to_owned()))
+    }
+
+    /// `stem@2x` (scale 2) before `stem`, each as given, `.png` and `.jpg`.
+    fn image(&mut self, slot: &str, dir: &str, stem: &str) -> Result<Option<usize>, SkinError> {
+        for (scale, name) in [(HIGH_RES_SCALE, high_res(stem)), (1, stem.to_owned())] {
+            for ext in EXTENSIONS {
+                for rel in self.find(dir, &format!("{name}{ext}"), false) {
+                    if let Some(file) = self.load(slot, rel, scale)? {
+                        return Ok(Some(file));
                     }
                 }
             }
         }
         Ok(None)
+    }
+
+    fn resolve(
+        &mut self,
+        slot: &str,
+        reference: &str,
+        animated: bool,
+    ) -> Result<Option<usize>, SkinError> {
+        let Some((dir, last)) = self.locate(slot, reference) else {
+            return Ok(None);
+        };
+        if animated && let Some(file) = self.image(slot, &dir, &format!("{last}{FIRST_FRAME}"))? {
+            return Ok(Some(file));
+        }
+        self.image(slot, &dir, &last)
+    }
+
+    /// `name-0`, `name-1`, … until the first gap, or `name` alone as a single frame.
+    fn resolve_frames(&mut self, key: &str, reference: &str) -> Result<Vec<usize>, SkinError> {
+        let first = format!("{key}.0");
+        let Some((dir, last)) = self.locate(&first, reference) else {
+            return Ok(Vec::new());
+        };
+        let mut frames = Vec::new();
+        while frames.len() < self.params.max_effect_frames {
+            let slot = format!("{key}.{}", frames.len());
+            match self.image(&slot, &dir, &format!("{last}-{}", frames.len()))? {
+                Some(file) => frames.push(file),
+                None => break,
+            }
+        }
+        if frames.is_empty()
+            && self.params.max_effect_frames > 0
+            && let Some(file) = self.image(&first, &dir, &last)?
+        {
+            frames.push(file);
+        }
+        Ok(frames)
     }
 
     fn load(&mut self, slot: &str, rel: String, scale: u8) -> Result<Option<usize>, SkinError> {
@@ -633,6 +781,9 @@ impl<'p> Resolver<'p> {
             return Ok(Err(SkinDiagCode::PixelBudgetExceeded));
         }
         let total = self.total_bytes.saturating_add(bytes.len() as u64);
+        if total > self.params.max_skin_bytes && self.soft_budget {
+            return Ok(Err(SkinDiagCode::EffectBudgetExceeded));
+        }
         if total > self.params.max_skin_bytes {
             return Err(SkinError::TooLarge {
                 size: total,

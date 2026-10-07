@@ -27,6 +27,7 @@ export function skin7k(overrides: Partial<LoadedSkin> = {}, images: [SkinSlot, S
     columnSpacing: [0, 0, 5, 5, 0, 0],
     columnLineWidth: [2, 2, 2, 2, 2, 2, 2, 2],
     hitPosition: 428,
+    lightPosition: 413,
     widthForNoteHeightScale: 42,
     noteBodyStyle: "RepeatBottom",
     judgementLine: true,
@@ -34,6 +35,14 @@ export function skin7k(overrides: Partial<LoadedSkin> = {}, images: [SkinSlot, S
     colours: { column: [], columnLine: null, judgementLine: null },
     images: new Map(images),
     lnTails: new Map(),
+    effects: {
+      scorePosition: 300,
+      comboPosition: 111,
+      lightingNWidth: [0, 0, 0, 0, 0, 0, 0],
+      lightingLWidth: [0, 0, 0, 0, 0, 0, 0],
+      comboOverlap: 0,
+    },
+    stageLights: new Map(),
     ...overrides,
   };
   return "lnTails" in overrides ? skin : { ...skin, lnTails: flippedTails(skin) };

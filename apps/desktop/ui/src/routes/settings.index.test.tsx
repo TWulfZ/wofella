@@ -284,6 +284,7 @@ describe("/settings/ default skin", () => {
         barlineHeight: 1.2,
         colours: { column: [], columnLine: null, judgementLine: null, barline: null, hold: null },
       },
+      effects: { scorePosition: 300, comboPosition: 111, lightingNWidth: [], lightingLWidth: [], lightColours: [], comboOverlap: 0 },
       images: [{ slot: "note.3", file: 0 }],
       files: [{ mime: "image/png", scale: 1, width: 100, height: 50, base64: "iVBORw0KGgo=" }],
       diagnostics: [],

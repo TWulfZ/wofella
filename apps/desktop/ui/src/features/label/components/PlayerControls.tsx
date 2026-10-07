@@ -2,6 +2,7 @@ import { Pause, Play } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { Clock } from "@/features/playfield";
+import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { formatClock } from "../format";
 
@@ -55,7 +56,26 @@ export function PlayerControls(props: PlayerControlsProps) {
   const label = playing ? t("label.transport.pause") : t("label.transport.play");
   return (
     <>
+      {/* Play and time sit on the right: the left edge belongs to the settings tab and its hover. */}
       <div className="flex items-center gap-3">
+        {rate !== 1 && (
+          <span
+            title={t("label.transport.rate")}
+            className="border-border bg-muted/70 rounded-full border px-2 font-mono text-xs font-semibold tabular-nums"
+          >
+            {t("label.transport.rateValue", { value: rate.toFixed(2) })}
+          </span>
+        )}
+        <div data-testid="playback-readout" className="ml-auto flex min-w-0 flex-col items-end leading-tight">
+          <span className="flex items-baseline gap-2">
+            <span className="text-muted-foreground font-mono text-xs tabular-nums">{range}</span>
+            <PlaybackTime clock={clock} fallbackMs={windowStartMs} />
+          </span>
+          <span className="text-muted-foreground text-xs">
+            {loading && <>{t("label.transport.loadingAudio")} · </>}
+            {duration}
+          </span>
+        </div>
         <Button
           type="button"
           size="icon-lg"
@@ -67,26 +87,30 @@ export function PlayerControls(props: PlayerControlsProps) {
         >
           {playing ? <Pause aria-hidden className="fill-current" /> : <Play aria-hidden className="fill-current" />}
         </Button>
-        <div className="flex min-w-0 flex-col leading-tight">
-          <span className="flex items-baseline gap-2">
-            <PlaybackTime clock={clock} fallbackMs={windowStartMs} />
-            <span className="text-muted-foreground font-mono text-xs tabular-nums">{range}</span>
-          </span>
-          <span className="text-muted-foreground text-xs">
-            {duration}
-            {loading && <> · {t("label.transport.loadingAudio")}</>}
-          </span>
-        </div>
-        {rate !== 1 && (
-          <span
-            title={t("label.transport.rate")}
-            className="border-border bg-muted/70 ml-auto rounded-full border px-2 font-mono text-xs font-semibold tabular-nums"
-          >
-            {t("label.transport.rateValue", { value: rate.toFixed(2) })}
-          </span>
-        )}
       </div>
       {timeline}
     </>
+  );
+}
+
+/** The paused section's call to action, over the middle of the stage. */
+export function CentrePlayButton({ onPlay }: { onPlay: () => void }) {
+  const { t } = useTranslation();
+  const label = t("label.transport.playSection");
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      aria-keyshortcuts="Space"
+      onClick={onPlay}
+      className={cn(
+        "bg-primary/85 text-primary-foreground hover:bg-primary grid size-20 place-items-center rounded-full shadow-xl outline-none backdrop-blur-sm",
+        "focus-visible:ring-ring focus-visible:ring-offset-background focus-visible:ring-4 focus-visible:ring-offset-2",
+        "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-90 motion-safe:duration-200",
+      )}
+    >
+      <Play aria-hidden className="size-9 translate-x-0.5 fill-current" />
+    </button>
   );
 }

@@ -22,7 +22,7 @@ export function SkinPicker({ options, folder, ready, reloading, onChange, onRelo
   const id = useId();
   return (
     <div className="flex flex-col gap-1.5 text-sm">
-      <label htmlFor={id} className="text-muted-foreground">
+      <label htmlFor={id} className="text-foreground/90">
         {t("label.skin.label")}
       </label>
       <div className="flex items-center gap-1.5">
@@ -33,7 +33,7 @@ export function SkinPicker({ options, folder, ready, reloading, onChange, onRelo
           onChange={(e) => {
             onChange(e.target.value === NONE_VALUE ? null : e.target.value);
           }}
-          className="border-input bg-background h-8 min-w-0 flex-1 rounded-md border px-2 text-sm"
+          className="border-input bg-background/80 h-8 min-w-0 flex-1 rounded-md border px-2 text-sm"
         >
           <option value={NONE_VALUE}>{t("label.skin.none")}</option>
           {options.map(({ entry, hasKeymode }) => (

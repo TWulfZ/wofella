@@ -6,17 +6,20 @@ import {
   readOffsetMs,
   readPanelWidthPx,
   readPlaybackRate,
+  readPlayfieldEffects,
   readScrollPrefs,
+  readSettingsHintSeen,
   readZoom,
   scrollFromPrefs,
   type ScrollPrefs,
-  writeFit,
   writeOffsetMs,
   writeOsuSpeed,
   writePanelWidthPx,
   writePlaybackRate,
+  writePlayfieldEffects,
   writePxPerMs,
   writeScrollKind,
+  writeSettingsHintSeen,
   writeSkinChoice,
   writeZoom,
 } from "./prefs";
@@ -45,17 +48,22 @@ describe("audio offset preference", () => {
 });
 
 describe("scroll preferences", () => {
-  it("default to the osu! mode at the given speed, without fitting", () => {
-    expect(readScrollPrefs(DEFAULTS)).toEqual({ kind: "osu", osuSpeed: 20, pxPerMs: 1, fit: false });
-    expect(readScrollPrefs({ osuSpeed: 30, pxPerMs: 0.8 })).toEqual({ kind: "osu", osuSpeed: 30, pxPerMs: 0.8, fit: false });
+  it("default to the osu! mode at the given speed", () => {
+    expect(readScrollPrefs(DEFAULTS)).toEqual({ kind: "osu", osuSpeed: 20, pxPerMs: 1 });
+    expect(readScrollPrefs({ osuSpeed: 30, pxPerMs: 0.8 })).toEqual({ kind: "osu", osuSpeed: 30, pxPerMs: 0.8 });
   });
 
   it("round-trip each field on its own key", () => {
     writeScrollKind("pxPerMs");
     writeOsuSpeed(27);
     writePxPerMs(1.25);
-    writeFit(true);
-    expect(readScrollPrefs(DEFAULTS)).toEqual({ kind: "pxPerMs", osuSpeed: 27, pxPerMs: 1.25, fit: true });
+    expect(readScrollPrefs(DEFAULTS)).toEqual({ kind: "pxPerMs", osuSpeed: 27, pxPerMs: 1.25 });
+  });
+
+  it("ignore a Fit window choice stored before the option was removed", () => {
+    localStorage.setItem("wolluf.label.fit", "true");
+    expect(readScrollPrefs(DEFAULTS)).toEqual({ kind: "osu", osuSpeed: 20, pxPerMs: 1 });
+    expect(scrollFromPrefs(readScrollPrefs(DEFAULTS))).toEqual({ kind: "osu", speed: 20 });
   });
 
   it("keep following the default speed until one is chosen", () => {
@@ -65,9 +73,9 @@ describe("scroll preferences", () => {
 
   it("migrate the old px/ms preference as the px/ms value, switching to the osu! mode", () => {
     localStorage.setItem(LABEL_PREFS.legacyScrollKey, "1.25");
-    expect(readScrollPrefs(DEFAULTS)).toEqual({ kind: "osu", osuSpeed: 20, pxPerMs: 1.25, fit: false });
+    expect(readScrollPrefs(DEFAULTS)).toEqual({ kind: "osu", osuSpeed: 20, pxPerMs: 1.25 });
     localStorage.setItem(LABEL_PREFS.legacyScrollKey, "fit");
-    expect(readScrollPrefs(DEFAULTS)).toEqual({ kind: "osu", osuSpeed: 20, pxPerMs: 1, fit: false });
+    expect(readScrollPrefs(DEFAULTS)).toEqual({ kind: "osu", osuSpeed: 20, pxPerMs: 1 });
   });
 
   it("prefer the new px/ms key over the old one", () => {
@@ -86,15 +94,13 @@ describe("scroll preferences", () => {
     expect(readScrollPrefs(DEFAULTS)).toMatchObject({ osuSpeed: 1, pxPerMs: LABEL_PREFS.minPxPerMs });
     localStorage.setItem(LABEL_PREFS.osuSpeedKey, "fast");
     localStorage.setItem(LABEL_PREFS.pxPerMsKey, "fast");
-    localStorage.setItem(LABEL_PREFS.fitKey, "maybe");
-    expect(readScrollPrefs(DEFAULTS)).toEqual({ kind: "osu", osuSpeed: 20, pxPerMs: 1, fit: false });
+    expect(readScrollPrefs(DEFAULTS)).toEqual({ kind: "osu", osuSpeed: 20, pxPerMs: 1 });
   });
 
   it("turn into the playfield's scroll mode", () => {
-    const prefs: ScrollPrefs = { kind: "osu", osuSpeed: 27, pxPerMs: 1.25, fit: false };
+    const prefs: ScrollPrefs = { kind: "osu", osuSpeed: 27, pxPerMs: 1.25 };
     expect(scrollFromPrefs(prefs)).toEqual({ kind: "osu", speed: 27 });
     expect(scrollFromPrefs({ ...prefs, kind: "pxPerMs" })).toEqual({ kind: "pxPerMs", value: 1.25 });
-    expect(scrollFromPrefs({ ...prefs, fit: true })).toBe("fit");
   });
 });
 
@@ -142,14 +148,13 @@ describe("unavailable storage", () => {
       },
     });
     expect(readOffsetMs()).toBe(0);
-    expect(readScrollPrefs(DEFAULTS)).toEqual({ kind: "osu", osuSpeed: 20, pxPerMs: 1, fit: false });
+    expect(readScrollPrefs(DEFAULTS)).toEqual({ kind: "osu", osuSpeed: 20, pxPerMs: 1 });
     expect(readZoom()).toBe(1);
     expect(() => {
       writeOffsetMs(10);
       writeScrollKind("pxPerMs");
       writeOsuSpeed(30);
       writePxPerMs(1);
-      writeFit(true);
       writeZoom(1.5);
     }).not.toThrow();
   });
@@ -226,5 +231,85 @@ describe("pattern panel width", () => {
       writePanelWidthPx(500);
     }).not.toThrow();
     expect(readPanelWidthPx(416)).toBe(416);
+  });
+});
+
+describe("playfield effect preferences", () => {
+  const DEFAULT_EFFECTS = { percy: true, judgements: false, combo: false, keyPress: false, lighting: false };
+
+  it("default to percy drawn and every other effect off", () => {
+    expect(readPlayfieldEffects()).toEqual(DEFAULT_EFFECTS);
+  });
+
+  it("round-trip each effect on its own key", () => {
+    writePlayfieldEffects({ percy: false, judgements: true, combo: false, keyPress: true, lighting: false });
+    expect(readPlayfieldEffects()).toEqual({ percy: false, judgements: true, combo: false, keyPress: true, lighting: false });
+    expect(localStorage.getItem(LABEL_PREFS.effectKeys.percy)).toBe("false");
+    expect(localStorage.getItem(LABEL_PREFS.effectKeys.lighting)).toBe("false");
+  });
+
+  it("read garbage as the default of that effect alone", () => {
+    localStorage.setItem(LABEL_PREFS.effectKeys.percy, "maybe");
+    localStorage.setItem(LABEL_PREFS.effectKeys.combo, "true");
+    expect(readPlayfieldEffects()).toEqual({ ...DEFAULT_EFFECTS, combo: true });
+  });
+
+  it("work on defaults when the storage throws", () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+    });
+    expect(readPlayfieldEffects()).toEqual(DEFAULT_EFFECTS);
+    expect(() => {
+      writePlayfieldEffects({ ...DEFAULT_EFFECTS, lighting: true });
+    }).not.toThrow();
+  });
+});
+
+describe("playback settings hint", () => {
+  it("is unseen until written, then seen for good", () => {
+    expect(readSettingsHintSeen()).toBe(false);
+    writeSettingsHintSeen();
+    expect(localStorage.getItem(LABEL_PREFS.settingsHintSeenKey)).toBe("true");
+    expect(readSettingsHintSeen()).toBe(true);
+  });
+
+  it.each([
+    ["offset", LABEL_PREFS.offsetKey, "-10"],
+    ["scroll mode", LABEL_PREFS.scrollKindKey, "pxPerMs"],
+    ["osu! speed", LABEL_PREFS.osuSpeedKey, "25"],
+    ["px/ms speed", LABEL_PREFS.pxPerMsKey, "1.2"],
+    ["pre-mode scroll", LABEL_PREFS.legacyScrollKey, "fit"],
+    ["zoom", LABEL_PREFS.zoomKey, "1.5"],
+    ["playback rate", LABEL_PREFS.playbackRateKey, "0.75"],
+    ["skin choice", LABEL_PREFS.skinKey, JSON.stringify({ folder: null })],
+    ["effect toggle", LABEL_PREFS.effectKeys.percy, "false"],
+  ])("reads as seen for a viewer who already changed the %s", (_, key, value) => {
+    localStorage.setItem(key, value);
+    expect(readSettingsHintSeen()).toBe(true);
+  });
+
+  it("is not dismissed by a stored panel width, which is no playback setting", () => {
+    localStorage.setItem(LABEL_PREFS.panelWidthKey, "420");
+    expect(readSettingsHintSeen()).toBe(false);
+  });
+
+  it("reads as unseen and drops the write when the storage throws", () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+    });
+    expect(() => {
+      writeSettingsHintSeen();
+    }).not.toThrow();
+    expect(readSettingsHintSeen()).toBe(false);
   });
 });

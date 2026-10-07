@@ -17,6 +17,8 @@ export const PLAYFIELD_COLORS = {
   handSeparator: "rgba(255, 102, 170, 0.6)",
   judgementLine: "#ff66aa",
   shade: "rgba(0, 0, 0, 0.6)",
+  maxText: "#ffe28a",
+  comboText: "#ffffff",
 } as const;
 
 /** `col` is 0-based. */

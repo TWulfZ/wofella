@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { clampOsuSpeed, DEFAULT_STAGE_PARAMS } from "@/features/playfield";
+import { clampOsuSpeed, DEFAULT_STAGE_PARAMS, type PlayfieldEffects } from "@/features/playfield";
 import { LABEL_PREFS, type ScrollKind, type ScrollPrefs } from "../prefs";
 import { SkinPicker, type SkinPickerProps } from "./SkinPicker";
 
@@ -19,7 +19,31 @@ const SCROLL_KINDS = [
   { kind: "pxPerMs", labelKey: "label.transport.modePxPerMs" },
 ] as const satisfies readonly { kind: ScrollKind; labelKey: string }[];
 
-const FIELD = "border-input bg-background h-8 rounded-md border px-2 text-sm";
+const FIELD = "border-input bg-background/80 h-8 rounded-md border px-2 text-sm";
+
+// Labels sit on the flyout's translucent surface, where muted text would fall under 4.5:1 over a bright stage.
+const LABEL_TEXT = "text-foreground/90";
+
+type EffectId = keyof PlayfieldEffects;
+
+/**
+ * Display order; "inverted" marks the toggle that reads as the effect's negation. "textFallback" marks the effects the
+ * playfield draws as text when the skin lacks their art, so they stay on offer and only say so. "autoplay" marks the
+ * effects driven by the simulated autoplay rather than by the chart alone.
+ */
+const EFFECT_TOGGLES = [
+  { id: "percy", labelKey: "label.effects.percyOff", inverted: true, textFallback: false, autoplay: false },
+  { id: "judgements", labelKey: "label.effects.judgements", inverted: false, textFallback: true, autoplay: true },
+  { id: "combo", labelKey: "label.effects.combo", inverted: false, textFallback: true, autoplay: true },
+  { id: "keyPress", labelKey: "label.effects.keyPress", inverted: false, textFallback: false, autoplay: true },
+  { id: "lighting", labelKey: "label.effects.lighting", inverted: false, textFallback: false, autoplay: true },
+] as const satisfies readonly {
+  id: EffectId;
+  labelKey: string;
+  inverted: boolean;
+  textFallback: boolean;
+  autoplay: boolean;
+}[];
 
 interface SettingProps {
   id: string;
@@ -32,7 +56,7 @@ function Setting({ id, label, value, children }: SettingProps) {
   return (
     <div className="flex flex-col gap-1.5 text-sm">
       <div className="flex items-baseline justify-between gap-2">
-        <label htmlFor={id} className="text-muted-foreground">
+        <label htmlFor={id} className={LABEL_TEXT}>
           {label}
         </label>
         {value !== undefined && (
@@ -111,11 +135,114 @@ interface PlaybackSettingsProps {
   rate: number;
   onRate: (rate: number) => void;
   skin: SkinPickerProps;
+  effects: PlayfieldEffects;
+  onEffects: (patch: Partial<PlayfieldEffects>) => void;
+  /** Whether the loaded skin has what each effect draws with. */
+  effectSupport: Record<EffectId, boolean>;
+  /** The chosen skin is still on its way, so `effectSupport` describes the procedural stage, not the skin. */
+  skinLoading?: boolean;
   seed: string;
 }
 
+interface EffectToggleProps {
+  label: string;
+  checked: boolean;
+  disabled: boolean;
+  /** Why the toggle is disabled, or how it draws without the skin's art; null when there is nothing to say. */
+  note: string | null;
+  onChange: (checked: boolean) => void;
+}
+
+function EffectToggle({ label, checked, disabled, note, onChange }: EffectToggleProps) {
+  const id = useId();
+  const reasonId = useId();
+  return (
+    <div className="flex flex-col gap-0.5">
+      <label htmlFor={id} title={note ?? undefined} className="flex items-center gap-2 text-sm has-disabled:opacity-60">
+        <input
+          id={id}
+          type="checkbox"
+          // A disabled effect draws nothing, so it never reads as on, though the choice is kept for skins that can.
+          checked={checked && !disabled}
+          disabled={disabled}
+          aria-describedby={note === null ? undefined : reasonId}
+          onChange={(e) => {
+            onChange(e.target.checked);
+          }}
+          className="focus-visible:ring-ring size-4 outline-none focus-visible:ring-2"
+        />
+        {label}
+      </label>
+      {note !== null && (
+        <p id={reasonId} className={`${LABEL_TEXT} pl-6 text-xs`}>
+          {note}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function SkinEffects({
+  effects,
+  onEffects,
+  effectSupport,
+  skinLoading,
+}: Pick<PlaybackSettingsProps, "effects" | "onEffects" | "effectSupport"> & { skinLoading: boolean }) {
+  const { t } = useTranslation();
+  const drawable = (toggle: (typeof EFFECT_TOGGLES)[number]): boolean => effectSupport[toggle.id] || toggle.textFallback;
+  // Only an effect that is actually drawn follows the autoplay; a chosen one the skin cannot draw shows nothing.
+  const autoplay = EFFECT_TOGGLES.some((toggle) => toggle.autoplay && effects[toggle.id] && drawable(toggle));
+  const note = ({ id, textFallback }: (typeof EFFECT_TOGGLES)[number]): string | null => {
+    if (effectSupport[id]) {
+      return null;
+    }
+    if (textFallback) {
+      return t(`label.effects.textFallback.${id}`);
+    }
+    return skinLoading ? null : t(`label.effects.unsupported.${id}`);
+  };
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className={`${LABEL_TEXT} mb-1.5 text-sm`}>{t("label.effects.title")}</legend>
+      {skinLoading && (
+        <p role="status" className={`${LABEL_TEXT} text-xs`}>
+          {t("label.effects.skinLoading")}
+        </p>
+      )}
+      {EFFECT_TOGGLES.map((toggle) => (
+        <EffectToggle
+          key={toggle.id}
+          label={t(toggle.labelKey)}
+          checked={toggle.inverted ? !effects[toggle.id] : effects[toggle.id]}
+          disabled={!drawable(toggle)}
+          note={note(toggle)}
+          onChange={(checked) => {
+            onEffects({ [toggle.id]: toggle.inverted ? !checked : checked });
+          }}
+        />
+      ))}
+      {autoplay && <p className={`${LABEL_TEXT} text-xs`}>{t("label.effects.autoplay")}</p>}
+    </fieldset>
+  );
+}
+
 export function PlaybackSettings(props: PlaybackSettingsProps) {
-  const { offsetMs, onOffset, scroll, onScroll, zoom, onZoom, rate, onRate, skin, seed } = props;
+  const {
+    offsetMs,
+    onOffset,
+    scroll,
+    onScroll,
+    zoom,
+    onZoom,
+    rate,
+    onRate,
+    skin,
+    effects,
+    onEffects,
+    effectSupport,
+    skinLoading = false,
+    seed,
+  } = props;
   const { t } = useTranslation();
   const offsetId = useId();
   const rateId = useId();
@@ -193,7 +320,6 @@ export function PlaybackSettings(props: PlaybackSettingsProps) {
             max={DEFAULT_STAGE_PARAMS.maxOsuSpeed}
             step={DEFAULT_STAGE_PARAMS.osuSpeedStep}
             value={scroll.osuSpeed}
-            disabled={scroll.fit}
             aria-keyshortcuts="F3 F4"
             title={t("label.transport.osuSpeedHint")}
             onChange={(e) => {
@@ -201,7 +327,7 @@ export function PlaybackSettings(props: PlaybackSettingsProps) {
                 onScroll({ osuSpeed: clampOsuSpeed(Number(e.target.value)) });
               }
             }}
-            className={`${FIELD} w-20 font-mono tabular-nums disabled:opacity-40`}
+            className={`${FIELD} w-20 font-mono tabular-nums`}
           />
         </Setting>
       ) : (
@@ -217,26 +343,13 @@ export function PlaybackSettings(props: PlaybackSettingsProps) {
             max={LABEL_PREFS.maxPxPerMs}
             step={SCROLL_STEP}
             value={scroll.pxPerMs}
-            disabled={scroll.fit}
             onChange={(e) => {
               onScroll({ pxPerMs: Number(e.target.value) });
             }}
-            className="w-full accent-current disabled:opacity-40"
+            className="w-full accent-current"
           />
         </Setting>
       )}
-
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={scroll.fit}
-          onChange={(e) => {
-            onScroll({ fit: e.target.checked });
-          }}
-          className="focus-visible:ring-ring size-4 outline-none focus-visible:ring-2"
-        />
-        {t("label.transport.fit")}
-      </label>
 
       <Setting id={zoomId} label={t("label.transport.zoom")} value={t("label.transport.zoomValue", { value: zoom.toFixed(2) })}>
         <input
@@ -254,8 +367,9 @@ export function PlaybackSettings(props: PlaybackSettingsProps) {
       </Setting>
 
       <SkinPicker {...skin} />
+      <SkinEffects effects={effects} onEffects={onEffects} effectSupport={effectSupport} skinLoading={skinLoading} />
 
-      <p className="text-muted-foreground mt-auto font-mono text-xs">{t("label.player.seed", { seed })}</p>
+      <p className="text-foreground/80 mt-auto font-mono text-xs">{t("label.player.seed", { seed })}</p>
     </>
   );
 }

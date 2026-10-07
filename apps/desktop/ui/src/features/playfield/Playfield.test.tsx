@@ -1,7 +1,10 @@
 import { act, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Clock } from "./audioClock";
+import { autoplayFrame, autoplayTimeline } from "./autoplay";
 import { DEFAULT_PLAYFIELD_THEME, draw, drawSkinned } from "./draw";
+import type { PlayfieldFx } from "./drawEffects";
+import { DEFAULT_PLAYFIELD_EFFECTS, type PlayfieldEffects } from "./effects";
 import { Playfield } from "./Playfield";
 import { fitPxPerMs, project } from "./project";
 import { skinLayout } from "./skinLayout";
@@ -255,13 +258,14 @@ describe("Playfield with a skin", () => {
     vi.stubGlobal("OffscreenCanvas", layerCanvases.FakeOffscreenCanvas);
   });
 
-  function expectedSkinned(nowMs: number, pxPerMs: number, zoom = 1) {
-    const layout = skinLayout(SKIN, H, zoom);
+  function expectedSkinned(nowMs: number, pxPerMs: number, zoom = 1, skin = SKIN, fx?: PlayfieldFx) {
+    const layout = skinLayout(skin, H, zoom);
     const { ctx, all } = recordingContext();
     const view = { width: Math.min(layout.width, CONTAINER_W), height: H, judgeY: layout.judgeY };
     // The component draws in CSS px under the device-pixel transform (devicePixelRatio 2 here).
     ctx.setTransform(2, 0, 0, 2, 0, 0);
-    drawSkinned(ctx, project(WINDOW, { ...view, nowMs, pxPerMs }), layout, SKIN, DEFAULT_PLAYFIELD_THEME, view);
+    const projection = project(WINDOW, { ...view, nowMs, pxPerMs });
+    drawSkinned(ctx, projection, layout, skin, DEFAULT_PLAYFIELD_THEME, view, undefined, undefined, fx);
     return { all, layout };
   }
 
@@ -355,6 +359,40 @@ describe("Playfield with a skin", () => {
       expect(bottoms[1]).toBeCloseTo(judgeY / 2);
     },
   );
+
+  it("draws the simulated autoplay's effects for the clock's time when they are toggled on", () => {
+    const skin = skin7k({}, [
+      [SKIN_SLOT.note(3), image(100, 50)],
+      [SKIN_SLOT.hit("300g"), image(100, 40)],
+    ]);
+    const effects: PlayfieldEffects = { ...DEFAULT_PLAYFIELD_EFFECTS, judgements: true, combo: true };
+    const clock = fakeClock(1100, true);
+    render(<Playfield window={WINDOW} clock={clock} scroll={PX} skin={skin} effects={effects} />);
+    observer().resize(CONTAINER_W, H);
+    rec.all.length = 0;
+    runFrame();
+    const frame = autoplayFrame(autoplayTimeline(WINDOW), 1100);
+    expect(frame.combo).toBe(1);
+    expect(flattened()).toEqual(expectedSkinned(1100, 0.5, 1, skin, { flags: effects, frame }).all);
+    expect(rec.images.some((op) => op.image === skin.images.get(SKIN_SLOT.hit("300g"))?.bitmap)).toBe(true);
+  });
+
+  it("passes the percy switch without simulating the autoplay", () => {
+    const effects: PlayfieldEffects = { ...DEFAULT_PLAYFIELD_EFFECTS, percy: false };
+    render(<Playfield window={WINDOW} clock={null} scroll={PX} skin={SKIN} effects={effects} />);
+    observer().resize(CONTAINER_W, H);
+    expect(flattened()).toEqual(expectedSkinned(WINDOW.fromMs, 0.5, 1, SKIN, { flags: effects, frame: null }).all);
+  });
+
+  it("writes judgements and combo as text on the procedural stage", () => {
+    const effects: PlayfieldEffects = { ...DEFAULT_PLAYFIELD_EFFECTS, judgements: true, combo: true };
+    const clock = fakeClock(1100, true);
+    render(<Playfield window={WINDOW} clock={clock} scroll={PX} hitPosition={HIT_POSITION} effects={effects} />);
+    observer().resize(CONTAINER_W, H);
+    rec.texts.length = 0;
+    runFrame();
+    expect(rec.texts.map((t) => t.text)).toEqual(["MAX", "1"]);
+  });
 
   it("draws procedurally, with no image, when the skin is null", () => {
     render(<Playfield window={WINDOW} clock={null} scroll={PX} hitPosition={HIT_POSITION} skin={null} />);

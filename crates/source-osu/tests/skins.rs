@@ -664,3 +664,128 @@ fn skins_list_reads_names_and_key_counts() {
     let err = list_skins(&skins.path().join("missing"), &SkinsParams::default()).unwrap_err();
     assert_eq!(err, SkinError::Missing);
 }
+
+#[test]
+fn skins_hit_bursts_follow_explicit_then_default_names_frame_zero_first() {
+    let (skins, dir) = skin(&format!(
+        "{SEVEN_K}Hit300g: judge\\max\r\nHit50: missing-50\r\n"
+    ));
+    put(&dir, "judge/max-0.png", &png(10, 10));
+    put(&dir, "judge/max-1.png", &png(11, 11));
+    put(&dir, "judge/max.png", &png(12, 12));
+    put(&dir, "MANIA-HIT300.png", &png(20, 20));
+    put(&dir, "mania-hit200@2x.png", &png(30, 30));
+    put(&dir, "mania-hit50.png", &png(40, 40));
+    let s = load(&skins);
+    assert_eq!(path_of(&s, "hit.300g").as_deref(), Some("judge/max-0.png"));
+    assert_eq!(path_of(&s, "hit.300").as_deref(), Some("MANIA-HIT300.png"));
+    assert_eq!(file(&s, "hit.200").map(|f| f.scale), Some(2));
+    assert_eq!(
+        path_of(&s, "hit.50").as_deref(),
+        Some("mania-hit50.png"),
+        "a broken explicit reference falls back to the default name in the skin, as the pilot's \
+         active skin needs (its `mania/stage/` paths do not exist)"
+    );
+    assert_eq!(path_of(&s, "hit.100"), None);
+    assert!(has_diag(&s, SkinDiagCode::ImageMissing, "hit.100"));
+    assert_eq!(path_of(&s, "hit.0"), None);
+}
+
+#[test]
+fn skins_combo_digits_use_the_fonts_prefix_or_score() {
+    let (skins, dir) = skin(&format!(
+        "{SEVEN_K}[Fonts]\r\nComboPrefix: Fonts\\combo\r\nComboOverlap: 4\r\n"
+    ));
+    for d in 0..10 {
+        put(&dir, &format!("fonts/Combo-{d}.png"), &png(8, 12));
+        put(&dir, &format!("score-{d}.png"), &png(9, 13));
+    }
+    put(&dir, "fonts/combo-5@2x.png", &png(16, 24));
+    let s = load(&skins);
+    for d in 0..10 {
+        let want = if d == 5 {
+            "fonts/combo-5@2x.png".to_owned()
+        } else {
+            format!("fonts/Combo-{d}.png")
+        };
+        assert_eq!(path_of(&s, &format!("combo.{d}")), Some(want), "{d}");
+    }
+    assert_eq!(s.fonts.combo_overlap, 4.0);
+
+    let (skins, dir) = skin(SEVEN_K);
+    put(&dir, "score-0.png", &png(9, 13));
+    put(&dir, "score-0-0.png", &png(1, 1));
+    let s = load(&skins);
+    assert_eq!(
+        path_of(&s, "combo.0").as_deref(),
+        Some("score-0.png"),
+        "lazer's default prefix; font glyphs are not animated"
+    );
+    assert_eq!(s.fonts.combo_overlap, 0.0);
+    assert!(has_diag(&s, SkinDiagCode::ImageMissing, "combo.1"));
+}
+
+#[test]
+fn skins_lighting_frames_run_until_the_first_gap() {
+    let (skins, dir) = skin(&format!("{SEVEN_K}LightingL: fx\\hold\r\n"));
+    for f in [0, 1, 2, 4] {
+        put(&dir, &format!("LightingN-{f}.png"), &png(50, 50));
+    }
+    put(&dir, "lightingN.png", &png(1, 1));
+    put(&dir, "fx/hold.png", &png(60, 60));
+    let s = load(&skins);
+    let frames = |kind: &str| -> Vec<String> {
+        (0..8)
+            .map_while(|f| path_of(&s, &format!("lighting.{kind}.{f}")))
+            .collect()
+    };
+    assert_eq!(
+        frames("n"),
+        ["LightingN-0.png", "LightingN-1.png", "LightingN-2.png"]
+    );
+    assert_eq!(path_of(&s, "lighting.n.3"), None);
+    assert_eq!(path_of(&s, "lighting.n.4"), None, "frames stop at the gap");
+    assert_eq!(frames("l"), ["fx/hold.png"], "a still image is frame 0");
+
+    let params = SkinsParams {
+        max_effect_frames: 2,
+        ..SkinsParams::default()
+    };
+    let s = load_skin(skins.path(), FOLDER, 7, &params).unwrap();
+    assert!(path_of(&s, "lighting.n.1").is_some());
+    assert_eq!(path_of(&s, "lighting.n.2"), None, "capped");
+
+    let (skins, _) = skin(SEVEN_K);
+    let s = load(&skins);
+    assert!(has_diag(&s, SkinDiagCode::ImageMissing, "lighting.n.0"));
+    assert!(has_diag(&s, SkinDiagCode::ImageMissing, "lighting.l.0"));
+}
+
+#[test]
+fn skins_effects_over_the_byte_budget_are_dropped_not_fatal() {
+    let (skins, dir) = skin(SEVEN_K);
+    put(&dir, "mania-note1.png", &png(2, 2));
+    put(&dir, "mania-hit300g.png", &png(4, 4));
+    let core = png(2, 2).len() as u64;
+    let params = SkinsParams {
+        max_skin_bytes: core,
+        ..SkinsParams::default()
+    };
+    let s = load_skin(skins.path(), FOLDER, 7, &params).unwrap();
+    assert!(path_of(&s, "note.0").is_some());
+    assert_eq!(path_of(&s, "hit.300g"), None);
+    assert!(has_diag(&s, SkinDiagCode::EffectBudgetExceeded, "hit.300g"));
+    assert_eq!(s.files.len(), 1);
+
+    let params = SkinsParams {
+        max_skin_bytes: core - 1,
+        ..SkinsParams::default()
+    };
+    assert!(
+        matches!(
+            load_skin(skins.path(), FOLDER, 7, &params),
+            Err(SkinError::TooLarge { .. })
+        ),
+        "the playfield's own slots still fail the load"
+    );
+}

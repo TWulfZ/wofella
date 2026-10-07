@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SKIN_SLOT } from "../skinModel";
 import { fakeOffscreenCanvas } from "../testCanvas";
 import { DEFAULT_SKIN_LOADER_PARAMS, loadSkin } from "./loadSkin";
-import { BROKEN_MIME, config7k, fakeCreateImageBitmap, file, skinDto } from "./testSkinDto";
+import { BROKEN_MIME, config7k, fakeCreateImageBitmap, file, skinDto, skinEffects } from "./testSkinDto";
 
 let fake: ReturnType<typeof fakeCreateImageBitmap>;
 let surfaces: ReturnType<typeof fakeOffscreenCanvas>;
@@ -62,6 +62,7 @@ describe("loadSkin", () => {
       columnSpacing: [0, 0, 5, 5, 0, 0],
       columnLineWidth: [2, 2, 2, 2, 2, 2, 2, 2],
       hitPosition: 428,
+      lightPosition: 413,
       widthForNoteHeightScale: null,
       noteBodyStyle: "Stretch",
       judgementLine: true,
@@ -73,7 +74,57 @@ describe("loadSkin", () => {
       },
       images: new Map(),
       lnTails: new Map(),
+      effects: {
+        scorePosition: 300,
+        comboPosition: 111,
+        lightingNWidth: [0, 0, 0, 0, 0, 0, 0],
+        lightingLWidth: [0, 0, 0, 0, 0, 0, 0],
+        comboOverlap: 0,
+      },
+      stageLights: new Map(),
     });
+  });
+
+  it("maps the effect placement, and reads null numbers and short per-column lists as lazer's defaults", async () => {
+    const effects = {
+      scorePosition: 250,
+      comboPosition: 140,
+      lightingNWidth: [40, null, 40, 40, 40, 40, 40],
+      lightingLWidth: [50, 50, 50, 50, 50, 50, 50],
+      lightColours: [],
+      comboOverlap: -2,
+    };
+    const { skin } = await loadSkin(skinDto({ effects }));
+    expect(skin.effects).toEqual({
+      scorePosition: 250,
+      comboPosition: 140,
+      lightingNWidth: [40, 0, 40, 40, 40, 40, 40],
+      lightingLWidth: [50, 50, 50, 50, 50, 50, 50],
+      comboOverlap: -2,
+    });
+
+    const p = DEFAULT_SKIN_LOADER_PARAMS;
+    const nulls = { ...effects, scorePosition: null, comboPosition: null, comboOverlap: null };
+    const loaded = (await loadSkin(skinDto({ effects: nulls }))).skin.effects;
+    expect(loaded.scorePosition).toBe(p.defaultScorePosition);
+    expect(loaded.comboPosition).toBe(p.defaultComboPosition);
+    expect(loaded.comboOverlap).toBe(0);
+    const short = skinDto({ effects: skinEffects(7, { lightingNWidth: [], lightingLWidth: [30] }) });
+    expect((await loadSkin(short)).skin.effects.lightingNWidth).toEqual([0, 0, 0, 0, 0, 0, 0]);
+    expect((await loadSkin(short)).skin.effects.lightingLWidth).toEqual([30, 0, 0, 0, 0, 0, 0]);
+    expect((await loadSkin(skinDto({ config: config7k({ lightPosition: null }) }))).skin.lightPosition).toBe(
+      p.defaultLightPosition,
+    );
+  });
+
+  it("keeps the playback effect slots: hit bursts, combo digits and lighting frames", async () => {
+    const slots = ["hit.300g", "hit.0", "combo.0", "combo.9", "lighting.n.0", "lighting.n.11", "lighting.l.0"];
+    const { skin, failedSlots } = await loadSkin(
+      skinDto({ files: [file(10, 10)], images: slots.map((slot) => ({ slot, file: 0 })) }),
+    );
+    expect([...skin.images.keys()]).toEqual(slots);
+    expect(failedSlots).toEqual([]);
+    expect(skin.images.get(SKIN_SLOT.lightingN(11))).toBeDefined();
   });
 
   it("fills numbers the wire left null with skin.ini's defaults", async () => {
@@ -237,6 +288,53 @@ describe("loadSkin", () => {
     expect(failedSlots).toEqual(["note.2"]);
   });
 
+  it("tints stage.light per column with ColourLight, the wiki's default where unset, painting each colour once", async () => {
+    const own: [number, number, number, number] = [10, 20, 30, 128];
+    const { skin } = await loadSkin(
+      skinDto({
+        files: [file(20, 100)],
+        images: [{ slot: "stage.light", file: 0 }],
+        effects: {
+          scorePosition: 300,
+          comboPosition: 111,
+          lightingNWidth: [],
+          lightingLWidth: [],
+          lightColours: [own, null, null, null, null, null, own],
+          comboOverlap: 0,
+        },
+      }),
+    );
+    const [light] = fake.bitmaps;
+    expect(surfaces.instances.map((c) => [c.width, c.height])).toEqual([
+      [20, 100],
+      [20, 100],
+    ]);
+    const [ownTint, defaultTint] = surfaces.instances;
+    const d = DEFAULT_SKIN_LOADER_PARAMS.defaultLightColour;
+    for (const [canvas, rgb, alpha] of [
+      [ownTint, "rgb(10, 20, 30)", 128 / 255],
+      [defaultTint, `rgb(${d.r}, ${d.g}, ${d.b})`, 1],
+    ] as const) {
+      expect(canvas?.rec.all).toEqual([
+        expect.objectContaining({ type: "image", image: light, dx: 0, dy: 0, dw: 20, dh: 100, alpha: 1 }),
+        expect.objectContaining({ type: "fill", x: 0, y: 0, w: 20, h: 100, fill: rgb, composite: "multiply" }),
+        expect.objectContaining({ type: "image", image: light, alpha, composite: "destination-in" }),
+      ]);
+      expect(canvas?.rec.ctx.globalCompositeOperation).toBe("source-over");
+    }
+    expect([...skin.stageLights.keys()]).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(skin.stageLights.get(0)).toEqual({ bitmap: ownTint, width: 20, height: 100, scale: 1, sourceHeight: 100 });
+    expect(skin.stageLights.get(6)?.bitmap).toBe(ownTint);
+    expect(skin.stageLights.get(3)?.bitmap).toBe(defaultTint);
+  });
+
+  it("leaves stage lights untinted when no offscreen surface can be made", async () => {
+    vi.stubGlobal("OffscreenCanvas", undefined);
+    const { skin } = await loadSkin(skinDto({ files: [file(20, 100)], images: [{ slot: "stage.light", file: 0 }] }));
+    expect(skin.stageLights.size).toBe(0);
+    expect(skin.images.get(SKIN_SLOT.stageLight)).toBeDefined();
+  });
+
   it("closes every bitmap it created on dispose, once", async () => {
     const tall = DEFAULT_SKIN_LOADER_PARAMS.maxBodyHeightPx * 2;
     const result = await loadSkin(
@@ -246,16 +344,20 @@ describe("loadSkin", () => {
           { slot: "note.0", file: 0 },
           { slot: "body.0", file: 1 },
           { slot: "stage.right", file: 1 },
+          { slot: "stage.light", file: 0 },
         ],
       }),
     );
     expect(fake.bitmaps).toHaveLength(3);
-    expect(surfaces.instances).toHaveLength(1);
+    expect(surfaces.instances).toHaveLength(2);
     result.dispose();
     result.dispose();
     for (const bitmap of fake.bitmaps) {
       expect(bitmap.close).toHaveBeenCalledTimes(1);
     }
-    expect(surfaces.instances.map((c) => [c.width, c.height])).toEqual([[0, 0]]);
+    expect(surfaces.instances.map((c) => [c.width, c.height])).toEqual([
+      [0, 0],
+      [0, 0],
+    ]);
   });
 });

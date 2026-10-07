@@ -11,6 +11,7 @@ export {
 } from "./audioClock";
 export { COLUMN_COLORS, columnColor, PLAYFIELD_COLORS } from "./colors";
 export { decodeBase64Audio } from "./decodeAudio";
+export { DEFAULT_PLAYFIELD_EFFECTS, type PlayfieldEffects, skinEffectSupport } from "./effects";
 export { DEFAULT_PLAYFIELD_THEME, draw, type Draw2D, type DrawView, drawSkinned, type PlayfieldTheme } from "./draw";
 export { PatternPreview, type PatternPreviewProps } from "./PatternPreview";
 export { Playfield, type PlayfieldProps } from "./Playfield";

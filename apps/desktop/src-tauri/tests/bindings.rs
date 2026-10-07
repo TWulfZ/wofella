@@ -57,6 +57,7 @@ mod bindings {
             "SkinListDto",
             "skinGet",
             "SkinDto",
+            "SkinEffectsDto",
             "labelTaxonomy",
             "labelSample",
             "labelSubmit",

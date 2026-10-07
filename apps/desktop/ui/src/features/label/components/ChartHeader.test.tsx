@@ -58,6 +58,14 @@ function rgb(hex: string): string {
 }
 
 describe("ChartHeader", () => {
+  it("spans its column edge to edge, as the panel's background, with a separator line under it", () => {
+    const { container } = renderHeader({ background: IMAGE });
+    const header = container.querySelector("header");
+    expect(header?.className).not.toMatch(/(^|\s)(m|mx|ml|mr|p|px|pl|pr)-\S+/);
+    expect(header?.className).not.toMatch(/(^|\s)border(\s|$)/);
+    expect(header).toHaveClass("w-full", "border-b");
+  });
+
   it("names the chart: title as a heading, artist, mapper, difficulty name, origin and tags", () => {
     renderHeader();
     expect(screen.getByRole("heading", { name: "Alpha Song" })).toBeInTheDocument();

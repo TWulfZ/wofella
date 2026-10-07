@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/shared/lib/utils";
 import type { Clock } from "./audioClock";
+import { autoplayFrame, autoplayTimeline } from "./autoplay";
 import { DEFAULT_PLAYFIELD_THEME, draw, drawSkinned } from "./draw";
+import type { PlayfieldFx } from "./drawEffects";
+import { DEFAULT_PLAYFIELD_EFFECTS, type PlayfieldEffects } from "./effects";
 import { fitPxPerMs, project } from "./project";
 import { skinLayout } from "./skinLayout";
 import type { LoadedSkin } from "./skinModel";
@@ -29,6 +32,8 @@ export interface PlayfieldProps {
   rate?: number;
   /** Null or absent draws procedurally; the skin's slots that did not load fall back one by one. */
   skin?: LoadedSkin | null;
+  /** Skin toggles and the simulated perfect autoplay's effects; defaults to `DEFAULT_PLAYFIELD_EFFECTS`. */
+  effects?: PlayfieldEffects;
   className?: string;
 }
 
@@ -40,7 +45,16 @@ export function Playfield(props: PlayfieldProps) {
     zoom = DEFAULT_STAGE_PARAMS.defaultZoom,
     rate = 1,
     skin = null,
+    effects = DEFAULT_PLAYFIELD_EFFECTS,
   } = props;
+  const { percy, judgements, combo, keyPress, lighting } = effects;
+  // Keyed on the flags, not the object, so a caller rebuilding `effects` each render does not restart the loop.
+  const flags = useMemo(
+    () => ({ percy, judgements, combo, keyPress, lighting }),
+    [percy, judgements, combo, keyPress, lighting],
+  );
+  const animated = judgements || combo || keyPress || lighting;
+  const timeline = useMemo(() => (animated ? autoplayTimeline(chartWindow) : null), [animated, chartWindow]);
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -98,10 +112,12 @@ export function Playfield(props: PlayfieldProps) {
     const view = { width, height, judgeY };
     const render = (nowMs: number): void => {
       const projection = project(chartWindow, { ...view, nowMs, pxPerMs });
+      const fx: PlayfieldFx = { flags, frame: timeline === null ? null : autoplayFrame(timeline, nowMs) };
       if (skin === null || layout === null) {
-        draw(ctx, projection, DEFAULT_PLAYFIELD_THEME, view);
+        draw(ctx, projection, DEFAULT_PLAYFIELD_THEME, view, fx);
       } else {
-        drawSkinned(ctx, projection, layout, skin, DEFAULT_PLAYFIELD_THEME, view, undefined, { background: stageBackground, dpr });
+        const stage = { background: stageBackground, dpr };
+        drawSkinned(ctx, projection, layout, skin, DEFAULT_PLAYFIELD_THEME, view, undefined, stage, fx);
       }
     };
     // Paused at the chosen speed, so pressing play does not rescale what was just read.
@@ -130,7 +146,7 @@ export function Playfield(props: PlayfieldProps) {
     return () => {
       cancelAnimationFrame(frame);
     };
-  }, [chartWindow, clock, pxPerMs, judgeY, width, height, skin, layout, stageBackground]);
+  }, [chartWindow, clock, pxPerMs, judgeY, width, height, skin, layout, stageBackground, flags, timeline]);
 
   return (
     <div ref={containerRef} className={cn("relative overflow-hidden", className)}>

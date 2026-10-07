@@ -161,3 +161,9 @@ The pilot reported the Label screen working correctly on Windows: section audio 
 - `-0` frames against the plain name.
 - `NoteBodyStyle` values (wiki 0/1/2 against lazer's 0/2/3/4).
 - F3/F4 direction.
+- Playback effects (ADR 0019 amendment 2026-10-07), all lazer-derived and unchecked against stable:
+  - an unset `ColourLight`: wolluf uses the wiki's 55,255,255, lazer uses white;
+  - effect images sized in lazer units, the stage light's height included;
+  - a broken explicit effect path falling back to the default name in the same skin (stable's behaviour unknown);
+  - LN heads and tails judged and counted separately, as lazer does.
+- The pilot's active skin writes `Hit*: mania/stage/mania-hit*` in its 7K block while those files sit in the skin root (seen 2026-10-07 by the `corpus_skins` harness): a real instance of the explicit-path question above.

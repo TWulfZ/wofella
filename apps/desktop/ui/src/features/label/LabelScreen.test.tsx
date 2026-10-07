@@ -2,6 +2,8 @@ import type { QueryClient } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type * as PlayfieldModule from "@/features/playfield";
+import { Playfield, type PlayfieldEffects, skinEffectSupport } from "@/features/playfield";
 import type {
   AnchorDto,
   ChartDetailsDto,
@@ -24,6 +26,25 @@ import { writeOpenAxes } from "./components/patternGridPrefs";
 import { LABEL_SCREEN_PARAMS, LabelScreen, type LabelScreenParams, type LabelScreenProps } from "./LabelScreen";
 import { LABEL_PREFS } from "./prefs";
 import { skinKeys } from "./queries";
+
+// Playfield passes through, recorded, so its props are observable; skin support is set per test, since what a skin
+// supports is the playfield feature's call and is tested there.
+vi.mock("@/features/playfield", async (importOriginal) => {
+  const actual = await importOriginal<typeof PlayfieldModule>();
+  return { ...actual, Playfield: vi.fn(actual.Playfield), skinEffectSupport: vi.fn() };
+});
+
+const ALL_EFFECTS_SUPPORTED: Record<keyof PlayfieldEffects, boolean> = {
+  percy: true,
+  judgements: true,
+  combo: true,
+  keyPress: true,
+  lighting: true,
+};
+
+function lastPlayfieldEffects(): PlayfieldEffects | undefined {
+  return vi.mocked(Playfield).mock.lastCall?.[0].effects;
+}
 
 const TAXONOMY: PatternDefDto[] = [
   { id: "regular.jack.minijack", axis: "7k.regular.jack", key: "mj", description: "exactly two notes in one column" },
@@ -114,6 +135,7 @@ function skinDto(folder: string, keymode: number, noteMime = "image/png"): SkinD
       barlineHeight: 1.2,
       colours: { column: [], columnLine: null, judgementLine: null, barline: null, hold: null },
     },
+    effects: { scorePosition: 300, comboPosition: 111, lightingNWidth: [], lightingLWidth: [], lightColours: [], comboOverlap: 0 },
     images: [{ slot: "note.3", file: 0 }],
     files: [{ mime: noteMime, scale: 1, width: 100, height: 50, base64: "iVBORw0KGgo=" }],
     diagnostics: [],
@@ -227,6 +249,7 @@ beforeEach(() => {
   FakeAudioContext.created = 0;
   FakeAudioContext.closed = 0;
   FakeAudioContext.sources = [];
+  vi.mocked(skinEffectSupport).mockReset().mockReturnValue(ALL_EFFECTS_SUPPORTED);
   vi.stubGlobal("ResizeObserver", NoopResizeObserver);
   vi.stubGlobal("AudioContext", FakeAudioContext);
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
@@ -637,10 +660,24 @@ describe("LabelScreen", () => {
     await roundLoaded();
     const bar = answerBar();
     expect(bar).toHaveClass("sticky", "bottom-0");
+    const list = screen.getByTestId("pattern-scroll");
+    expect(list).toHaveClass("overflow-y-auto");
+    expect(list.lastElementChild).toBe(bar);
+    expect(within(list).getByRole("region", { name: "Patterns" })).toBeInTheDocument();
+  });
+
+  it("lays the map card edge to edge over the panel, above the scrolling list, so the scrollbar starts under it", async () => {
+    renderScreen();
+    await roundLoaded();
     const panel = screen.getByTestId("pattern-panel");
-    expect(panel).toHaveClass("overflow-y-auto");
-    expect(panel.lastElementChild).toBe(bar);
-    expect(within(panel).getByRole("region", { name: "Patterns" })).toBeInTheDocument();
+    const header = screen.getByRole("heading", { name: "Alpha Song" }).closest("header");
+    expect(header?.parentElement).toBe(panel);
+    expect(panel.className).not.toMatch(/(^|\s)(p|px|pl|pr|gap)-\S+/);
+    expect(panel).not.toHaveClass("overflow-y-auto");
+    const list = screen.getByTestId("pattern-scroll");
+    expect(list).not.toContainElement(header);
+    expect((header?.compareDocumentPosition(list) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(header).toHaveClass("w-full", "border-b");
   });
 
   it("pads the panel's scrolling by the answer bar's height, so a card focused with Tab never hides under it", async () => {
@@ -667,7 +704,7 @@ describe("LabelScreen", () => {
     );
     renderScreen();
     await roundLoaded();
-    expect(screen.getByTestId("pattern-panel").style.scrollPaddingBottom).toBe("188px");
+    expect(screen.getByTestId("pattern-scroll").style.scrollPaddingBottom).toBe("188px");
   });
 
   it("skips only on a held Skip: nothing stored, counted, and the next sample excludes the shown window", async () => {
@@ -944,13 +981,13 @@ describe("LabelScreen", () => {
     expect(submitted(calls)).toMatchObject([{ patterns: ["regular.stream.jumpstream"] }]);
   });
 
-  it("lets Space toggle the Fit window checkbox in the settings instead of playing", async () => {
+  it("lets Space toggle a skin effect checkbox in the settings instead of playing", async () => {
     renderScreen();
     await roundLoaded();
-    const fit = await setting("checkbox", "Fit window");
-    fit.focus();
+    const combo = await setting("checkbox", "Show combo");
+    combo.focus();
     await userEvent.keyboard(" ");
-    expect(fit).toBeChecked();
+    expect(combo).toBeChecked();
     expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
   });
 
@@ -1448,7 +1485,9 @@ describe("LabelScreen player layout", () => {
     await waitFor(() => {
       expect(controls()).toHaveAttribute("data-visible", "false");
     });
-    fireEvent.pointerMove(frame());
+    fireEvent.pointerMove(screen.getByTestId("playfield"));
+    expect(controls()).toHaveAttribute("data-visible", "false");
+    fireEvent.pointerMove(screen.getByTestId("controls-hover-zone"));
     expect(controls()).toHaveAttribute("data-visible", "true");
     await waitFor(() => {
       expect(controls()).toHaveAttribute("data-visible", "false");
@@ -1473,20 +1512,123 @@ describe("LabelScreen player layout", () => {
       ["slider", "Audio offset"],
       ["combobox", "Scroll mode"],
       ["spinbutton", "osu! speed"],
-      ["checkbox", "Fit window"],
       ["slider", "Zoom"],
       ["slider", "Playback rate"],
       ["combobox", "Skin"],
       ["button", "Reload skin"],
+      ["checkbox", "Disable percy"],
+      ["checkbox", "Show judgements"],
+      ["checkbox", "Show combo"],
+      ["checkbox", "Key press effect"],
+      ["checkbox", "Lighting effect"],
     ] as const) {
       expect(within(panel).getByRole(role, { name }), name).toBeInTheDocument();
     }
     expect(within(panel).getByText("Seed 42")).toBeInTheDocument();
+    expect(within(panel).queryByRole("checkbox", { name: "Fit window" })).toBeNull();
 
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: "Playback settings" })).toBeNull();
     expect(screen.getByRole("button", { name: "Playback settings" })).toHaveFocus();
     expect(chips()).toEqual(["regular.stream.jumpstream"]);
+  });
+
+  it("shows a large play button over the paused section, which starts it and leaves while it plays", async () => {
+    renderScreen();
+    await roundLoaded();
+    await timelineShown();
+    const centre = screen.getByRole("button", { name: "Play the section" });
+    expect(screen.getByTestId("player-centre")).toContainElement(centre);
+
+    await userEvent.click(centre);
+
+    expect(await within(controls()).findByRole("button", { name: "Pause" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Play the section" })).toBeNull();
+    await waitFor(() => {
+      expect(FakeAudioContext.sources.map((s) => s.started)).toEqual([1, 1]);
+    });
+
+    await userEvent.click(within(controls()).getByRole("button", { name: "Pause" }));
+    expect(await screen.findByRole("button", { name: "Play the section" })).toBeInTheDocument();
+  });
+
+  it("starts the section from the large play button with the keyboard", async () => {
+    renderScreen();
+    await roundLoaded();
+    await timelineShown();
+    screen.getByRole("button", { name: "Play the section" }).focus();
+    await userEvent.keyboard("{Enter}");
+    expect(await within(controls()).findByRole("button", { name: "Pause" })).toBeInTheDocument();
+  });
+
+  it("puts the play button and the time at the right end of the controls row", async () => {
+    renderScreen();
+    await roundLoaded();
+    await timelineShown();
+    const play = within(controls()).getByRole("button", { name: "Play" });
+    expect(play.parentElement?.lastElementChild).toBe(play);
+    expect(within(controls()).getByTestId("playback-readout")).toHaveClass("ml-auto");
+  });
+
+  it("nudges a first-time viewer towards the settings tab until the flyout is opened, then never again", async () => {
+    renderScreen();
+    await roundLoaded();
+    const tab = await screen.findByRole("button", { name: "Playback settings" });
+    expect(tab).toHaveAttribute("data-hint", "true");
+    expect(tab).toHaveAccessibleDescription("Playback settings live here: offset, speed, skin and more");
+
+    await openSettings();
+    expect(localStorage.getItem(LABEL_PREFS.settingsHintSeenKey)).toBe("true");
+    await userEvent.keyboard("{Escape}");
+    expect(tab).not.toHaveAttribute("data-hint");
+
+    cleanup();
+    renderScreen();
+    await roundLoaded();
+    expect(await screen.findByRole("button", { name: "Playback settings" })).not.toHaveAttribute("data-hint");
+  });
+
+  it("drops the nudge once a playback setting changes from the keyboard", async () => {
+    renderScreen();
+    await roundLoaded();
+    expect(await screen.findByRole("button", { name: "Playback settings" })).toHaveAttribute("data-hint", "true");
+    await userEvent.keyboard("{F4}");
+    expect(screen.getByRole("button", { name: "Playback settings" })).not.toHaveAttribute("data-hint");
+    expect(localStorage.getItem(LABEL_PREFS.settingsHintSeenKey)).toBe("true");
+  });
+
+  it("draws percy and no other effect by default, and passes each toggle to the playfield, remembered", async () => {
+    renderScreen();
+    await roundLoaded();
+    await timelineShown();
+    expect(lastPlayfieldEffects()).toEqual({ percy: true, judgements: false, combo: false, keyPress: false, lighting: false });
+
+    await userEvent.click(await setting("checkbox", "Disable percy"));
+    await userEvent.click(await setting("checkbox", "Show judgements"));
+    await userEvent.click(await setting("checkbox", "Lighting effect"));
+
+    expect(lastPlayfieldEffects()).toEqual({ percy: false, judgements: true, combo: false, keyPress: false, lighting: true });
+    expect(localStorage.getItem(LABEL_PREFS.effectKeys.percy)).toBe("false");
+    expect(localStorage.getItem(LABEL_PREFS.effectKeys.judgements)).toBe("true");
+
+    cleanup();
+    renderScreen();
+    await roundLoaded();
+    await timelineShown();
+    expect(lastPlayfieldEffects()).toEqual({ percy: false, judgements: true, combo: false, keyPress: false, lighting: true });
+    expect(await setting("checkbox", "Disable percy")).toBeChecked();
+  });
+
+  it("disables the effects the loaded skin cannot draw, saying why", async () => {
+    vi.mocked(skinEffectSupport).mockReturnValue({ ...ALL_EFFECTS_SUPPORTED, percy: false, keyPress: false });
+    renderScreen();
+    await roundLoaded();
+    const percy = await setting("checkbox", "Disable percy");
+    expect(percy).toBeDisabled();
+    expect(percy).toHaveAccessibleDescription("Needs a skin whose long-note body is percy-style.");
+    expect(await setting("checkbox", "Key press effect")).toHaveAccessibleDescription("Needs a skin with pressed-key images.");
+    expect(await setting("checkbox", "Show combo")).toBeEnabled();
+    expect(vi.mocked(skinEffectSupport)).toHaveBeenLastCalledWith(null);
   });
 
   it("plays the section at the chosen playback rate and remembers it", async () => {
@@ -1801,6 +1943,35 @@ describe("LabelScreen skins", () => {
     });
   });
 
+  it("shows the skin effects as loading, not as unsupported, until the chosen skin arrives", async () => {
+    vi.mocked(skinEffectSupport).mockReturnValue({ ...ALL_EFFECTS_SUPPORTED, percy: false, keyPress: false, lighting: false });
+    let answerSkin: (dto: SkinDto) => void = () => undefined;
+    renderScreen(undefined, {
+      skinList: () => LIST,
+      skinGet: (args) =>
+        new Promise<SkinDto>((resolve) => {
+          answerSkin = () => {
+            resolve(skinDto(String(args["folder"]), Number(args["keymode"])));
+          };
+        }),
+    });
+    await roundLoaded();
+    await pickerReady();
+    const settings = screen.getByRole("dialog", { name: "Playback settings" });
+    expect(await within(settings).findByText("Loading the skin…")).toBeInTheDocument();
+    expect(within(settings).getByRole("checkbox", { name: "Key press effect" })).toBeDisabled();
+    expect(within(settings).queryByText(/Needs a skin/)).toBeNull();
+
+    act(() => {
+      answerSkin(skinDto("Pilot", 7));
+    });
+    await waitFor(() => {
+      expect(canvas.images).toContain(bitmaps[0]);
+    });
+    expect(within(settings).queryByText("Loading the skin…")).toBeNull();
+    expect(within(settings).getByText("Needs a skin with pressed-key images.")).toBeInTheDocument();
+  });
+
   it("starts on None when the cfg names no listed skin, and draws procedurally", async () => {
     const calls = renderScreen(undefined, { skinList: () => ({ ...LIST, current: null }) });
     await roundLoaded();
@@ -1846,6 +2017,25 @@ describe("LabelScreen skins", () => {
       expect(canvas.fills).toBeGreaterThan(0);
     });
     expect(canvas.images).toEqual([]);
+  });
+
+  it("lets judgements chosen on the procedural stage be turned off after switching to a skin without hit art", async () => {
+    localStorage.setItem(LABEL_PREFS.effectKeys.judgements, "true");
+    vi.mocked(skinEffectSupport).mockImplementation((skin) =>
+      skin === null ? ALL_EFFECTS_SUPPORTED : { ...ALL_EFFECTS_SUPPORTED, judgements: false },
+    );
+    renderScreen(undefined, { skinList: () => ({ ...LIST, current: null }) });
+    await roundLoaded();
+    await userEvent.selectOptions(await pickerReady(), "Zeta");
+    await waitFor(() => {
+      expect(vi.mocked(skinEffectSupport).mock.lastCall?.[0]).not.toBeNull();
+    });
+    const judgements = await setting("checkbox", "Show judgements");
+    expect(judgements).toBeEnabled();
+    expect(judgements).toBeChecked();
+    expect(judgements).toHaveAccessibleDescription("This skin has no judgement images: they show as text.");
+    await userEvent.click(judgements);
+    expect(lastPlayfieldEffects()?.judgements).toBe(false);
   });
 
   it("closes the skin's bitmaps when the screen unmounts", async () => {

@@ -32,6 +32,9 @@ export interface SkinImage {
   sourceHeight: number;
 }
 
+/** Judgement names as the skin files spell them: `mania-hit300g` is MAX. */
+export type HitResultName = "300g" | "300" | "200" | "100" | "50" | "0";
+
 export type SkinSlot =
   | `note.${number}`
   | `note.${number}.head`
@@ -43,7 +46,11 @@ export type SkinSlot =
   | "stage.right"
   | "stage.bottom"
   | "stage.hint"
-  | "stage.light";
+  | "stage.light"
+  | `hit.${HitResultName}`
+  | `combo.${number}`
+  | `lighting.n.${number}`
+  | `lighting.l.${number}`;
 
 /** Column indices are 0-based, like `NoteImage0`. */
 export const SKIN_SLOT = {
@@ -58,7 +65,25 @@ export const SKIN_SLOT = {
   stageBottom: "stage.bottom",
   stageHint: "stage.hint",
   stageLight: "stage.light",
-} as const satisfies Record<string, SkinSlot | ((col: number) => SkinSlot)>;
+  hit: (result: HitResultName): SkinSlot => `hit.${result}`,
+  comboDigit: (digit: number): SkinSlot => `combo.${digit}`,
+  /** Frames are 0-based; a still image is frame 0. */
+  lightingN: (frame: number): SkinSlot => `lighting.n.${frame}`,
+  lightingL: (frame: number): SkinSlot => `lighting.l.${frame}`,
+} as const satisfies Record<string, SkinSlot | ((arg: never) => SkinSlot)>;
+
+/** Placement of the playback effects, in stable's 480-high space with lazer's defaults (research 06). */
+export interface SkinEffectConfig {
+  /** Hit-burst centre, y from the top. */
+  scorePosition: number;
+  /** Combo counter centre, y from the top. */
+  comboPosition: number;
+  /** Per column; 0 means the column width. */
+  lightingNWidth: readonly number[];
+  lightingLWidth: readonly number[];
+  /** Px the combo digits overlap; negative adds a gap. */
+  comboOverlap: number;
+}
 
 /** Lengths are in stable's 480-high space, as skin.ini writes them; scaling is the layout's job. */
 export interface LoadedSkin {
@@ -70,6 +95,8 @@ export interface LoadedSkin {
   /** `keys + 1` lines. */
   columnLineWidth: readonly number[];
   hitPosition: number;
+  /** Bottom of the stage light, y from the top. */
+  lightPosition: number;
   widthForNoteHeightScale: number | null;
   noteBodyStyle: NoteBodyStyle;
   judgementLine: boolean;
@@ -81,4 +108,10 @@ export interface LoadedSkin {
    * inverts the tail (`LegacyHoldNoteTailPiece.cs` L49); flipping once at load spares a transform per tail per frame.
    */
   lnTails: ReadonlyMap<number, SkinImage>;
+  effects: SkinEffectConfig;
+  /**
+   * Per column, `stage.light` tinted with that column's `ColourLight`, painted once at load like `lnTails`; a column
+   * missing here draws the untinted image.
+   */
+  stageLights: ReadonlyMap<number, SkinImage>;
 }

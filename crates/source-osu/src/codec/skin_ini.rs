@@ -12,12 +12,18 @@
 //! - defaults: `osu.Game/Skinning/LegacyManiaSkinConfiguration.cs` L17-19, L35-42, L62-75;
 //!   `osu.Game/Skinning/LegacySkin.cs` L141-144 (missing block), L184 (`Colour` is 1-based),
 //!   L214/L233 (images are 0-based), L204-210 (body style by version);
-//! - colours: `osu.Game/Skinning/LegacyColourCompatibility.cs` L22-27 (alpha 0).
+//! - colours: `osu.Game/Skinning/LegacyColourCompatibility.cs` L22-27 (alpha 0);
+//! - playback effects: `LegacyManiaSkinDecoder.cs` L101-107 (`ComboPosition`, `ScorePosition`),
+//!   L117-123 (`LightingNWidth`, `LightingLWidth`), L180 (`Hit*` image keys),
+//!   `LegacyManiaSkinConfiguration.cs` L37-38 (their defaults), `LegacySkin.cs` L186-188
+//!   (`ColourLight` is 1-based); `[Fonts]` `ComboPrefix` / `ComboOverlap`:
+//!   `osu.Game/Skinning/LegacySkinExtensions.cs` L150-151, L176-177.
 //!
 //! Lengths stay in stable's 480-high units; lazer's ×1.6 belongs to rendering. Deliberate
 //! deviations: section names match case-insensitively and an unknown section is ignored (lazer:
-//! case-sensitive, unknown falls back to General); `Keys` above `max_keys` discards its block
-//! instead of allocating it; non-finite numbers count as unparsable; `NoteBodyStyle: 1` is
+//! case-sensitive, unknown falls back to General); `[Fonts]` keys are read only in that section
+//! (lazer keeps any section's unknown key in one dictionary); `Keys` above `max_keys` discards its
+//! block instead of allocating it; non-finite numbers count as unparsable; `NoteBodyStyle: 1` is
 //! `RepeatBottom` and other values outside lazer's enum are ignored. Text is UTF-8 with or without
 //! BOM, or UTF-16 with a BOM, like lazer's `StreamReader`; invalid UTF-8 is decoded lossily and
 //! flagged in `decoded_lossily`.
@@ -39,6 +45,8 @@ pub struct SkinIniParams {
     pub hit_position_max: f32,
     pub light_position: f32,
     pub barline_height: f32,
+    pub score_position: f32,
+    pub combo_position: f32,
 }
 
 impl Default for SkinIniParams {
@@ -56,6 +64,8 @@ impl Default for SkinIniParams {
             hit_position_max: 480.0,
             light_position: 413.0,
             barline_height: 1.2,
+            score_position: 300.0,
+            combo_position: 111.0,
         }
     }
 }
@@ -65,7 +75,15 @@ pub struct SkinIni {
     pub name: Option<String>,
     pub version: f64,
     pub mania: BTreeMap<u8, ManiaConfig>,
+    pub fonts: SkinFonts,
     pub decoded_lossily: bool,
+}
+
+/// `[Fonts]`; `None` leaves lazer's default (prefix `score`, overlap 0) to the reader.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SkinFonts {
+    pub combo_prefix: Option<String>,
+    pub combo_overlap: Option<f32>,
 }
 
 impl SkinIni {
@@ -75,6 +93,7 @@ impl SkinIni {
             name: None,
             version: params.latest_version,
             mania: BTreeMap::new(),
+            fonts: SkinFonts::default(),
             decoded_lossily: false,
         }
     }
@@ -138,6 +157,19 @@ pub struct ManiaColours {
     pub judgement_line: Option<Rgba>,
     pub barline: Option<Rgba>,
     pub hold: Option<Rgba>,
+    /// `ColourLight1` is `light[0]`: the stage light's tint per column.
+    pub light: Vec<Option<Rgba>>,
+}
+
+/// `Hit0` … `Hit300g` paths: the judgement bursts.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HitImages {
+    pub h0: Option<String>,
+    pub h50: Option<String>,
+    pub h100: Option<String>,
+    pub h200: Option<String>,
+    pub h300: Option<String>,
+    pub h300g: Option<String>,
 }
 
 /// `NoteImage0` / `KeyImage0` are column 0. Paths keep the raw text with `\` turned into `/`.
@@ -183,6 +215,14 @@ pub struct ManiaConfig {
     pub colours: ManiaColours,
     pub columns: Vec<ColumnImages>,
     pub stage: StageImages,
+    pub hits: HitImages,
+    /// Hit-burst centre, y from the top in 480-high units.
+    pub score_position: f32,
+    /// Combo counter centre, y from the top in 480-high units.
+    pub combo_position: f32,
+    /// Per column; 0 means the column width (`LegacySkin.cs` L296-299).
+    pub lighting_n_width: Vec<f32>,
+    pub lighting_l_width: Vec<f32>,
 }
 
 impl ManiaConfig {
@@ -203,10 +243,16 @@ impl ManiaConfig {
             barline_height: params.barline_height,
             colours: ManiaColours {
                 column: vec![None; n],
+                light: vec![None; n],
                 ..ManiaColours::default()
             },
             columns: vec![ColumnImages::default(); n],
             stage: StageImages::default(),
+            hits: HitImages::default(),
+            score_position: params.score_position,
+            combo_position: params.combo_position,
+            lighting_n_width: vec![0.0; n],
+            lighting_l_width: vec![0.0; n],
         }
     }
 }
@@ -223,6 +269,7 @@ pub fn parse_skin_ini_with(bytes: &[u8], params: &SkinIniParams) -> SkinIni {
         name: None,
         version: params.default_version,
         blocks: BTreeMap::new(),
+        fonts: SkinFonts::default(),
         current: Current::None,
         pending: Vec::new(),
     };
@@ -243,6 +290,7 @@ pub fn parse_skin_ini_with(bytes: &[u8], params: &SkinIniParams) -> SkinIni {
         name: parser.name,
         version,
         mania,
+        fonts: parser.fonts,
         decoded_lossily,
     }
 }
@@ -292,6 +340,7 @@ fn utf8(bytes: &[u8]) -> (String, bool) {
 enum Section {
     General,
     Mania,
+    Fonts,
     Other,
 }
 
@@ -301,6 +350,8 @@ impl Section {
             Self::General
         } else if name.eq_ignore_ascii_case("Mania") {
             Self::Mania
+        } else if name.eq_ignore_ascii_case("Fonts") {
+            Self::Fonts
         } else {
             Self::Other
         }
@@ -322,6 +373,7 @@ struct Parser<'a> {
     name: Option<String>,
     version: f64,
     blocks: BTreeMap<u8, (ManiaConfig, Option<NoteBodyStyle>)>,
+    fonts: SkinFonts,
     current: Current,
     pending: Vec<String>,
 }
@@ -348,6 +400,7 @@ impl Parser<'_> {
         match self.section {
             Section::General => self.general(line),
             Section::Mania => self.mania(line),
+            Section::Fonts => self.fonts(line),
             Section::Other => {}
         }
     }
@@ -359,6 +412,20 @@ impl Parser<'_> {
             ("Version", value) => {
                 if let Some(v) = parse_version(value) {
                     self.version = v;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn fonts(&mut self, line: &str) {
+        match split_key_value(line) {
+            ("ComboPrefix", value) => {
+                self.fonts.combo_prefix = (!value.is_empty()).then(|| value.replace('\\', "/"));
+            }
+            ("ComboOverlap", value) => {
+                if let Some(v) = parse_f32(value) {
+                    self.fonts.combo_overlap = Some(v);
                 }
             }
             _ => {}
@@ -484,6 +551,10 @@ fn apply(
             parse_f32(value).map(|v| v.max(params.hit_position_min).min(params.hit_position_max)),
         ),
         "LightPosition" => set(&mut config.light_position, parse_f32(value)),
+        "ScorePosition" => set(&mut config.score_position, parse_f32(value)),
+        "ComboPosition" => set(&mut config.combo_position, parse_f32(value)),
+        "LightingNWidth" => parse_list(value, &mut config.lighting_n_width),
+        "LightingLWidth" => parse_list(value, &mut config.lighting_l_width),
         "WidthForNoteHeightScale" => {
             if let Some(v) = parse_f32(value) {
                 config.width_for_note_height_scale = Some(v);
@@ -504,6 +575,12 @@ fn apply(
         "StageLight" => config.stage.light = image_path(value),
         "LightingN" => config.stage.lighting_n = image_path(value),
         "LightingL" => config.stage.lighting_l = image_path(value),
+        "Hit0" => config.hits.h0 = image_path(value),
+        "Hit50" => config.hits.h50 = image_path(value),
+        "Hit100" => config.hits.h100 = image_path(value),
+        "Hit200" => config.hits.h200 = image_path(value),
+        "Hit300" => config.hits.h300 = image_path(value),
+        "Hit300g" => config.hits.h300g = image_path(value),
         _ if key.starts_with("Colour") => apply_colour(&mut config.colours, key, value),
         _ => apply_column_image(&mut config.columns, key, value),
     }
@@ -524,6 +601,13 @@ fn apply_colour(colours: &mut ManiaColours, key: &str, value: &str) {
         "ColourJudgementLine" => &mut colours.judgement_line,
         "ColourBarline" => &mut colours.barline,
         "ColourHold" => &mut colours.hold,
+        _ if key.starts_with("ColourLight") => match indexed(key, "ColourLight") {
+            Some((n, "")) if n >= 1 => match colours.light.get_mut(n - 1) {
+                Some(slot) => slot,
+                None => return,
+            },
+            _ => return,
+        },
         _ => match indexed(key, "Colour") {
             Some((n, "")) if n >= 1 => match colours.column.get_mut(n - 1) {
                 Some(slot) => slot,
@@ -862,6 +946,77 @@ mod tests {
         assert_eq!(m.barline_height, 1.2);
         assert!(m.judgement_line);
         assert_eq!(m.note_body_style, NoteBodyStyle::RepeatBottom);
+        assert_eq!(m.score_position, 300.0);
+        assert_eq!(m.combo_position, 111.0);
+        assert_eq!(m.lighting_n_width, vec![0.0; 7]);
+        assert_eq!(m.lighting_l_width, vec![0.0; 7]);
+        assert_eq!(m.colours.light, vec![None; 7]);
+        assert_eq!(m.hits, HitImages::default());
+    }
+
+    #[test]
+    fn effect_positions_widths_and_light_colours() {
+        let m = mania(
+            "[Mania]\nKeys: 4\nScorePosition: 250\nComboPosition: 140\nLightingNWidth: 40,oops,42\n\
+             LightingLWidth: 50,50,50,50,99\nColourLight1: 1,2,3\nColourLight4: 4,5,6,0\n\
+             ColourLight5: 7,8,9\nColourLight01: 9,9,9\nComboPosition: nope\n",
+            4,
+        );
+        assert_eq!(m.score_position, 250.0);
+        assert_eq!(
+            m.combo_position, 140.0,
+            "an unparsable value keeps the last"
+        );
+        assert_eq!(m.lighting_n_width, vec![40.0, 0.0, 42.0, 0.0]);
+        assert_eq!(m.lighting_l_width, vec![50.0; 4]);
+        assert_eq!(
+            m.colours.light,
+            vec![rgba(1, 2, 3, 255), None, None, rgba(4, 5, 6, 0)]
+        );
+        assert_eq!(
+            m.colours.column,
+            vec![None; 4],
+            "ColourLight# is not Colour#"
+        );
+    }
+
+    #[test]
+    fn hit_burst_images() {
+        let m = mania(
+            "[Mania]\nKeys: 7\nHit0: j\\miss\nHit50: j/50\nHit100: h100\nHit200: h200\nHit300: h300\n\
+             Hit300g: j\\max\nHit301: nope\n",
+            7,
+        );
+        assert_eq!(
+            m.hits,
+            HitImages {
+                h0: Some("j/miss".into()),
+                h50: Some("j/50".into()),
+                h100: Some("h100".into()),
+                h200: Some("h200".into()),
+                h300: Some("h300".into()),
+                h300g: Some("j/max".into()),
+            }
+        );
+        assert_eq!(m.columns[0], ColumnImages::default());
+    }
+
+    #[test]
+    fn fonts_section_combo_prefix_and_overlap() {
+        let ini = parse_skin_ini(
+            b"[Fonts]\r\nScorePrefix: s\r\nComboPrefix: Fonts\\combo\r\nComboOverlap: 3\r\n[General]\r\nComboPrefix: wrong\r\n",
+        );
+        assert_eq!(ini.fonts.combo_prefix.as_deref(), Some("Fonts/combo"));
+        assert_eq!(ini.fonts.combo_overlap, Some(3.0));
+
+        let ini = parse_skin_ini(b"[fonts]\nComboOverlap: -2.5\nComboPrefix:\n");
+        assert_eq!(ini.fonts.combo_overlap, Some(-2.5));
+        assert_eq!(ini.fonts.combo_prefix, None, "an empty prefix is unset");
+        assert_eq!(parse_skin_ini(b"").fonts, SkinFonts::default());
+        assert_eq!(
+            SkinIni::absent(&SkinIniParams::default()).fonts,
+            SkinFonts::default()
+        );
     }
 
     proptest! {
