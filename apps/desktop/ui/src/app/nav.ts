@@ -1,5 +1,5 @@
 import type { LinkProps } from "@tanstack/react-router";
-import { House, type LucideIcon, Settings, Tags, UserRound } from "lucide-react";
+import { Compass, House, type LucideIcon, Radar, Settings, Tags, UserRound } from "lucide-react";
 
 export interface NavEntry {
   to: NonNullable<LinkProps["to"]>;
@@ -11,6 +11,8 @@ export interface NavEntry {
 export const NAV: readonly NavEntry[] = [
   { to: "/", labelKey: "common.nav.home", icon: House },
   { to: "/label", labelKey: "common.nav.labelling", icon: Tags },
+  { to: "/skill", labelKey: "common.nav.skill", icon: Radar },
+  { to: "/recommendations", labelKey: "common.nav.recommendations", icon: Compass },
   { to: "/settings", labelKey: "common.nav.settings", icon: Settings },
   { to: "/settings/identity", labelKey: "common.nav.identity", icon: UserRound },
 ];

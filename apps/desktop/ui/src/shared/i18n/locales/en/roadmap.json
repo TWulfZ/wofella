@@ -1,0 +1,44 @@
+{
+  "roadmap": {
+    "comingSoon": "Coming soon",
+    "whatItWillDo": "What it will do",
+    "meanwhile": "Label patterns meanwhile",
+    "meanwhileHint": "Every window you label teaches the pattern detector these pages will be built on.",
+    "previewCaption": "Preview · illustrative shapes, not your data",
+    "axis": {
+      "regular_jack": "Jack",
+      "regular_tech": "Tech",
+      "regular_speed": "Speed",
+      "regular_stream": "Stream",
+      "ln_general": "LN general",
+      "ln_tech": "LN tech",
+      "ln_inverse": "LN inverse",
+      "ln_release": "LN release"
+    },
+    "skill": {
+      "title": "Skill",
+      "subtitle": "Where you stand on every pattern, session after session",
+      "previewLabel": "Preview of the skill view: a radar per axis and a trend over sessions, not your data",
+      "rice": "Rice",
+      "ln": "LN",
+      "trend": "Trend over sessions",
+      "features": {
+        "axes": "A skill estimate for each axis (jack, tech, speed and stream; general, tech, inverse and release for LN) with how sure it is, rebuilt from your own replays.",
+        "sessions": "Session reports: what improved, what got worse and what to practise next.",
+        "self": "Only the names you marked as yours count; other players on this PC never touch your profile."
+      }
+    },
+    "recommendations": {
+      "title": "Recommendations",
+      "subtitle": "The right chart, section and rate for what you need to train",
+      "previewLabel": "Preview of recommendations: chart, section and rate cards, not real picks",
+      "section": "Section",
+      "rate": "Rate",
+      "features": {
+        "picks": "A chart, the exact section and a rate aimed at your weakest axis, each with a short reason.",
+        "feedback": "Answer “too easy”, “too hard” or “wrong pattern” and the next picks adjust to you.",
+        "drills": "Cut a section into a drill at the right rate and import it into osu! stable; its replays count back."
+      }
+    }
+  }
+}

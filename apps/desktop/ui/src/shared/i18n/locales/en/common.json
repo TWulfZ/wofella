@@ -10,6 +10,8 @@
       "label": "Main",
       "home": "Home",
       "labelling": "Label",
+      "skill": "Skill",
+      "recommendations": "Recommended",
       "settings": "Settings",
       "identity": "Identity"
     },

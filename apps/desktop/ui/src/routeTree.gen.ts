@@ -11,6 +11,8 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LabelRouteImport } from './routes/label'
+import { Route as RecommendationsRouteImport } from './routes/recommendations'
+import { Route as SkillRouteImport } from './routes/skill'
 import { Route as SettingsIndexRouteImport } from './routes/settings.index'
 import { Route as SettingsIdentityRouteImport } from './routes/settings.identity'
 import { Route as SetupIndexRouteImport } from './routes/setup.index'
@@ -24,6 +26,16 @@ const IndexRoute = IndexRouteImport.update({
 const LabelRoute = LabelRouteImport.update({
   id: '/label',
   path: '/label',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RecommendationsRoute = RecommendationsRouteImport.update({
+  id: '/recommendations',
+  path: '/recommendations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SkillRoute = SkillRouteImport.update({
+  id: '/skill',
+  path: '/skill',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsIndexRoute = SettingsIndexRouteImport.update({
@@ -50,6 +62,8 @@ const SetupIdentityRoute = SetupIdentityRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/label': typeof LabelRoute
+  '/recommendations': typeof RecommendationsRoute
+  '/skill': typeof SkillRoute
   '/settings/identity': typeof SettingsIdentityRoute
   '/setup/identity': typeof SetupIdentityRoute
   '/settings/': typeof SettingsIndexRoute
@@ -58,6 +72,8 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/label': typeof LabelRoute
+  '/recommendations': typeof RecommendationsRoute
+  '/skill': typeof SkillRoute
   '/settings/identity': typeof SettingsIdentityRoute
   '/setup/identity': typeof SetupIdentityRoute
   '/settings': typeof SettingsIndexRoute
@@ -67,6 +83,8 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/label': typeof LabelRoute
+  '/recommendations': typeof RecommendationsRoute
+  '/skill': typeof SkillRoute
   '/settings/identity': typeof SettingsIdentityRoute
   '/setup/identity': typeof SetupIdentityRoute
   '/settings/': typeof SettingsIndexRoute
@@ -77,6 +95,8 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/label'
+    | '/recommendations'
+    | '/skill'
     | '/settings/identity'
     | '/setup/identity'
     | '/settings/'
@@ -85,6 +105,8 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/label'
+    | '/recommendations'
+    | '/skill'
     | '/settings/identity'
     | '/setup/identity'
     | '/settings'
@@ -93,6 +115,8 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/label'
+    | '/recommendations'
+    | '/skill'
     | '/settings/identity'
     | '/setup/identity'
     | '/settings/'
@@ -102,6 +126,8 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LabelRoute: typeof LabelRoute
+  RecommendationsRoute: typeof RecommendationsRoute
+  SkillRoute: typeof SkillRoute
   SettingsIdentityRoute: typeof SettingsIdentityRoute
   SetupIdentityRoute: typeof SetupIdentityRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
@@ -122,6 +148,20 @@ declare module '@tanstack/react-router' {
       path: '/label'
       fullPath: '/label'
       preLoaderRoute: typeof LabelRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/recommendations': {
+      id: '/recommendations'
+      path: '/recommendations'
+      fullPath: '/recommendations'
+      preLoaderRoute: typeof RecommendationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/skill': {
+      id: '/skill'
+      path: '/skill'
+      fullPath: '/skill'
+      preLoaderRoute: typeof SkillRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings/': {
@@ -158,6 +198,8 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LabelRoute: LabelRoute,
+  RecommendationsRoute: RecommendationsRoute,
+  SkillRoute: SkillRoute,
   SettingsIdentityRoute: SettingsIdentityRoute,
   SetupIdentityRoute: SetupIdentityRoute,
   SettingsIndexRoute: SettingsIndexRoute,
