@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { HOLD_BUTTON_PARAMS, labelTaxonomyQuery } from "@/features/label";
 import type { PatternDefDto } from "@/ipc/bindings";
 import { QueryAlert } from "./components/QueryAlert";
-import { SessionAnswer, SessionStatusPill } from "./components/SessionAnswer";
+import { SessionStatusPill, SessionStripAnswer } from "./components/SessionAnswer";
 import { newestPlayOf } from "./model";
 import { sessionPlaysQuery } from "./queries";
 
@@ -65,7 +65,7 @@ export function SessionMapStrip({ keymode, md5, title, holdMs = HOLD_BUTTON_PARA
       ) : play === null ? (
         <p className="text-muted-foreground text-sm">{t("labelProgress.strip.notInSession")}</p>
       ) : (
-        <SessionAnswer
+        <SessionStripAnswer
           key={md5}
           keymode={keymode}
           md5={md5}
@@ -75,7 +75,6 @@ export function SessionMapStrip({ keymode, md5, title, holdMs = HOLD_BUTTON_PARA
           describedBy={titleId}
           taxonomy={taxonomy.data ?? NO_TAXONOMY}
           holdMs={holdMs}
-          placement="labelScreen"
         />
       )}
     </section>

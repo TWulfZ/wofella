@@ -207,8 +207,8 @@
       "widthValue": "{{px}} px"
     },
     "hold": {
-      "description_one": "Mantén pulsado {{count}} segundo para {{action}}",
-      "description_other": "Mantén pulsado {{count}} segundos para {{action}}"
+      "description_one": "Mantén pulsado {{count, number}} segundo para {{action}}",
+      "description_other": "Mantén pulsado {{count, number}} segundos para {{action}}"
     },
     "player": {
       "controls": "Controles de reproducción",

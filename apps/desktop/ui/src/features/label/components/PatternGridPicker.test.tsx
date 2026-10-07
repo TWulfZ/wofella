@@ -187,6 +187,33 @@ describe("PatternGridPicker", () => {
     });
   });
 
+  it("draws a caller's own trigger content in a button it styles, still named by the label and opening the grid", async () => {
+    mockCommands({ settingsGetHandLayout: () => "k7.313_right_thumb", labelPatternExamples: () => [] });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <PatternGridPicker
+          keymode={7}
+          taxonomy={TAXONOMY}
+          chosen={null}
+          onChoose={vi.fn()}
+          disabled={false}
+          trigger={{ label: "Dominant pattern: Choose pattern", content: <span>Choose pattern</span>, className: "tile" }}
+          title="Dominant pattern of Alpha Song"
+          description="Choose one pattern."
+        />
+      </QueryClientProvider>,
+    );
+    const button = trigger();
+    expect(button).toHaveClass("tile");
+    expect(button).toHaveTextContent("Choose pattern");
+    expect(button.querySelector("svg.lucide-layout-grid")).toBeNull();
+
+    await userEvent.click(button);
+
+    expect(await screen.findByRole("dialog", { name: "Dominant pattern of Alpha Song" })).toBeInTheDocument();
+  });
+
   it("cannot be opened while disabled", () => {
     mockCommands({});
     const client = new QueryClient();

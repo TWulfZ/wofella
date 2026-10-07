@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ChartColumnBig } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { HOLD_BUTTON_PARAMS, labelTaxonomyQuery } from "@/features/label";
+import { labelTaxonomyQuery } from "@/features/label";
 import type { PatternDefDto } from "@/ipc/bindings";
 import { PageHeader } from "@/shared/ui/page-header";
 import { ActivityChart } from "./components/ActivityChart";
@@ -15,8 +15,6 @@ import { axisBars } from "./model";
 import { labelProgressQuery, localUtcOffsetMin, sessionPlaysQuery } from "./queries";
 
 export interface LabelProgressParams {
-  /** How long a session answer's Save must be held, as on the Label screen. */
-  holdMs: number;
   /** The activity title's span until the series arrives; the service sends the real one. */
   activityDays: number;
   /** How often "played 5 minutes ago" and the local day are re-read while the page stays open. */
@@ -25,7 +23,6 @@ export interface LabelProgressParams {
 }
 
 export const LABEL_PROGRESS_PARAMS: LabelProgressParams = {
-  holdMs: HOLD_BUTTON_PARAMS.defaultHoldMs,
   activityDays: 30,
   clockTickMs: 60_000,
   thumbnail: { rootMargin: "200px" },
@@ -97,7 +94,6 @@ export function LabelProgressPage({ keymode, params = LABEL_PROGRESS_PARAMS, now
           session={session}
           taxonomy={taxonomy.data ?? NO_TAXONOMY}
           taxonomyFailure={taxonomyFailure}
-          holdMs={params.holdMs}
           nowMs={nowMs}
           thumbnail={params.thumbnail}
         />

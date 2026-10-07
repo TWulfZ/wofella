@@ -120,8 +120,8 @@ describe("AnswerBar hold-to-confirm actions", () => {
     const skip = screen.getByRole("button", { name: "Skip" });
     expect(expanded).not.toContainElement(save);
     expect(expanded).not.toContainElement(skip);
-    expect(save).toHaveAccessibleDescription("Hold for 1 second to save");
-    expect(skip).toHaveAccessibleDescription("Hold for 1 second to skip");
+    expect(save).toHaveAccessibleDescription("Hold for 0.5 seconds to save");
+    expect(skip).toHaveAccessibleDescription("Hold for 0.5 seconds to skip");
     expect(save.querySelector("svg.lucide")).not.toBeNull();
     expect(skip.querySelector("svg.lucide")).not.toBeNull();
     expect(save).not.toHaveTextContent("Save");
@@ -160,7 +160,7 @@ describe("AnswerBar hold-to-confirm actions", () => {
   it("tells why a disabled Save cannot save yet, after its hold instruction", () => {
     renderBar(EMPTY, { mode: { kind: "edit", skipped: false, canSave: false } });
     expect(screen.getByRole("button", { name: "Save" })).toHaveAccessibleDescription(
-      "Hold for 1 second to save Pick a pattern or No pattern to save.",
+      "Hold for 0.5 seconds to save Pick a pattern or No pattern to save.",
     );
   });
 
@@ -168,7 +168,7 @@ describe("AnswerBar hold-to-confirm actions", () => {
     renderBar({ ...EMPTY, patterns: [MINI] }, { canSkip: false, mode: { kind: "saved", canUndo: true } });
     const skip = screen.getByRole("button", { name: "Skip" });
     expect(skip).toBeDisabled();
-    expect(skip).toHaveAccessibleDescription("Hold for 1 second to skip A saved window cannot be skipped; undo it first.");
+    expect(skip).toHaveAccessibleDescription("Hold for 0.5 seconds to skip A saved window cannot be skipped; undo it first.");
   });
 
   it("offers Undo as a plain button on a saved window", async () => {

@@ -122,6 +122,24 @@ describe("SessionMapStrip", () => {
     });
   });
 
+  it("does not save on a tap, nor on choosing alone: Enter saves gold here, so the answer waits for the hold", async () => {
+    const calls = renderStrip([play(A, "aa01")]);
+    const region = await strip();
+    await userEvent.click(await within(region).findByRole("button", { name: "Dominant pattern of Alpha Song: Choose pattern" }));
+    const picker = await screen.findByRole("dialog", { name: "Dominant pattern of Alpha Song" });
+    await userEvent.type(within(picker).getByRole("searchbox", { name: "Search patterns" }), "long");
+    await userEvent.click(within(picker).getByRole("button", { name: "lj longjack" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    await userEvent.click(within(region).getByRole("button", { name: "No clear pattern" }));
+    await userEvent.click(within(region).getByRole("button", { name: "Save dominant pattern" }));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, HOLD_MS * 2));
+    });
+    expect(argsOf(calls, "session_label_submit")).toHaveLength(0);
+  });
+
   it("shows the saved answer and undoes it by its event id", async () => {
     const calls = renderStrip([play(A, "aa01", SAVED)]);
     const region = await strip();

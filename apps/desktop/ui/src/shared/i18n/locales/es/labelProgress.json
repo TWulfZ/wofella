@@ -49,7 +49,6 @@
       "noPattern": "Sin patrón claro",
       "choose": "Elegir patrón",
       "chooseFor": "Patrón dominante de {{title}}: {{choice}}",
-      "save": "Guardar",
       "undo": "Deshacer",
       "open": "Inspeccionar en la pantalla Etiquetar",
       "playedAt": "Jugado {{when}}",

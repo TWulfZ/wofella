@@ -13,7 +13,8 @@ import { sessionCountsText } from "../countText";
 import { type SessionMap, sessionMapCounts, sessionMaps } from "../model";
 import { useNearViewport } from "../useNearViewport";
 import { QueryAlert } from "./QueryAlert";
-import { SessionAnswer, SessionStatusPill } from "./SessionAnswer";
+import { SessionStatusPill } from "./SessionAnswer";
+import { SessionListAnswer } from "./SessionListAnswer";
 
 export interface SessionThumbnailParams {
   /** How far outside the viewport a row starts loading its image, so it is there by the time it scrolls in. */
@@ -24,7 +25,6 @@ interface SessionRowProps {
   map: SessionMap;
   keymode: number;
   taxonomy: readonly PatternDefDto[];
-  holdMs: number;
   nowMs: number;
   thumbnail: SessionThumbnailParams;
 }
@@ -60,13 +60,13 @@ function MapCover({ coverRef, src }: { coverRef: RefCallback<HTMLDivElement>; sr
   );
 }
 
-function SessionRow({ map, keymode, taxonomy, holdMs, nowMs, thumbnail }: SessionRowProps) {
+function SessionRow({ map, keymode, taxonomy, nowMs, thumbnail }: SessionRowProps) {
   const play: SessionPlayDto = map.newest;
   const { t, i18n } = useTranslation();
   const titleId = useId();
   const [coverRef, cover] = useLazyCover(play.md5, thumbnail);
   return (
-    <li aria-labelledby={titleId} className="bg-card ring-border relative isolate overflow-hidden rounded-xl ring-1">
+    <li aria-labelledby={titleId} className="bg-card ring-border @container relative isolate overflow-hidden rounded-xl ring-1">
       {/* osu!web's beatmap card: the cover faded behind the text. Even over a white cover the scrim's thinnest edge
           (card at 75 % over the image at 40 %) keeps muted text at about 5:1. */}
       <div aria-hidden="true" className="absolute inset-0 -z-10">
@@ -85,7 +85,8 @@ function SessionRow({ map, keymode, taxonomy, holdMs, nowMs, thumbnail }: Sessio
           className="from-card via-card/90 to-card/75 absolute inset-0 bg-linear-to-r"
         />
       </div>
-      <div className="flex gap-3 p-3">
+      {/* Below a 42rem card the answer wraps under the map instead of squeezing the title. */}
+      <div className="flex flex-wrap gap-3 p-3 @2xl:flex-nowrap">
         <MapCover coverRef={coverRef} src={cover} />
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <div className="flex min-w-0 items-start gap-2">
@@ -104,7 +105,8 @@ function SessionRow({ map, keymode, taxonomy, holdMs, nowMs, thumbnail }: Sessio
                 />
               </span>
             </div>
-            <SessionStatusPill label={play.label} className="shrink-0" />
+            {/* Once labelled, the answer tile shows the answer; a pill would only repeat it. */}
+            {play.label === null && <SessionStatusPill label={null} className="shrink-0" />}
           </div>
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             {play.stars !== null && <StarRating stars={play.stars} />}
@@ -125,7 +127,9 @@ function SessionRow({ map, keymode, taxonomy, holdMs, nowMs, thumbnail }: Sessio
               {t("labelProgress.session.playedAt", { when: formatRelative(play.playedAt, nowMs, i18n.language) })}
             </time>
           </div>
-          <SessionAnswer
+        </div>
+        <div className="w-full @2xl:w-64 @2xl:shrink-0">
+          <SessionListAnswer
             keymode={keymode}
             md5={play.md5}
             playId={play.playId}
@@ -133,19 +137,17 @@ function SessionRow({ map, keymode, taxonomy, holdMs, nowMs, thumbnail }: Sessio
             title={play.title}
             describedBy={titleId}
             taxonomy={taxonomy}
-            holdMs={holdMs}
-            placement="sessionList"
           >
             <Link
               to="/label"
               search={(prev) => ({ ...prev, chart: play.md5 })}
               aria-describedby={titleId}
-              className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "ml-auto")}
+              className={buttonVariants({ variant: "ghost", size: "sm" })}
             >
               <ExternalLink aria-hidden="true" />
               {t("labelProgress.session.open")}
             </Link>
-          </SessionAnswer>
+          </SessionListAnswer>
         </div>
       </div>
     </li>
@@ -183,18 +185,17 @@ interface SessionListProps {
   taxonomy: readonly PatternDefDto[];
   /** Set when the taxonomy failed: without it no answer can be picked. */
   taxonomyFailure?: { error: unknown; retry: () => void } | undefined;
-  holdMs: number;
   nowMs: number;
   thumbnail: SessionThumbnailParams;
 }
 
-export function SessionList({ keymode, session, taxonomy, taxonomyFailure, holdMs, nowMs, thumbnail }: SessionListProps) {
+export function SessionList({ keymode, session, taxonomy, taxonomyFailure, nowMs, thumbnail }: SessionListProps) {
   const { t } = useTranslation();
   const headingId = useId();
   const plays = session.data?.plays;
   const counts = plays === undefined ? undefined : sessionMapCounts(plays);
   const maps = plays === undefined ? undefined : sessionMaps(plays);
-  const row = { keymode, taxonomy, holdMs, nowMs, thumbnail };
+  const row = { keymode, taxonomy, nowMs, thumbnail };
   return (
     <section aria-labelledby={headingId} className="bg-card ring-border flex flex-col gap-4 rounded-xl p-5 shadow-lg shadow-black/20 ring-1">
       <div className="flex flex-wrap items-start justify-between gap-2">

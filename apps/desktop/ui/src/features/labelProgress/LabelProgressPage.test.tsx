@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -14,7 +14,6 @@ import { i18n } from "@/shared/i18n";
 import { difficultyColour, labelKeys } from "@/features/label";
 import { LABEL_PROGRESS_PARAMS, LabelProgressPage } from "./LabelProgressPage";
 
-const HOLD_MS = 40;
 const NOW = Date.parse("2026-10-07T12:00:00.000Z");
 
 const TAXONOMY: PatternDefDto[] = [
@@ -171,7 +170,7 @@ function renderPage(extra: CommandHandlers = {}) {
     ...extra,
   });
   const rendered = renderWithRouter(
-    <LabelProgressPage keymode={7} now={() => NOW} params={{ ...LABEL_PROGRESS_PARAMS, holdMs: HOLD_MS }} />,
+    <LabelProgressPage keymode={7} now={() => NOW} params={LABEL_PROGRESS_PARAMS} />,
     { path: "/label/progress" },
   );
   return { calls, ...rendered };
@@ -200,12 +199,6 @@ async function wait(ms: number): Promise<void> {
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, ms));
   });
-}
-
-async function hold(button: HTMLElement): Promise<void> {
-  fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
-  await wait(HOLD_MS * 2);
-  fireEvent.pointerUp(button, { button: 0, pointerId: 1 });
 }
 
 async function sessionRegion(): Promise<HTMLElement> {
@@ -393,23 +386,19 @@ describe("LabelProgressPage", () => {
     expect(await within(region).findByRole("alert")).toBeInTheDocument();
   });
 
-  it("saves one dominant pattern picked from the taxonomy, held like the Label screen's Save", async () => {
+  it("saves the dominant pattern as soon as it is picked, with no Save button to hold", async () => {
     const { calls } = renderPage();
     const alpha = await row("Alpha Song");
-    const save = within(alpha).getByRole("button", { name: "Save" });
-    expect(save).toBeDisabled();
-    expect(save).toHaveAccessibleDescription(expect.stringContaining("Alpha Song"));
+    expect(within(alpha).queryByRole("button", { name: "Save" })).toBeNull();
+    expect(within(alpha).queryByTestId("hold-ring")).toBeNull();
     expect(within(alpha).getByRole("button", { name: "No clear pattern" })).toHaveAccessibleDescription("Alpha Song");
     expect(within(alpha).getByRole("link", { name: "Inspect in Label screen" })).toHaveAccessibleDescription("Alpha Song");
-    await userEvent.click(within(alpha).getByRole("button", { name: "Dominant pattern of Alpha Song: Choose pattern" }));
+    const choose = within(alpha).getByRole("button", { name: "Dominant pattern of Alpha Song: Choose pattern" });
+    expect(choose).toHaveTextContent("Choose pattern");
+    await userEvent.click(choose);
     const picker = await screen.findByRole("dialog", { name: "Dominant pattern of Alpha Song" });
     await userEvent.type(within(picker).getByRole("searchbox", { name: "Search patterns" }), "long");
     await userEvent.click(within(picker).getByRole("button", { name: "lj longjack" }));
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
-    expect(within(alpha).getByRole("button", { name: "Dominant pattern of Alpha Song: longjack" })).toHaveTextContent("longjack");
-    await hold(within(alpha).getByRole("button", { name: "Save" }));
     await waitFor(() => {
       expect(argsOf(calls, "session_label_submit")).toHaveLength(1);
     });
@@ -418,9 +407,10 @@ describe("LabelProgressPage", () => {
     await waitFor(() => {
       expect(argsOf(calls, "session_plays")).toHaveLength(2);
     });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("chooses from the pattern grid with the keyboard, shows the choice pressed and leaves on Escape unchanged", async () => {
+  it("chooses from the pattern grid with the keyboard, saving at once, and leaves on Escape without saving", async () => {
     const { calls } = renderPage();
     const alpha = await row("Alpha Song");
     const choose = within(alpha).getByRole("button", { name: "Dominant pattern of Alpha Song: Choose pattern" });
@@ -430,23 +420,6 @@ describe("LabelProgressPage", () => {
     within(picker).getByRole("button", { name: "mj minijack" }).focus();
     await userEvent.keyboard("{Enter}");
     await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
-    const chosen = within(alpha).getByRole("button", { name: "Dominant pattern of Alpha Song: minijack" });
-    expect(chosen).toHaveFocus();
-
-    await userEvent.click(chosen);
-    picker = await screen.findByRole("dialog", { name: "Dominant pattern of Alpha Song" });
-    await userEvent.type(within(picker).getByRole("searchbox", { name: "Search patterns" }), "jack");
-    expect(within(picker).getByRole("button", { name: "mj minijack" })).toHaveAttribute("aria-pressed", "true");
-    await userEvent.clear(within(picker).getByRole("searchbox", { name: "Search patterns" }));
-    await userEvent.keyboard("{Escape}");
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
-    expect(within(alpha).getByRole("button", { name: "Dominant pattern of Alpha Song: minijack" })).toBeInTheDocument();
-    await hold(within(alpha).getByRole("button", { name: "Save" }));
-    await waitFor(() => {
       expect(argsOf(calls, "session_label_submit")).toHaveLength(1);
     });
     expect(argsOf(calls, "session_label_submit")[0]?.["req"]).toEqual({
@@ -455,19 +428,87 @@ describe("LabelProgressPage", () => {
       playId: PLAY_A.playId,
       pattern: "7k.regular.jack.minijack",
     });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(choose).toBeEnabled();
+    });
+
+    await userEvent.click(choose);
+    picker = await screen.findByRole("dialog", { name: "Dominant pattern of Alpha Song" });
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(argsOf(calls, "session_label_submit")).toHaveLength(1);
   });
 
-  it("shows a labelled map's saved pattern as its current choice, pressed in the picker", async () => {
+  it("disables the answer while a save is on its way", async () => {
+    let resolve: (value: { id: string }) => void = () => undefined;
+    const { calls } = renderPage({
+      sessionLabelSubmit: () =>
+        new Promise((r) => {
+          resolve = r;
+        }),
+    });
+    const alpha = await row("Alpha Song");
+    await userEvent.click(within(alpha).getByRole("button", { name: "No clear pattern" }));
+    await waitFor(() => {
+      expect(argsOf(calls, "session_label_submit")).toHaveLength(1);
+    });
+    expect(within(alpha).getByRole("button", { name: "No clear pattern" })).toBeDisabled();
+    expect(within(alpha).getByRole("button", { name: /^Dominant pattern of Alpha Song:/ })).toBeDisabled();
+    await act(async () => {
+      resolve({ id: "01NEW" });
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(within(alpha).getByRole("button", { name: "No clear pattern" })).toBeEnabled();
+    });
+  });
+
+  it("replaces a labelled map's answer with the newly picked one, at once", async () => {
+    const { calls } = renderPage();
+    const beta = await row("Beta Song");
+    await userEvent.click(within(beta).getByRole("button", { name: "Dominant pattern of Beta Song: minijack" }));
+    const picker = await screen.findByRole("dialog", { name: "Dominant pattern of Beta Song" });
+    await userEvent.type(within(picker).getByRole("searchbox", { name: "Search patterns" }), "stream");
+    await userEvent.click(within(picker).getByRole("button", { name: "js jumpstream" }));
+    await waitFor(() => {
+      expect(argsOf(calls, "session_label_submit")).toEqual([
+        { req: { keymode: 7, md5: B, playId: PLAY_B.playId, pattern: "7k.regular.stream.jumpstream" } },
+      ]);
+    });
+  });
+
+  it("shows a labelled map's saved pattern on its tile, with the axis glyph and name, pressed in the picker", async () => {
     renderPage();
     const beta = await row("Beta Song");
     const choose = within(beta).getByRole("button", { name: "Dominant pattern of Beta Song: minijack" });
     expect(choose).toHaveTextContent("minijack");
-    expect(within(beta).getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(choose).toHaveTextContent("Jack");
+    expect(choose.querySelector("[data-axis-icon='7k.regular.jack']")).not.toBeNull();
+    expect(within(beta).getByRole("button", { name: "No clear pattern" })).toHaveAttribute("aria-pressed", "false");
 
     await userEvent.click(choose);
     const picker = await screen.findByRole("dialog", { name: "Dominant pattern of Beta Song" });
 
     expect(await within(picker).findByRole("button", { name: "mj minijack" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("shows a saved No clear pattern on the tile and presses its button", async () => {
+    renderPage({
+      sessionPlays: () => ({
+        ...SESSION,
+        plays: [PLAY_A, { ...PLAY_B, label: { eventId: "01SESSIONB", pattern: null, at: "2026-10-07T11:10:00.000Z" } }],
+      }),
+    });
+    const beta = await row("Beta Song");
+    const choose = within(beta).getByRole("button", { name: "Dominant pattern of Beta Song: No clear pattern" });
+    expect(choose).toHaveTextContent("No clear pattern");
+    expect(choose.querySelector("[data-axis-icon='fallback']")).not.toBeNull();
+    expect(within(beta).getByRole("button", { name: "No clear pattern" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("loads a map's thumbnail only once its row nears the viewport, over a fallback that keeps the size", async () => {
@@ -537,26 +578,15 @@ describe("LabelProgressPage", () => {
     expect(stars).toHaveStyle({ backgroundColor: difficultyColour(4.21) });
   });
 
-  it("saves No clear pattern as a null pattern, exclusive with a picked one", async () => {
-    const { calls } = renderPage();
-    const alpha = await row("Alpha Song");
-    const none = within(alpha).getByRole("button", { name: "No clear pattern" });
-    await userEvent.click(none);
-    expect(none).toHaveAttribute("aria-pressed", "true");
-    await hold(within(alpha).getByRole("button", { name: "Save" }));
-    await waitFor(() => {
-      expect(argsOf(calls, "session_label_submit")).toHaveLength(1);
-    });
-    expect((argsOf(calls, "session_label_submit")[0]?.["req"] as SessionLabelSubmitDto).pattern).toBeNull();
-  });
-
-  it("does not save on a tap", async () => {
+  it("saves No clear pattern as a null pattern at once", async () => {
     const { calls } = renderPage();
     const alpha = await row("Alpha Song");
     await userEvent.click(within(alpha).getByRole("button", { name: "No clear pattern" }));
-    await userEvent.click(within(alpha).getByRole("button", { name: "Save" }));
-    await wait(HOLD_MS * 2);
-    expect(argsOf(calls, "session_label_submit")).toHaveLength(0);
+    await waitFor(() => {
+      expect(argsOf(calls, "session_label_submit")).toEqual([
+        { req: { keymode: 7, md5: A, playId: PLAY_A.playId, pattern: null } },
+      ]);
+    });
   });
 
   it("undoes a saved answer by its event id", async () => {
@@ -573,8 +603,8 @@ describe("LabelProgressPage", () => {
     renderPage({ sessionLabelSubmit: () => mockIpcError("NOT_FOUND", { md5: A }) });
     const alpha = await row("Alpha Song");
     await userEvent.click(within(alpha).getByRole("button", { name: "No clear pattern" }));
-    await hold(within(alpha).getByRole("button", { name: "Save" }));
     expect(await within(alpha).findByRole("alert")).toBeInTheDocument();
+    expect(within(alpha).getByRole("button", { name: "No clear pattern" })).toBeEnabled();
   });
 
   it("opens a session map in the Label screen to inspect it", async () => {
@@ -596,7 +626,8 @@ describe("LabelProgressPage", () => {
     expect(within(alpha).getByText("Mapper")).toHaveClass("text-osu-pink");
     expect(within(alpha).getByText("Hard")).toBeInTheDocument();
     expect(within(alpha).getByTestId("session-status")).toHaveTextContent("Pending");
-    expect(within(await row("Beta Song")).getByTestId("session-status")).toHaveTextContent("minijack");
+    // The labelled card's tile already shows its answer, so no pill repeats it.
+    expect(within(await row("Beta Song")).queryByTestId("session-status")).toBeNull();
   });
 
   it("counts the chart's gold windows as information beside the answer", async () => {

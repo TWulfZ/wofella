@@ -31,19 +31,19 @@ function ringProgress(): number {
 describe("HoldButton", () => {
   it("is named by its label and described by the hold instruction", () => {
     const { button } = renderHold();
-    expect(button).toHaveAccessibleDescription("Hold for 1 second to save");
+    expect(button).toHaveAccessibleDescription("Hold for 0.5 seconds to save");
   });
 
-  it("confirms once a pointer hold reaches 1000 ms, filling the ring on the way", () => {
+  it("confirms once a pointer hold reaches 500 ms, filling the ring on the way", () => {
     const { onConfirm, button } = renderHold();
 
     fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
-    advance(500);
+    advance(250);
     expect(onConfirm).not.toHaveBeenCalled();
     expect(ringProgress()).toBeGreaterThan(0.3);
     expect(ringProgress()).toBeLessThan(0.7);
 
-    advance(499);
+    advance(249);
     expect(onConfirm).not.toHaveBeenCalled();
     advance(1);
     expect(onConfirm).toHaveBeenCalledOnce();
@@ -57,7 +57,7 @@ describe("HoldButton", () => {
     const { onConfirm, button } = renderHold();
 
     fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
-    advance(600);
+    advance(300);
     fireEvent.pointerUp(button, { button: 0, pointerId: 1 });
     advance(1000);
 
@@ -69,7 +69,7 @@ describe("HoldButton", () => {
     const { onConfirm, button } = renderHold();
 
     fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
-    advance(400);
+    advance(200);
     fireEvent.pointerLeave(button, { pointerId: 1 });
     advance(1000);
 
@@ -91,9 +91,9 @@ describe("HoldButton", () => {
     button.focus();
 
     fireEvent.keyDown(button, { key });
-    advance(500);
+    advance(250);
     fireEvent.keyDown(button, { key, repeat: true });
-    advance(500);
+    advance(250);
 
     expect(onConfirm).toHaveBeenCalledOnce();
     fireEvent.keyUp(button, { key });
@@ -104,14 +104,19 @@ describe("HoldButton", () => {
     button.focus();
 
     fireEvent.keyDown(button, { key: "Enter" });
-    advance(700);
+    advance(350);
     fireEvent.keyUp(button, { key: "Enter" });
     fireEvent.keyDown(button, { key: " " });
-    advance(700);
+    advance(350);
     fireEvent.blur(button);
     advance(1000);
 
     expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("words a one-second hold in the singular", () => {
+    const { button } = renderHold({ holdMs: 1000 });
+    expect(button).toHaveAccessibleDescription("Hold for 1 second to save");
   });
 
   it("honours a custom hold duration", () => {
@@ -140,7 +145,7 @@ describe("HoldButton", () => {
     const onConfirm = vi.fn();
     const { rerender } = render(<HoldButton label="Skip" icon={<svg />} onConfirm={onConfirm} />);
     fireEvent.pointerDown(screen.getByRole("button", { name: "Skip" }), { button: 0, pointerId: 1 });
-    advance(500);
+    advance(250);
 
     rerender(<HoldButton label="Skip" icon={<svg />} onConfirm={onConfirm} disabled />);
     advance(1000);
@@ -157,7 +162,7 @@ describe("HoldButton", () => {
     act(() => {
       ref.current?.press();
     });
-    advance(500);
+    advance(250);
     expect(ringProgress()).toBeGreaterThan(0.3);
     act(() => {
       ref.current?.release();
@@ -177,7 +182,7 @@ describe("HoldButton", () => {
     const { onConfirm, button } = renderHold();
 
     fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
-    advance(400);
+    advance(200);
     fireEvent.blur(window);
     advance(1000);
 
@@ -194,7 +199,7 @@ describe("HoldButton", () => {
     act(() => {
       ref.current?.press();
     });
-    advance(400);
+    advance(200);
     fireEvent(document, new Event("visibilitychange"));
     advance(1000);
     expect(onConfirm).not.toHaveBeenCalled();
@@ -233,7 +238,7 @@ describe("HoldButton", () => {
       </>,
     );
     expect(screen.getByRole("button", { name: "Save" })).toHaveAccessibleDescription(
-      "Hold for 1 second to save Pick a pattern first.",
+      "Hold for 0.5 seconds to save Pick a pattern first.",
     );
   });
 
@@ -254,6 +259,6 @@ describe("HoldButton", () => {
       await i18n.changeLanguage("es");
     });
     const { button } = renderHold({ label: "Guardar" });
-    expect(button).toHaveAccessibleDescription("Mantén pulsado 1 segundo para guardar");
+    expect(button).toHaveAccessibleDescription("Mantén pulsado 0,5 segundos para guardar");
   });
 });

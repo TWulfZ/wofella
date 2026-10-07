@@ -16,8 +16,8 @@ import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 
 export const HOLD_BUTTON_PARAMS = {
-  /** Long enough that a stray click never confirms, short enough not to feel like a chore on every window. */
-  defaultHoldMs: 1000,
+  /** A stray click (under ~150 ms) never lasts this long; any longer feels like a chore on every window. */
+  defaultHoldMs: 500,
   /** Ring redraw interval; the confirm itself runs on its own timer, so this only sets the ring's smoothness. */
   tickMs: 16,
 } as const;

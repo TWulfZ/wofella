@@ -1,5 +1,5 @@
 import { Check, Undo2 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { HoldButton, PatternGridPicker, patternName } from "@/features/label";
 import type { PatternDefDto, SessionLabelDto } from "@/ipc/bindings";
@@ -9,59 +9,76 @@ import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
 import { useSessionLabelMutations } from "../queries";
 
-/** The answer being built: one taxonomy pattern or "no clear pattern" (ADR 0020), never a set. */
-type Draft = { kind: "pattern"; id: string } | { kind: "none" } | null;
+/** One taxonomy pattern, or null for "no clear pattern" (ADR 0020), never a set. */
+export interface SessionAnswerChoice {
+  pattern: string | null;
+}
 
-export interface SessionAnswerProps {
+export interface SessionAnswerTarget {
   keymode: number;
   md5: string;
   /** The map's newest play: its id goes with the answer as provenance. */
   playId: string | null;
+}
+
+/** One writer for session answers, so the session list and the Label screen's strip cannot drift apart (ADR 0020). */
+export function useSessionAnswerWriter({ keymode, md5, playId }: SessionAnswerTarget) {
+  const errorText = useErrorText();
+  const [error, setError] = useState<string | null>(null);
+  const { submit, undo } = useSessionLabelMutations();
+
+  const run = async (action: () => Promise<unknown>): Promise<boolean> => {
+    setError(null);
+    try {
+      await action();
+      return true;
+    } catch (e) {
+      setError(errorText(e));
+      return false;
+    }
+  };
+
+  return {
+    busy: submit.isPending || undo.isPending,
+    error,
+    save: (pattern: string | null) => run(() => submit.mutateAsync({ keymode, md5, playId, pattern })),
+    undo: (eventId: string) => run(() => undo.mutateAsync(eventId)),
+  };
+}
+
+export function SessionAnswerError({ error }: { error: string | null }) {
+  return error === null ? null : (
+    <p role="alert" className="text-destructive text-sm">
+      {error}
+    </p>
+  );
+}
+
+/** The answer being built in the strip; null until something is picked. */
+type Draft = { kind: "pattern"; id: string } | { kind: "none" } | null;
+
+export interface SessionStripAnswerProps extends SessionAnswerTarget {
   label: SessionLabelDto | null;
   title: string;
   /** The element naming the map, so each control is heard with it. */
   describedBy: string;
   taxonomy: readonly PatternDefDto[];
   holdMs: number;
-  /**
-   * In the Label screen the gold answer's own Save and Undo sit nearby and Enter saves gold, so the strip names its
-   * controls apart and leaves focus off the grid trigger (ADR 0020).
-   */
-  placement: "sessionList" | "labelScreen";
-  /** Trailing actions on the same line. */
-  children?: ReactNode;
 }
 
-/** One writer for session answers, so the session list and the Label screen's strip cannot drift apart (ADR 0020). */
-export function SessionAnswer(props: SessionAnswerProps) {
-  const { keymode, md5, playId, label, title, describedBy, taxonomy, holdMs, placement, children } = props;
-  const inLabelScreen = placement === "labelScreen";
+/**
+ * The Label screen's answer: a draft saved by a hold, because Enter saves gold there. The gold answer's own Save and
+ * Undo sit nearby, so the strip names its controls apart and leaves focus off the grid trigger (ADR 0020).
+ */
+export function SessionStripAnswer(props: SessionStripAnswerProps) {
+  const { label, title, describedBy, taxonomy, holdMs } = props;
   const { t } = useTranslation();
-  const errorText = useErrorText();
   const [draft, setDraft] = useState<Draft>(null);
-  const [error, setError] = useState<string | null>(null);
-  const { submit, undo } = useSessionLabelMutations();
-  const busy = submit.isPending || undo.isPending;
+  const writer = useSessionAnswerWriter(props);
 
   const save = async (): Promise<void> => {
-    if (draft === null) {
-      return;
-    }
-    setError(null);
-    try {
-      await submit.mutateAsync({ keymode, md5, playId, pattern: draft.kind === "pattern" ? draft.id : null });
+    if (draft !== null && (await writer.save(draft.kind === "pattern" ? draft.id : null))) {
       setDraft(null);
-    } catch (e) {
-      setError(errorText(e));
-    }
-  };
-
-  const runUndo = async (eventId: string): Promise<void> => {
-    setError(null);
-    try {
-      await undo.mutateAsync(eventId);
-    } catch (e) {
-      setError(errorText(e));
     }
   };
 
@@ -72,16 +89,16 @@ export function SessionAnswer(props: SessionAnswerProps) {
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <PatternGridPicker
-          keymode={keymode}
+          keymode={props.keymode}
           taxonomy={taxonomy}
-          disabled={busy || taxonomy.length === 0}
+          disabled={writer.busy || taxonomy.length === 0}
           chosen={shownPattern}
           onChoose={(pattern) => {
             setDraft({ kind: "pattern", id: pattern.id });
           }}
           title={t("labelProgress.session.pickerTitle", { title })}
           description={t("labelProgress.session.pickerDescription")}
-          returnFocus={!inLabelScreen}
+          returnFocus={false}
           trigger={{
             // The visible choice is part of the name (WCAG 2.5.3), so it is heard and can be spoken to.
             label: t("labelProgress.session.chooseFor", { title, choice: choiceText }),
@@ -94,7 +111,7 @@ export function SessionAnswer(props: SessionAnswerProps) {
           size="sm"
           aria-pressed={draft?.kind === "none"}
           aria-describedby={describedBy}
-          disabled={busy}
+          disabled={writer.busy}
           onClick={() => {
             setDraft((current) => (current?.kind === "none" ? null : { kind: "none" }));
           }}
@@ -103,11 +120,11 @@ export function SessionAnswer(props: SessionAnswerProps) {
           {t("labelProgress.session.noPattern")}
         </Button>
         <HoldButton
-          label={inLabelScreen ? t("labelProgress.strip.save") : t("labelProgress.session.save")}
+          label={t("labelProgress.strip.save")}
           icon={<Check aria-hidden="true" />}
           holdMs={holdMs}
           describedBy={describedBy}
-          disabled={draft === null || busy}
+          disabled={draft === null || writer.busy}
           onConfirm={() => {
             void save();
           }}
@@ -117,23 +134,18 @@ export function SessionAnswer(props: SessionAnswerProps) {
             type="button"
             variant="ghost"
             size="sm"
-            disabled={busy}
+            disabled={writer.busy}
             aria-describedby={describedBy}
             onClick={() => {
-              void runUndo(label.eventId);
+              void writer.undo(label.eventId);
             }}
           >
             <Undo2 aria-hidden="true" />
-            {inLabelScreen ? t("labelProgress.strip.undo") : t("labelProgress.session.undo")}
+            {t("labelProgress.strip.undo")}
           </Button>
         )}
-        {children}
       </div>
-      {error !== null && (
-        <p role="alert" className="text-destructive text-sm">
-          {error}
-        </p>
-      )}
+      <SessionAnswerError error={writer.error} />
     </div>
   );
 }

@@ -49,7 +49,6 @@
       "noPattern": "No clear pattern",
       "choose": "Choose pattern",
       "chooseFor": "Dominant pattern of {{title}}: {{choice}}",
-      "save": "Save",
       "undo": "Undo",
       "open": "Inspect in Label screen",
       "playedAt": "Played {{when}}",

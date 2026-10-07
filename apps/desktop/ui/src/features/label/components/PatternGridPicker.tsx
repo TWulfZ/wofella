@@ -17,8 +17,11 @@ export interface PatternGridPickerProps {
   chosen: string | null;
   onChoose: (pattern: PatternDefDto) => void;
   disabled: boolean;
-  /** The trigger's accessible name must contain its visible text (WCAG 2.5.3). */
-  trigger: { label: string; text: ReactNode };
+  /**
+   * The trigger's accessible name must contain its visible text (WCAG 2.5.3). `content` replaces the default
+   * outline button's icon and text with the caller's own, in a bare button `className` styles.
+   */
+  trigger: { label: string; text: ReactNode } | { label: string; content: ReactNode; className: string };
   title: string;
   description: string;
   /** False inside the Label screen, where a focused trigger would take the next Enter from the gold Save hold. */
@@ -44,10 +47,16 @@ export function PatternGridPicker({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button type="button" variant="outline" size="sm" aria-label={trigger.label} disabled={disabled} className="max-w-56">
-          <LayoutGrid aria-hidden />
-          <span className="min-w-0 truncate">{trigger.text}</span>
-        </Button>
+        {"content" in trigger ? (
+          <button type="button" aria-label={trigger.label} disabled={disabled} className={trigger.className}>
+            {trigger.content}
+          </button>
+        ) : (
+          <Button type="button" variant="outline" size="sm" aria-label={trigger.label} disabled={disabled} className="max-w-56">
+            <LayoutGrid aria-hidden />
+            <span className="min-w-0 truncate">{trigger.text}</span>
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent
         closeLabel={t("common.close")}

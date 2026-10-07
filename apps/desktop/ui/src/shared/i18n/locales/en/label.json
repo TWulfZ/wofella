@@ -207,8 +207,8 @@
       "widthValue": "{{px}} px"
     },
     "hold": {
-      "description_one": "Hold for {{count}} second to {{action}}",
-      "description_other": "Hold for {{count}} seconds to {{action}}"
+      "description_one": "Hold for {{count, number}} second to {{action}}",
+      "description_other": "Hold for {{count, number}} seconds to {{action}}"
     },
     "player": {
       "controls": "Playback controls",
