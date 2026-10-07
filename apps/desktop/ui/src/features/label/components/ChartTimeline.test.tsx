@@ -22,6 +22,7 @@ beforeEach(() => {
 
 function renderTimeline(overrides: Partial<ChartTimelineProps> = {}) {
   const onMove = vi.fn();
+  const onResize = vi.fn();
   const props: ChartTimelineProps = {
     span: { firstMs: 0, endMs: 100_000 },
     window: { t0Ms: 20_000, t1Ms: 30_000 },
@@ -29,14 +30,23 @@ function renderTimeline(overrides: Partial<ChartTimelineProps> = {}) {
     labelled: [],
     locked: false,
     onMove,
+    onResize,
     ...overrides,
   };
   const view = render(<ChartTimeline {...props} />);
-  return { onMove, view, props };
+  return { onMove, onResize, view, props };
 }
 
 function slider(): HTMLElement {
   return screen.getByRole("slider", { name: "Window position" });
+}
+
+function startHandle(): HTMLElement {
+  return screen.getByRole("slider", { name: "Window start" });
+}
+
+function endHandle(): HTMLElement {
+  return screen.getByRole("slider", { name: "Window end" });
 }
 
 function track(): HTMLElement {
@@ -152,5 +162,153 @@ describe("ChartTimeline", () => {
     fireEvent.pointerDown(track(), { clientX: 100 + 600, button: 2, pointerId: 1 });
     fireEvent.pointerUp(window, { clientX: 100 + 600, pointerId: 1 });
     expect(onMove).not.toHaveBeenCalled();
+  });
+
+  describe("resize handles", () => {
+    it("sit on both edges of the window as sliders over that edge, bounded to 1..60 s and the chart", () => {
+      renderTimeline();
+      expect(startHandle()).toHaveAttribute("aria-valuenow", "20000");
+      expect(startHandle()).toHaveAttribute("aria-valuemin", "0");
+      expect(startHandle()).toHaveAttribute("aria-valuemax", "29000");
+      expect(startHandle()).toHaveAttribute("aria-valuetext", "00:20, window 10.0 s");
+      expect(endHandle()).toHaveAttribute("aria-valuenow", "30000");
+      expect(endHandle()).toHaveAttribute("aria-valuemin", "21000");
+      expect(endHandle()).toHaveAttribute("aria-valuemax", "80000");
+      expect(startHandle().style.left).toBe("20%");
+      expect(endHandle().style.left).toBe("30%");
+    });
+
+    it("cap the far edge at the chart end", () => {
+      renderTimeline({ window: { t0Ms: 70_000, t1Ms: 80_000 } });
+      expect(endHandle()).toHaveAttribute("aria-valuemax", "100000");
+      expect(startHandle()).toHaveAttribute("aria-valuemin", "20000");
+    });
+
+    it("step the focused edge by 1 s with the arrows and 5 s with Page Up/Down", async () => {
+      const { onResize, onMove } = renderTimeline();
+      startHandle().focus();
+      await userEvent.keyboard("{ArrowLeft}");
+      expect(onResize).toHaveBeenLastCalledWith({ t0Ms: 19_000, t1Ms: 30_000 });
+      await userEvent.keyboard("{PageUp}");
+      expect(onResize).toHaveBeenLastCalledWith({ t0Ms: 25_000, t1Ms: 30_000 });
+      endHandle().focus();
+      await userEvent.keyboard("{ArrowRight}");
+      expect(onResize).toHaveBeenLastCalledWith({ t0Ms: 20_000, t1Ms: 31_000 });
+      await userEvent.keyboard("{PageDown}");
+      expect(onResize).toHaveBeenLastCalledWith({ t0Ms: 20_000, t1Ms: 25_000 });
+      expect(onMove).not.toHaveBeenCalled();
+    });
+
+    it("never shrink below 1 s or grow past 60 s", async () => {
+      const { onResize, view, props } = renderTimeline({ window: { t0Ms: 20_000, t1Ms: 21_000 } });
+      endHandle().focus();
+      await userEvent.keyboard("{ArrowLeft}{PageDown}");
+      startHandle().focus();
+      await userEvent.keyboard("{ArrowRight}");
+      expect(onResize).not.toHaveBeenCalled();
+
+      view.rerender(<ChartTimeline {...props} window={{ t0Ms: 20_000, t1Ms: 79_000 }} />);
+      endHandle().focus();
+      await userEvent.keyboard("{PageUp}");
+      expect(onResize).toHaveBeenLastCalledWith({ t0Ms: 20_000, t1Ms: 80_000 });
+    });
+
+    it("drag an edge with the pointer, keeping the other one, committing once on release", () => {
+      const { onResize, onMove } = renderTimeline();
+      fireEvent.pointerDown(endHandle(), { clientX: 100 + 300, button: 0, pointerId: 1 });
+      fireEvent.pointerMove(window, { clientX: 100 + 450, pointerId: 1 });
+      expect(endHandle()).toHaveAttribute("aria-valuenow", "45000");
+      expect(slider().style.width).toBe("25%");
+      // Past 60 s the edge stops.
+      fireEvent.pointerMove(window, { clientX: 100 + 950, pointerId: 1 });
+      expect(endHandle()).toHaveAttribute("aria-valuenow", "80000");
+      expect(onResize).not.toHaveBeenCalled();
+      fireEvent.pointerUp(window, { clientX: 100 + 950, pointerId: 1 });
+      expect(onResize).toHaveBeenCalledExactlyOnceWith({ t0Ms: 20_000, t1Ms: 80_000 });
+      expect(onMove).not.toHaveBeenCalled();
+    });
+
+    it("drag the start edge, never past 1 s before the end", () => {
+      const { onResize } = renderTimeline();
+      fireEvent.pointerDown(startHandle(), { clientX: 100 + 200, button: 0, pointerId: 1 });
+      fireEvent.pointerMove(window, { clientX: 100 + 350, pointerId: 1 });
+      expect(startHandle()).toHaveAttribute("aria-valuenow", "29000");
+      fireEvent.pointerUp(window, { clientX: 100 + 350, pointerId: 1 });
+      expect(onResize).toHaveBeenCalledExactlyOnceWith({ t0Ms: 29_000, t1Ms: 30_000 });
+    });
+
+    describe("on a window a few px wide", () => {
+      // 300 s over 900 px from x = 0 is 3 px a second: the 4 s window from 150 s spans x = 450..462.
+      const LONG_CHART: Partial<ChartTimelineProps> = {
+        span: { firstMs: 0, endMs: 300_000 },
+        window: { t0Ms: 150_000, t1Ms: 154_000 },
+      };
+      beforeEach(() => {
+        vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+          x: 0,
+          y: 0,
+          left: 0,
+          top: 0,
+          width: 900,
+          height: 40,
+          right: 900,
+          bottom: 40,
+          toJSON: () => ({}),
+        });
+      });
+
+      it("moves the window when its middle is dragged, even where a handle's box overlaps it", () => {
+        const { onMove, onResize } = renderTimeline(LONG_CHART);
+        // The browser hands the press to whichever element's box is on top; a handle's box may cover the body.
+        fireEvent.pointerDown(endHandle(), { clientX: 456, button: 0, pointerId: 1 });
+        fireEvent.pointerMove(window, { clientX: 486, pointerId: 1 });
+        fireEvent.pointerUp(window, { clientX: 486, pointerId: 1 });
+
+        expect(onMove).toHaveBeenCalledExactlyOnceWith(160_000);
+        expect(onResize).not.toHaveBeenCalled();
+      });
+
+      it("keeps a grab area at least 16 px wide for the move", () => {
+        const { onMove, onResize } = renderTimeline(LONG_CHART);
+        fireEvent.pointerDown(track(), { clientX: 449, button: 0, pointerId: 1 });
+        fireEvent.pointerMove(window, { clientX: 479, pointerId: 1 });
+        fireEvent.pointerUp(window, { clientX: 479, pointerId: 1 });
+
+        expect(onMove).toHaveBeenCalledExactlyOnceWith(160_000);
+        expect(onResize).not.toHaveBeenCalled();
+      });
+
+      it("resizes from a press just outside either edge, keeping the edge's offset from the pointer", () => {
+        const { onMove, onResize } = renderTimeline(LONG_CHART);
+        fireEvent.pointerDown(track(), { clientX: 468, button: 0, pointerId: 1 });
+        fireEvent.pointerMove(window, { clientX: 492, pointerId: 1 });
+        fireEvent.pointerUp(window, { clientX: 492, pointerId: 1 });
+        expect(onResize).toHaveBeenLastCalledWith({ t0Ms: 150_000, t1Ms: 162_000 });
+
+        fireEvent.pointerDown(track(), { clientX: 444, button: 0, pointerId: 1 });
+        fireEvent.pointerMove(window, { clientX: 420, pointerId: 1 });
+        fireEvent.pointerUp(window, { clientX: 420, pointerId: 1 });
+        expect(onResize).toHaveBeenLastCalledWith({ t0Ms: 142_000, t1Ms: 154_000 });
+        expect(onMove).not.toHaveBeenCalled();
+      });
+
+      it("draws the handles outside the window, leaving its body uncovered", () => {
+        renderTimeline(LONG_CHART);
+        expect(startHandle()).toHaveClass("-translate-x-full");
+        expect(endHandle()).not.toHaveClass("-translate-x-1/2");
+        expect(endHandle()).not.toHaveClass("-translate-x-full");
+      });
+    });
+
+    it("do nothing on a locked (saved) window", async () => {
+      const { onResize } = renderTimeline({ locked: true });
+      expect(startHandle()).toHaveAttribute("aria-disabled", "true");
+      expect(endHandle()).toHaveAccessibleDescription("Undo the label to move a saved window.");
+      fireEvent.pointerDown(endHandle(), { clientX: 100 + 300, button: 0, pointerId: 1 });
+      fireEvent.pointerUp(window, { clientX: 100 + 500, pointerId: 1 });
+      endHandle().focus();
+      await userEvent.keyboard("{ArrowRight}");
+      expect(onResize).not.toHaveBeenCalled();
+    });
   });
 });

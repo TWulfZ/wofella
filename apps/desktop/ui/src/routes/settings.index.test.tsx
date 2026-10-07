@@ -1,8 +1,9 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { bootApp } from "@/app/testing";
-import type { HandLayoutDto } from "@/ipc/bindings";
+import { skinKeys } from "@/features/label";
+import type { ChartWindowDto, HandLayoutDto, PatternExampleDto, SkinDto, SkinEntryDto, SkinListDto } from "@/ipc/bindings";
 import { mockIpcError, type CommandHandlers } from "@/ipc/mocks";
 import { i18n, LANGUAGE_STORAGE_KEY } from "@/shared/i18n";
 
@@ -22,9 +23,36 @@ const K7_LAYOUTS = [
   preset("k7.both_thumbs", "L L L B R R R"),
 ];
 
+const NO_SKINS: SkinListDto = { skins: [], current: null, maniaSpeed: null, maniaSpeedBpmScale: null };
+
+function exampleWindow(fromMs: number, toMs: number): ChartWindowDto {
+  return {
+    md5: "0".repeat(32),
+    keymode: 7,
+    fromMs,
+    toMs,
+    notes: [
+      { tMs: fromMs, col: 3, endMs: null },
+      { tMs: fromMs + 150, col: 1, endMs: null },
+    ],
+    timing: [{ tMs: 0, kind: "red", beatLenMs: 300, meter: 4, sv: null }],
+    layout: { id: "k7.313_right_thumb", columns: K7_LAYOUTS[0]?.columns ?? [] },
+    chartSpan: { firstMs: 0, endMs: toMs },
+    audioFilename: null,
+  };
+}
+
+const EXAMPLES: PatternExampleDto[] = [
+  { id: "regular.jack.minijack", window: exampleWindow(0, 1500) },
+  { id: "regular.stream.jumpstream", window: exampleWindow(0, 1900) },
+];
+
 function handLayoutHandlers(initial = "k7.313_right_thumb"): CommandHandlers {
   let current = initial;
   return {
+    // The default-skin card shares the page; with no skins it stays quiet and procedural.
+    skinList: () => NO_SKINS,
+    labelPatternExamples: () => EXAMPLES,
     settingsHandLayouts: () => K7_LAYOUTS,
     settingsGetHandLayout: () => current,
     settingsSetHandLayout: (args) => {
@@ -33,6 +61,65 @@ function handLayoutHandlers(initial = "k7.313_right_thumb"): CommandHandlers {
     },
   };
 }
+
+// The page always renders the default-skin preview, so every test needs a sized, drawable canvas.
+interface RecordingCanvas {
+  images: unknown[];
+  fills: number;
+}
+let canvas: RecordingCanvas;
+let bitmaps: { close: ReturnType<typeof vi.fn> }[];
+
+class SizedResizeObserver {
+  constructor(private readonly callback: ResizeObserverCallback) {}
+  observe(target: Element): void {
+    const entry = { target, contentRect: { width: 400, height: 300 } };
+    queueMicrotask(() => {
+      this.callback([entry as unknown as ResizeObserverEntry], this);
+    });
+  }
+  unobserve(): void {
+    // Sized once on observe; nothing to stop.
+  }
+  disconnect(): void {
+    // See unobserve.
+  }
+}
+
+beforeEach(() => {
+  canvas = { images: [], fills: 0 };
+  bitmaps = [];
+  vi.stubGlobal("ResizeObserver", SizedResizeObserver);
+  vi.stubGlobal("requestAnimationFrame", () => 0);
+  vi.stubGlobal("cancelAnimationFrame", () => undefined);
+  vi.stubGlobal(
+    "createImageBitmap",
+    vi.fn(async () => {
+      const bitmap = { width: 100, height: 50, close: vi.fn() };
+      bitmaps.push(bitmap);
+      return Promise.resolve(bitmap);
+    }),
+  );
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+    fillStyle: "#000",
+    globalAlpha: 1,
+    fillRect: () => {
+      canvas.fills++;
+    },
+    drawImage: (image: unknown) => {
+      canvas.images.push(image);
+    },
+    setTransform: () => undefined,
+    save: () => undefined,
+    restore: () => undefined,
+    translate: () => undefined,
+    scale: () => undefined,
+  } as unknown as RenderingContext);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("/settings/", () => {
   it("shows the data dir, logs dir and version", async () => {
@@ -161,5 +248,190 @@ describe("/settings/ hand layout", () => {
     expect(await within(group).findByRole("radio", { name: "3 | 1+3 (pulgar derecho)" })).toBeChecked();
     expect(within(group).getByRole("radio", { name: "3+1 | 3 (pulgar izquierdo)" })).toBeInTheDocument();
     expect(within(group).getByRole("radio", { name: "3 | 1 | 3 (cualquier pulgar)" })).toBeInTheDocument();
+  });
+});
+
+describe("/settings/ default skin", () => {
+  function skinEntry(folder: string, keymodes: number[]): SkinEntryDto {
+    return { folder, name: folder, keymodes, iniMtime: "1" };
+  }
+
+  const LIST: SkinListDto = {
+    skins: [skinEntry("Alpha4K", [4]), skinEntry("Pilot", [4, 7]), skinEntry("Zeta", [7])],
+    current: "Pilot",
+    maniaSpeed: null,
+    maniaSpeedBpmScale: false,
+  };
+
+  /** Column 3's note comes from an image, so a skinned preview always issues a drawImage. */
+  function skinDto(folder: string, keymode: number): SkinDto {
+    return {
+      folder,
+      name: folder,
+      version: 2.5,
+      config: {
+        keys: keymode,
+        columnWidth: Array.from({ length: keymode }, () => 42),
+        columnSpacing: Array.from({ length: keymode - 1 }, () => 0),
+        columnLineWidth: Array.from({ length: keymode + 1 }, () => 2),
+        hitPosition: 428,
+        lightPosition: 413,
+        widthForNoteHeightScale: 42,
+        noteBodyStyle: "repeat_bottom",
+        judgementLine: true,
+        keysUnderNotes: false,
+        upsideDown: false,
+        barlineHeight: 1.2,
+        colours: { column: [], columnLine: null, judgementLine: null, barline: null, hold: null },
+      },
+      images: [{ slot: "note.3", file: 0 }],
+      files: [{ mime: "image/png", scale: 1, width: 100, height: 50, base64: "iVBORw0KGgo=" }],
+      diagnostics: [],
+    };
+  }
+
+  function skinHandlers(list: SkinListDto = LIST): CommandHandlers {
+    return {
+      ...handLayoutHandlers(),
+      skinList: () => list,
+      skinGet: (args) => skinDto(String(args["folder"]), Number(args["keymode"])),
+    };
+  }
+
+  async function picker(): Promise<HTMLSelectElement> {
+    const select = await screen.findByRole<HTMLSelectElement>("combobox", { name: "Default skin" });
+    await waitFor(() => {
+      expect(select).toBeEnabled();
+    });
+    return select;
+  }
+
+  function argsOf(calls: { cmd: string; args: unknown }[], cmd: string): unknown[] {
+    return calls.filter((c) => c.cmd === cmd).map((c) => c.args);
+  }
+
+  it("lists the skins with a 7K block first, the rest marked defaults, and starts on the cfg skin", async () => {
+    const { calls } = await bootApp("/settings/", skinHandlers());
+    const select = await picker();
+    expect([...select.options].map((o) => o.text)).toEqual(["None (procedural)", "Pilot", "Zeta", "Alpha4K (defaults)"]);
+    expect(select).toHaveValue("Pilot");
+    await waitFor(() => {
+      expect(argsOf(calls, "skin_get")).toEqual([{ folder: "Pilot", keymode: 7 }]);
+    });
+    expect(argsOf(calls, "label_pattern_examples")).toEqual([{ keymode: 7, layoutId: null }]);
+    expect(await screen.findByRole("img", { name: "Pilot on a sample pattern" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(canvas.images).toContain(bitmaps[0]);
+    });
+  });
+
+  it("starts on the default the Label screen stored", async () => {
+    localStorage.setItem("wolluf.label.skin", JSON.stringify({ folder: "Zeta" }));
+    const { calls } = await bootApp("/settings/", skinHandlers());
+    expect(await picker()).toHaveValue("Zeta");
+    await waitFor(() => {
+      expect(argsOf(calls, "skin_get")).toEqual([{ folder: "Zeta", keymode: 7 }]);
+    });
+  });
+
+  it("stores a picked skin as the default and redraws the preview with it", async () => {
+    const { calls } = await bootApp("/settings/", skinHandlers());
+    await waitFor(() => {
+      expect(canvas.images).toContain(bitmaps[0]);
+    });
+    await userEvent.selectOptions(await picker(), "Zeta");
+    expect(localStorage.getItem("wolluf.label.skin")).toBe(JSON.stringify({ folder: "Zeta" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Saved");
+    await waitFor(() => {
+      expect(argsOf(calls, "skin_get")).toEqual([
+        { folder: "Pilot", keymode: 7 },
+        { folder: "Zeta", keymode: 7 },
+      ]);
+    });
+    expect(await screen.findByRole("img", { name: "Zeta on a sample pattern" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(canvas.images).toContain(bitmaps[1]);
+    });
+    expect(bitmaps[0]?.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("stores None and draws the preview procedurally", async () => {
+    await bootApp("/settings/", skinHandlers());
+    await waitFor(() => {
+      expect(canvas.images).toContain(bitmaps[0]);
+    });
+    const select = await picker();
+    canvas.images.length = 0;
+    canvas.fills = 0;
+    await userEvent.selectOptions(select, "");
+    expect(localStorage.getItem("wolluf.label.skin")).toBe(JSON.stringify({ folder: null }));
+    expect(await screen.findByRole("img", { name: "None (procedural) on a sample pattern" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(canvas.fills).toBeGreaterThan(0);
+    });
+    expect(canvas.images).toEqual([]);
+    expect(bitmaps[0]?.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("draws procedurally without asking for a skin when the cfg names none", async () => {
+    const { calls } = await bootApp("/settings/", skinHandlers({ ...LIST, current: null }));
+    expect(await picker()).toHaveValue("");
+    await waitFor(() => {
+      expect(canvas.fills).toBeGreaterThan(0);
+    });
+    expect(argsOf(calls, "skin_get")).toEqual([]);
+    expect(canvas.images).toEqual([]);
+  });
+
+  it("refetches the previewed skin when its skin.ini changes on disk, as the Label screen does", async () => {
+    let list = LIST;
+    const { calls, queryClient } = await bootApp("/settings/", { ...skinHandlers(), skinList: () => list });
+    await waitFor(() => {
+      expect(argsOf(calls, "skin_get")).toEqual([{ folder: "Pilot", keymode: 7 }]);
+    });
+
+    list = { ...LIST, skins: LIST.skins.map((s) => (s.folder === "Pilot" ? { ...s, iniMtime: "2" } : s)) };
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: skinKeys.list() });
+    });
+
+    await waitFor(() => {
+      expect(argsOf(calls, "skin_get")).toEqual([
+        { folder: "Pilot", keymode: 7 },
+        { folder: "Pilot", keymode: 7 },
+      ]);
+    });
+  });
+
+  it("shows a still placeholder instead of a loading pulse when the sample pattern cannot be read", async () => {
+    await bootApp("/settings/", { ...skinHandlers(), labelPatternExamples: () => mockIpcError("INTERNAL") });
+    const card = await screen.findByRole("region", { name: "Default skin" });
+    expect(await within(card).findByText("No sample pattern to preview.")).toBeInTheDocument();
+    expect(card.querySelector("[aria-busy='true']")).toBeNull();
+    expect(card.querySelector(".motion-safe\\:animate-pulse")).toBeNull();
+  });
+
+  it("shows why the skins cannot be listed and keeps the rest of the page", async () => {
+    await bootApp("/settings/", { ...skinHandlers(), skinList: () => mockIpcError("INTERNAL") });
+    const card = await screen.findByRole("region", { name: "Default skin" });
+    expect(await within(card).findByRole("alert")).toBeInTheDocument();
+    expect(within(card).getByRole("combobox", { name: "Default skin" })).toBeDisabled();
+    expect(screen.getByText("0.1.0")).toBeInTheDocument();
+  });
+
+  it("speaks Spanish", async () => {
+    await i18n.changeLanguage("es");
+    await bootApp("/settings/", skinHandlers());
+    const select = await screen.findByRole<HTMLSelectElement>("combobox", { name: "Skin por defecto" });
+    await waitFor(() => {
+      expect(select).toBeEnabled();
+    });
+    expect([...select.options].map((o) => o.text)).toEqual([
+      "Ninguna (procedural)",
+      "Pilot",
+      "Zeta",
+      "Alpha4K (por defecto)",
+    ]);
+    expect(await screen.findByRole("img", { name: "Pilot en un patrón de ejemplo" })).toBeInTheDocument();
   });
 });

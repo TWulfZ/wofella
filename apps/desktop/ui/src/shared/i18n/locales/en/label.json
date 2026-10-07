@@ -17,11 +17,39 @@
       "valueText": "{{from}} to {{to}}",
       "labelledCount_one": "{{count}} labelled window on this chart",
       "labelledCount_other": "{{count}} labelled windows on this chart",
-      "locked": "Undo the label to move a saved window."
+      "locked": "Undo the label to move a saved window.",
+      "start": "Window start",
+      "end": "Window end",
+      "edgeValueText": "{{time}}, window {{seconds}} s"
     },
     "header": {
       "mappedBy": "mapped by {{creator}}",
-      "stars": "{{stars}} stars"
+      "stars": "{{stars}} stars",
+      "details": "Show the full image and map details",
+      "imageAlt": "Background of {{title}}",
+      "field": {
+        "mapper": "Mapper",
+        "difficulty": "Difficulty",
+        "stars": "Star rating",
+        "length": "Length",
+        "bpm": "BPM",
+        "od": "OD",
+        "hp": "HP",
+        "notes": "Notes",
+        "longNotes": "Long notes",
+        "source": "Source",
+        "tags": "Tags",
+        "setId": "Beatmap set ID",
+        "beatmapId": "Beatmap ID",
+        "md5": "MD5"
+      },
+      "counters": {
+        "label": "Session",
+        "labelled": "Labelled: {{count}}",
+        "skipped": "Skipped: {{count}}",
+        "undone": "Undone: {{count}}",
+        "gold": "Gold set: {{count}}"
+      }
     },
     "transport": {
       "play": "Play",
@@ -38,7 +66,9 @@
       "osuSpeed": "osu! speed",
       "osuSpeedHint": "F3 slower, F4 faster",
       "zoom": "Zoom",
-      "zoomValue": "×{{value}}"
+      "zoomValue": "×{{value}}",
+      "rate": "Playback rate",
+      "rateValue": "×{{value}}"
     },
     "skin": {
       "label": "Skin",
@@ -104,19 +134,16 @@
       "findPlaceholder": "Type to filter · Enter adds",
       "options": "Taxonomy patterns",
       "needsPattern": "Pick a pattern or No pattern to save.",
-      "undoNotNewest": "Only the newest saved label can be undone."
+      "undoNotNewest": "Only the newest saved label can be undone.",
+      "savedNoSkip": "A saved window cannot be skipped; undo it first.",
+      "skip": "Skip",
+      "focusChip": "Show {{name}} in the pattern panel",
+      "more": "{{count}} more: {{names}}"
     },
     "error": {
       "unknown_pattern": "Unknown pattern “{{pattern}}”."
     },
     "undone": "Last label undone.",
-    "footer": {
-      "labelled": "Labelled: {{count}}",
-      "skipped": "Skipped: {{count}}",
-      "undone": "Undone: {{count}}",
-      "goldTotal": "Gold set: {{count}}",
-      "seed": "Seed {{seed}}"
-    },
     "done": {
       "exhausted": "No window left to label.",
       "newSession": "New session",
@@ -133,10 +160,8 @@
       "next": "Next",
       "random": "Random",
       "nowPlaying": "Now playing",
-      "skip": "Skip",
       "firstWindow": "This is the first window of the session.",
       "busy": "Wait for the current step to finish.",
-      "savedNoSkip": "A saved window cannot be skipped; undo it first.",
       "planFinished": "The plan has no window left; Random and Now playing still open one."
     },
     "notice": {
@@ -146,6 +171,16 @@
     "panel": {
       "resize": "Resize the pattern panel",
       "widthValue": "{{px}} px"
+    },
+    "hold": {
+      "description_one": "Hold for {{count}} second to {{action}}",
+      "description_other": "Hold for {{count}} seconds to {{action}}"
+    },
+    "player": {
+      "controls": "Playback controls",
+      "settings": "Playback settings",
+      "closeSettings": "Close playback settings",
+      "seed": "Seed {{seed}}"
     }
   }
 }

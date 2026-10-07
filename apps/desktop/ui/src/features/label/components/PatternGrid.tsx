@@ -1,11 +1,21 @@
 import { ChevronDown, ChevronsDownUp, ChevronsUpDown, Search, SearchX } from "lucide-react";
-import { type KeyboardEvent, type ReactNode, useId, useRef, useState } from "react";
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  type Ref,
+  useEffect,
+  useId,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import type { PatternDefDto } from "@/ipc/bindings";
 import { type ChartWindow, PatternPreview } from "@/features/playfield";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/shared/ui/hover-card";
+import { AxisIcon } from "./axisIcons";
 import { readOpenAxes, writeOpenAxes } from "./patternGridPrefs";
 import { type AxisGroup, axisKey, groupByAxis, groupByFamily, matchesSearch, patternName } from "./patterns";
 
@@ -19,6 +29,8 @@ export interface PatternGridParams {
   /** Decorative examples on a collapsed axis card; more would crowd the title in a narrow panel. */
   stripCount: number;
   strip: { width: number; height: number };
+  /** How long a card stays highlighted after focusPattern, long enough to find it after the scroll lands. */
+  highlightMs: number;
 }
 
 export const PATTERN_GRID_PARAMS: PatternGridParams = {
@@ -28,9 +40,12 @@ export const PATTERN_GRID_PARAMS: PatternGridParams = {
   enlarged: { width: 200, height: 320 },
   stripCount: 3,
   strip: { width: 24, height: 36 },
+  highlightMs: 1200,
 };
 
 interface FamilyAccent {
+  /** Sets the axis icon's accent variable (axisIcons.tsx) to the family colour. */
+  icon: string;
   heading: string;
   rule: string;
   card: string;
@@ -41,6 +56,7 @@ interface FamilyAccent {
 // Full class strings so Tailwind sees them; RICE and LN must read apart at a glance.
 const FAMILY_ACCENTS: Readonly<Record<string, FamilyAccent>> = {
   regular: {
+    icon: "[--axis-icon-accent:var(--osu-pink)]",
     heading: "text-osu-pink",
     rule: "from-osu-pink/70",
     card: "from-osu-pink/20 aria-expanded:border-osu-pink/60",
@@ -48,6 +64,7 @@ const FAMILY_ACCENTS: Readonly<Record<string, FamilyAccent>> = {
     badge: "border-osu-pink/50 bg-osu-pink/15 text-osu-pink",
   },
   ln: {
+    icon: "[--axis-icon-accent:var(--osu-blue)]",
     heading: "text-osu-blue",
     rule: "from-osu-blue/70",
     card: "from-osu-blue/20 aria-expanded:border-osu-blue/60",
@@ -57,12 +74,33 @@ const FAMILY_ACCENTS: Readonly<Record<string, FamilyAccent>> = {
 };
 
 const FALLBACK_ACCENT: FamilyAccent = {
+  icon: "[--axis-icon-accent:var(--primary)]",
   heading: "text-primary",
   rule: "from-primary/70",
   card: "from-primary/20 aria-expanded:border-primary/60",
   bar: "bg-primary",
   badge: "border-primary/50 bg-primary/15 text-primary",
 };
+
+export interface FocusPatternOptions {
+  /**
+   * False only scrolls to and highlights the card: a pointer click must not park focus on a card, where the next Enter
+   * would toggle it instead of saving. Defaults to true.
+   */
+  moveFocus?: boolean;
+}
+
+export interface PatternGridHandle {
+  /** Opens the pattern's axis for now, scrolls its card into view, briefly highlights it and (by default) focuses it. */
+  focusPattern(id: string, options?: FocusPatternOptions): void;
+}
+
+interface FocusRequest {
+  id: string;
+  /** Distinguishes repeated requests for the same id, so each one scrolls and focuses again. */
+  serial: number;
+  moveFocus: boolean;
+}
 
 interface PatternGridProps {
   taxonomy: readonly PatternDefDto[];
@@ -71,15 +109,21 @@ interface PatternGridProps {
   isActive: (pattern: PatternDefDto) => boolean;
   onToggle: (pattern: PatternDefDto) => void;
   className?: string;
+  ref?: Ref<PatternGridHandle>;
 }
 
-export function PatternGrid({ taxonomy, examples, isActive, onToggle, className }: PatternGridProps) {
+export function PatternGrid({ taxonomy, examples, isActive, onToggle, className, ref }: PatternGridProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [openAxes, setOpenAxes] = useState(readOpenAxes);
+  // Opened by focusPattern only: a jump to one card must not rewrite the viewer's saved layout.
+  const [transientAxes, setTransientAxes] = useState<ReadonlySet<string>>(() => new Set());
   // A search shows its matches open; closing one there must not rewrite the viewer's saved layout.
   const [closedWhileSearching, setClosedWhileSearching] = useState<ReadonlySet<string>>(() => new Set());
   const searchRef = useRef<HTMLInputElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
+  const focusSerial = useRef(0);
   const needle = query.trim().toLowerCase();
   const searching = needle !== "";
   const fullAxes = new Map(groupByAxis(taxonomy).map((group) => [group.axis, group.patterns]));
@@ -87,16 +131,20 @@ export function PatternGrid({ taxonomy, examples, isActive, onToggle, className 
   const families = groupByFamily(groups);
   const visibleAxes = groups.map((group) => group.axis);
 
-  const isOpen = (axis: string): boolean => (searching ? !closedWhileSearching.has(axis) : openAxes.has(axis));
+  const isOpen = (axis: string): boolean =>
+    searching ? !closedWhileSearching.has(axis) : openAxes.has(axis) || transientAxes.has(axis);
 
   const saveOpen = (next: ReadonlySet<string>): void => {
     setOpenAxes(next);
     writeOpenAxes(next);
+    setTransientAxes(new Set());
   };
 
   const toggleAxis = (axis: string): void => {
     if (searching) {
       setClosedWhileSearching(toggled(closedWhileSearching, axis));
+    } else if (transientAxes.has(axis)) {
+      setTransientAxes(toggled(transientAxes, axis));
     } else {
       saveOpen(toggled(openAxes, axis));
     }
@@ -125,11 +173,60 @@ export function PatternGrid({ taxonomy, examples, isActive, onToggle, className 
     }
   };
 
+  useImperativeHandle(ref, () => ({
+    focusPattern(id: string, { moveFocus = true }: FocusPatternOptions = {}) {
+      const pattern = taxonomy.find((p) => p.id === id);
+      if (pattern === undefined) {
+        return;
+      }
+      if (searching && matchesSearch(pattern, needle)) {
+        const reopened = new Set(closedWhileSearching);
+        reopened.delete(pattern.axis);
+        setClosedWhileSearching(reopened);
+      } else {
+        if (searching) {
+          changeQuery("");
+        }
+        if (!openAxes.has(pattern.axis) && !transientAxes.has(pattern.axis)) {
+          setTransientAxes(new Set([...transientAxes, pattern.axis]));
+        }
+      }
+      focusSerial.current += 1;
+      setFocusRequest({ id, serial: focusSerial.current, moveFocus });
+    },
+  }));
+
+  // Runs after the axis panel has mounted its cards; the request then doubles as the highlight until it expires.
+  useEffect(() => {
+    if (focusRequest === null) {
+      return;
+    }
+    const card = [...(rootRef.current?.querySelectorAll<HTMLElement>("[data-pattern-card]") ?? [])].find(
+      (el) => el.dataset["patternCard"] === focusRequest.id,
+    );
+    if (card !== undefined) {
+      const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      // jsdom lacks scrollIntoView; browsers always have it.
+      if ("scrollIntoView" in card) {
+        card.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "nearest" });
+      }
+      if (focusRequest.moveFocus) {
+        card.focus({ preventScroll: true });
+      }
+    }
+    const timer = setTimeout(() => {
+      setFocusRequest(null);
+    }, PATTERN_GRID_PARAMS.highlightMs);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [focusRequest]);
+
   const allOpen = visibleAxes.length > 0 && visibleAxes.every(isOpen);
   const noneOpen = !visibleAxes.some(isOpen);
 
   return (
-    <div className={cn("@container flex w-full min-w-0 flex-col gap-5", className)}>
+    <div ref={rootRef} className={cn("@container flex w-full min-w-0 flex-col gap-5", className)}>
       <div className="flex items-center gap-2">
         <div className="relative min-w-0 flex-1">
           <Search
@@ -208,6 +305,7 @@ export function PatternGrid({ taxonomy, examples, isActive, onToggle, className 
                 examples={examples}
                 isActive={isActive}
                 onToggle={onToggle}
+                highlighted={focusRequest?.id ?? null}
               />
             ))}
           </FamilySection>
@@ -253,9 +351,20 @@ interface AxisSectionProps {
   examples: ReadonlyMap<string, ChartWindow> | undefined;
   isActive: (pattern: PatternDefDto) => boolean;
   onToggle: (pattern: PatternDefDto) => void;
+  highlighted: string | null;
 }
 
-function AxisSection({ group, allPatterns, accent, open, onToggleOpen, examples, isActive, onToggle }: AxisSectionProps) {
+function AxisSection({
+  group,
+  allPatterns,
+  accent,
+  open,
+  onToggleOpen,
+  examples,
+  isActive,
+  onToggle,
+  highlighted,
+}: AxisSectionProps) {
   const { t } = useTranslation();
   const titleId = useId();
   const countId = useId();
@@ -291,6 +400,7 @@ function AxisSection({ group, allPatterns, accent, open, onToggleOpen, examples,
           )}
         >
           <span aria-hidden className={cn("absolute inset-y-0 left-0 w-1", accent.bar)} />
+          <AxisIcon axis={group.axis} className={cn("text-muted-foreground size-8", accent.icon)} />
           <span className="flex min-w-0 flex-1 flex-col gap-1">
             <span id={titleId} className="font-display truncate text-xl leading-none font-extrabold tracking-widest uppercase">
               {title}
@@ -337,6 +447,7 @@ function AxisSection({ group, allPatterns, accent, open, onToggleOpen, examples,
                 example={examples?.get(pattern.id)}
                 loading={examples === undefined}
                 active={isActive(pattern)}
+                highlighted={highlighted === pattern.id}
                 onToggle={onToggle}
               />
             ))}
@@ -352,10 +463,11 @@ interface PatternCardProps {
   example: ChartWindow | undefined;
   loading: boolean;
   active: boolean;
+  highlighted: boolean;
   onToggle: (pattern: PatternDefDto) => void;
 }
 
-function PatternCard({ pattern, example, loading, active, onToggle }: PatternCardProps) {
+function PatternCard({ pattern, example, loading, active, highlighted, onToggle }: PatternCardProps) {
   const { t } = useTranslation();
   const descriptionId = useId();
   const name = patternName(pattern.id);
@@ -370,6 +482,8 @@ function PatternCard({ pattern, example, loading, active, onToggle }: PatternCar
           // Same name as the chip it replaces ("<key> <name>"), whatever the visual order.
           aria-label={`${pattern.key} ${name}`}
           aria-describedby={descriptionId}
+          data-pattern-card={pattern.id}
+          data-highlighted={highlighted ? "true" : undefined}
           onClick={() => {
             onToggle(pattern);
           }}
@@ -378,6 +492,7 @@ function PatternCard({ pattern, example, loading, active, onToggle }: PatternCar
             "motion-safe:transition-[background-color,border-color,box-shadow,transform] motion-safe:duration-150 motion-safe:ease-out",
             "focus-visible:border-ring focus-visible:ring-ring focus-visible:ring-offset-background focus-visible:ring-2 focus-visible:ring-offset-2",
             "motion-safe:hover:-translate-y-0.5 motion-safe:active:translate-y-0",
+            "data-highlighted:ring-osu-yellow data-highlighted:ring-offset-background data-highlighted:ring-2 data-highlighted:ring-offset-2",
             active
               ? "border-primary bg-primary/10 hover:bg-primary/15 shadow-[0_0_14px_-6px_var(--primary)]"
               : "border-border bg-card hover:border-control-border hover:bg-surface-raised",

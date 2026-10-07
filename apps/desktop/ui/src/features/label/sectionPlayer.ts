@@ -46,6 +46,7 @@ export class SectionPlayer {
   private audio: AudioInput = { kind: "pending" };
   private loop: LoopSpan | null = null;
   private offsetMs = 0;
+  private rate = 1;
   private ctx: ClosableAudioContext | null = null;
   private ctxFailed = false;
   // One chart's buffer only: a decoded song is tens of MB of PCM, and window moves keep the same md5.
@@ -92,6 +93,15 @@ export class SectionPlayer {
   setOffsetMs(offsetMs: number): void {
     this.offsetMs = offsetMs;
     this.audioClock?.setOffsetMs(offsetMs);
+  }
+
+  /** Restarts the section from its start: the loop's iteration grid depends on the rate. */
+  setRate(rate: number): void {
+    if (rate === this.rate) {
+      return;
+    }
+    this.rate = rate;
+    this.rebuild();
   }
 
   play(): void {
@@ -166,9 +176,9 @@ export class SectionPlayer {
       const buffer = this.currentBuffer();
       const silent = this.audio.kind === "missing" || this.ctxFailed || buffer === null;
       if (silent) {
-        this.clock = createSilentLoopClock(loop, this.deps.now, this.deps.splice.gapMs);
+        this.clock = createSilentLoopClock(loop, this.deps.now, this.deps.splice.gapMs, this.rate);
       } else if (buffer !== undefined && ctx !== null) {
-        this.audioClock = createAudioLoopClock(ctx, buffer, loop, this.offsetMs, this.deps.splice);
+        this.audioClock = createAudioLoopClock(ctx, buffer, loop, this.offsetMs, this.deps.splice, this.rate);
         this.clock = this.audioClock;
       } else if (this.audio.kind === "data" && ctx !== null) {
         this.startDecode(ctx, md5, this.audio.base64);

@@ -126,6 +126,16 @@ pub struct MoveWindowRequestDto {
     pub t0_ms: i32,
 }
 
+/// `anchor` resized to `[t0Ms, t1Ms)`: the edge that moved from the anchor's is clamped to
+/// the chart and to the window length bounds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ResizeWindowRequestDto {
+    pub anchor: AnchorDto,
+    pub t0_ms: i32,
+    pub t1_ms: i32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ChartTimelineRequestDto {

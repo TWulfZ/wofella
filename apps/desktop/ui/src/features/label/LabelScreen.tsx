@@ -10,24 +10,27 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { type ChartWindow, clampOsuSpeed, DEFAULT_STAGE_PARAMS, Playfield, useLoadedSkin } from "@/features/playfield";
-import { handLayoutQuery } from "@/features/preferences";
+import { handLayoutQuery, selectedSkinFolder, skinOptions } from "@/features/preferences";
 import type { PatternDefDto } from "@/ipc/bindings";
 import { useErrorText } from "@/ipc/errorText";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { AnswerBar, type AnswerFeedback, type AnswerMode } from "./components/AnswerBar";
-import { ChartHeader } from "./components/ChartHeader";
+import { backgroundDataUrl, ChartHeader } from "./components/ChartHeader";
 import { ChartTimeline } from "./components/ChartTimeline";
+import { HeaderNav, type NavAction, type NavState } from "./components/HeaderNav";
+import { HOLD_BUTTON_PARAMS, type HoldButtonHandle } from "./components/HoldButton";
 import { PanelResizer, usePanelWidth } from "./components/PanelResizer";
-import { PatternGrid } from "./components/PatternGrid";
-import { SessionFooter } from "./components/SessionFooter";
-import { type ToolbarAction, type ToolbarState, SessionToolbar } from "./components/SessionToolbar";
-import { SkinPicker } from "./components/SkinPicker";
-import { Transport } from "./components/Transport";
+import { PatternGrid, type PatternGridHandle } from "./components/PatternGrid";
+import { PlaybackSettings } from "./components/PlaybackSettings";
+import { PlayerControls } from "./components/PlayerControls";
+import { PLAYER_FRAME_PARAMS, PlayerFrame } from "./components/PlayerFrame";
 import { formatClock } from "./format";
 import {
+  clampPlaybackRate,
   hasStoredOsuSpeed,
   readOffsetMs,
+  readPlaybackRate,
   readScrollPrefs,
   readSkinChoice,
   readZoom,
@@ -36,6 +39,7 @@ import {
   writeFit,
   writeOffsetMs,
   writeOsuSpeed,
+  writePlaybackRate,
   writePxPerMs,
   writeScrollKind,
   writeSkinChoice,
@@ -44,6 +48,7 @@ import {
 import {
   chartAudioQuery,
   chartBackgroundQuery,
+  chartDetailsQuery,
   chartTimelineQuery,
   chartWindowQuery,
   labelPatternExamplesQuery,
@@ -68,7 +73,6 @@ import {
   submitPayload,
   undoTarget,
 } from "./session";
-import { selectedSkinFolder, skinOptions } from "./skins";
 import type { Anchor, Span } from "./types";
 
 export interface LabelScreenParams {
@@ -82,6 +86,10 @@ export interface LabelScreenParams {
   loopSplice: LoopSpliceParams;
   /** Density buckets over the whole chart in the timeline. */
   timelineBuckets: number;
+  /** How long Save and Skip (and the Enter shortcut) must be held. */
+  holdMs: number;
+  /** Pointer idle time before the playback controls fade from the playfield. */
+  controlsIdleMs: number;
 }
 
 export const LABEL_SCREEN_PARAMS: LabelScreenParams = {
@@ -91,6 +99,8 @@ export const LABEL_SCREEN_PARAMS: LabelScreenParams = {
   defaultOsuSpeed: 20,
   loopSplice: { fadeMs: 30, gapMs: 150 },
   timelineBuckets: 240,
+  holdMs: HOLD_BUTTON_PARAMS.defaultHoldMs,
+  controlsIdleMs: PLAYER_FRAME_PARAMS.idleMs,
 };
 
 // osu!mania's in-game bindings: F3 slower, F4 faster.
@@ -170,8 +180,9 @@ function isTextField(target: EventTarget | null): boolean {
   return target instanceof HTMLTextAreaElement || (target instanceof HTMLElement && target.isContentEditable);
 }
 
-/** Keys these handle themselves (Enter presses a button, Space opens a select). */
-const OWN_KEY_CONTROLS = "button, select, a[href], [role='separator'], [role='option'], [role='checkbox']";
+/** Keys these handle themselves (Enter presses a button, Space opens a select or ticks a box). */
+const OWN_KEY_CONTROLS =
+  "button, select, a[href], input[type='checkbox'], [role='separator'], [role='option'], [role='checkbox']";
 
 /** Hands focus back to the page, where Enter saves and Space plays. */
 function releaseFocus(): void {
@@ -193,9 +204,12 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
   // The entry a save runs against, kept after the save moves past it: an Enter that lands before the next render
   // still holds that entry in its closure, and isPending only flips on that render.
   const actedOn = useRef<HistoryEntry | null>(null);
-  // Only the newest move's reply is applied, so keys pressed faster than the IPC round trip end where the last one aimed.
-  const moveSeq = useRef(0);
-  const [pendingMove, setPendingMove] = useState<{ cursor: number; t0Ms: number } | null>(null);
+  // Only the newest move's or resize's reply is applied, so keys pressed faster than the IPC round trip end where the
+  // last one aimed.
+  const reshapeSeq = useRef(0);
+  const [pendingSpan, setPendingSpan] = useState<{ cursor: number; t0Ms: number; t1Ms: number } | null>(null);
+  const saveHold = useRef<HoldButtonHandle>(null);
+  const patternGrid = useRef<PatternGridHandle>(null);
 
   const taxonomy = useQuery(labelTaxonomyQuery(keymode));
   const handLayout = useQuery(handLayoutQuery(keymode));
@@ -204,13 +218,14 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
   const layoutId = handLayout.data ?? null;
   const examples = useQuery({ ...labelPatternExamplesQuery(keymode, layoutId), enabled: layoutSettled });
   const stats = useQuery(labelStatsQuery());
-  const { sample, random, nowPlaying, move, submit, undo } = useLabelMutations();
+  const { sample, random, nowPlaying, move, resize, submit, undo } = useLabelMutations();
   const entry = currentEntry(state);
   const labelWindow = entry?.window ?? null;
   const anchor: Anchor | null = labelWindow?.anchor ?? null;
   const chart = useQuery(chartWindowQuery(layoutSettled ? anchor : null, layoutId));
   const audio = useQuery(chartAudioQuery(anchor?.md5 ?? null));
   const background = useQuery(chartBackgroundQuery(anchor?.md5 ?? null));
+  const details = useQuery(chartDetailsQuery(anchor?.md5 ?? null));
   const timeline = useQuery(chartTimelineQuery(keymode, anchor?.md5 ?? null, params.timelineBuckets));
   const sampling = isSampling(state);
 
@@ -269,6 +284,10 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
   useEffect(() => {
     player.setOffsetMs(offsetMs);
   }, [player, offsetMs]);
+  const [rate, setRate] = useState(readPlaybackRate);
+  useEffect(() => {
+    player.setRate(rate);
+  }, [player, rate]);
   const skinList = useQuery(skinListQuery());
   const [skinChoice, setSkinChoice] = useState(readSkinChoice);
   const skinFolder = selectedSkinFolder(skinList.data, skinChoice);
@@ -315,12 +334,13 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
     }
   };
 
-  const busy = submit.isPending || move.isPending || undo.isPending || random.isPending || nowPlaying.isPending;
+  const reshaping = move.isPending || resize.isPending;
+  const busy = submit.isPending || reshaping || undo.isPending || random.isPending || nowPlaying.isPending;
 
   const save = async (): Promise<void> => {
     const payload = submitPayload(state);
-    // During a move the anchor is about to change; saving now would store the window being left.
-    if (entry === null || payload === null || actedOn.current === entry || move.isPending) {
+    // During a move or resize the anchor is about to change; saving now would store the window being left.
+    if (entry === null || payload === null || actedOn.current === entry || reshaping) {
       return;
     }
     actedOn.current = entry;
@@ -354,29 +374,40 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
     }
   };
 
-  const runMove = async (t0Ms: number): Promise<void> => {
+  const runReshape = async (span: Span, request: (anchor: Anchor) => Promise<Anchor>): Promise<void> => {
     if (labelWindow === null) {
       return;
     }
     const { cursor } = state;
-    moveSeq.current += 1;
-    const seq = moveSeq.current;
-    setPendingMove({ cursor, t0Ms });
+    reshapeSeq.current += 1;
+    const seq = reshapeSeq.current;
+    setPendingSpan({ cursor, ...span });
     setFeedback(null);
     try {
-      const next = await move.mutateAsync({ anchor: labelWindow.anchor, t0Ms });
-      if (seq === moveSeq.current) {
+      const next = await request(labelWindow.anchor);
+      if (seq === reshapeSeq.current) {
         dispatch({ type: "windowMoved", cursor, anchor: next });
       }
     } catch (e) {
-      if (seq === moveSeq.current) {
+      if (seq === reshapeSeq.current) {
         setFeedback({ tone: "error", text: errorText(e) });
       }
     } finally {
-      if (seq === moveSeq.current) {
-        setPendingMove(null);
+      if (seq === reshapeSeq.current) {
+        setPendingSpan(null);
       }
     }
+  };
+
+  const runMove = (t0Ms: number): void => {
+    if (anchor === null) {
+      return;
+    }
+    void runReshape({ t0Ms, t1Ms: t0Ms + anchor.t1Ms - anchor.t0Ms }, (from) => move.mutateAsync({ anchor: from, t0Ms }));
+  };
+
+  const runResize = (span: Span): void => {
+    void runReshape(span, (from) => resize.mutateAsync({ anchor: from, ...span }));
   };
 
   const runRandom = async (): Promise<void> => {
@@ -405,7 +436,7 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
     }
   };
 
-  const onToolbar = (action: ToolbarAction): void => {
+  const onNav = (action: NavAction): void => {
     setNotice(null);
     setFeedback(null);
     switch (action) {
@@ -414,9 +445,6 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
         break;
       case "next":
         dispatch({ type: "moved", to: "next" });
-        break;
-      case "skip":
-        dispatch({ type: "skipped" });
         break;
       case "random":
         void runRandom();
@@ -458,8 +486,9 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
     }
     if (e.key === "Enter") {
       e.preventDefault();
+      // Runs Save's own hold, so a tap never saves and the ring shows the countdown.
       if (!e.repeat) {
-        void save();
+        saveHold.current?.press();
       }
     } else if (e.key === " ") {
       e.preventDefault();
@@ -472,9 +501,17 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
     const listener = (e: KeyboardEvent): void => {
       onWindowKey(e);
     };
+    // Wherever the key is released, a hold the shortcut started ends with it.
+    const release = (e: KeyboardEvent): void => {
+      if (e.key === "Enter") {
+        saveHold.current?.release();
+      }
+    };
     window.addEventListener("keydown", listener);
+    window.addEventListener("keyup", release);
     return () => {
       window.removeEventListener("keydown", listener);
+      window.removeEventListener("keyup", release);
     };
   }, []);
 
@@ -492,13 +529,13 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
 
   const waiting = busy || sampling ? "label.toolbar.busy" : null;
   const planFinished = state.done && entry === null ? "label.toolbar.planFinished" : null;
-  const blocked: ToolbarState = {
+  const blocked: NavState = {
     previous: waiting ?? (state.cursor === 0 ? "label.toolbar.firstWindow" : null),
     next: waiting ?? planFinished,
     random: waiting,
     nowPlaying: waiting,
-    skip: waiting ?? planFinished ?? (entry?.status.kind === "saved" ? "label.toolbar.savedNoSkip" : null),
   };
+  const canSkip = waiting === null && entry !== null && entry.status.kind !== "saved";
   const answerMode: AnswerMode =
     entry === null
       ? { kind: "none" }
@@ -510,8 +547,8 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
   const timelineWindow: Span | null =
     anchor === null
       ? null
-      : pendingMove?.cursor === state.cursor
-        ? { t0Ms: pendingMove.t0Ms, t1Ms: pendingMove.t0Ms + anchor.t1Ms - anchor.t0Ms }
+      : pendingSpan?.cursor === state.cursor
+        ? { t0Ms: pendingSpan.t0Ms, t1Ms: pendingSpan.t1Ms }
         : { t0Ms: anchor.t0Ms, t1Ms: anchor.t1Ms };
   const rangeText = anchor === null ? "" : `${formatClock(anchor.t0Ms)}–${formatClock(anchor.t1Ms)}`;
   const durationText =
@@ -539,87 +576,103 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
       ? t("label.audio.decodeFailed")
       : null;
 
+  const nav = <HeaderNav blocked={blocked} onAction={onNav} />;
+  const notices = [
+    ...skinNotices,
+    ...(audioNotice === null ? [] : [audioNotice]),
+  ];
+
   return (
     <div
       onMouseDown={keepFocus}
       className={cn(
-        "flex h-[calc(100dvh-4rem)] min-h-[32rem] flex-col gap-3 p-4",
+        "flex h-[calc(100dvh-4rem)] min-h-[32rem] gap-2 p-4",
         panel.dragging && "cursor-col-resize select-none",
       )}
     >
-      <div className="flex min-h-0 flex-1 gap-2">
-        <section aria-label={t("label.title")} className="flex min-w-0 flex-1 flex-col gap-3">
-          <SessionToolbar blocked={blocked} onAction={onToolbar} />
-          {notice !== null && (
-            <p
-              role={notice.tone === "error" ? "alert" : "status"}
-              className={cn(
-                "self-start rounded-md px-2.5 py-1 text-xs",
-                notice.tone === "error" ? "bg-destructive/10 text-destructive" : "bg-muted/60 text-muted-foreground",
-              )}
-            >
-              {notice.text}
-            </p>
-          )}
-          {state.done && entry === null ? (
-            <div role="status" className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-              <p className="text-lg">{t("label.done.exhausted")}</p>
-              <p className="text-muted-foreground max-w-sm text-sm">{t("label.done.hint")}</p>
-              <Button variant="outline" onClick={onRestart}>
-                {t("label.done.newSession")}
-              </Button>
-            </div>
-          ) : labelWindow === null || chart.data === undefined ? (
-            <div className="text-muted-foreground flex flex-1 items-center justify-center text-sm">
-              {sample.isError ? (
-                <div role="alert" className="flex flex-col items-center gap-2">
-                  <p className="text-destructive">{errorText(sample.error)}</p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setSampleAttempt((n) => n + 1);
-                    }}
-                  >
-                    {t("common.retry")}
-                  </Button>
-                </div>
-              ) : chart.isError ? (
-                <p role="alert" className="text-destructive">
-                  {errorText(chart.error)}
-                </p>
-              ) : (
-                <p>{labelWindow === null ? t("label.sampling") : t("label.loadingChart")}</p>
-              )}
-            </div>
-          ) : (
-            <>
-              {timelineWindow !== null && (
-                <ChartTimeline
-                  span={
-                    timeline.data ?? {
-                      firstMs: chart.data.chartSpan.firstMs,
-                      // The chart window's span ends on the last row; a window may reach one past it.
-                      endMs: chart.data.chartSpan.endMs + 1,
-                    }
-                  }
-                  window={timelineWindow}
-                  density={timeline.data?.density ?? null}
-                  labelled={timeline.data?.labelled ?? NO_SPANS}
-                  locked={entry?.status.kind === "saved"}
-                  onMove={(t0Ms) => {
-                    void runMove(t0Ms);
+      <section aria-label={t("label.title")} className="flex min-w-0 flex-1 flex-col">
+        {state.done && entry === null ? (
+          <div role="status" className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+            <p className="text-lg">{t("label.done.exhausted")}</p>
+            <p className="text-muted-foreground max-w-sm text-sm">{t("label.done.hint")}</p>
+            <Button variant="outline" onClick={onRestart}>
+              {t("label.done.newSession")}
+            </Button>
+          </div>
+        ) : labelWindow === null || chart.data === undefined ? (
+          <div className="text-muted-foreground flex flex-1 items-center justify-center text-sm">
+            {sample.isError ? (
+              <div role="alert" className="flex flex-col items-center gap-2">
+                <p className="text-destructive">{errorText(sample.error)}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSampleAttempt((n) => n + 1);
                   }}
-                />
-              )}
-              <Transport
+                >
+                  {t("common.retry")}
+                </Button>
+              </div>
+            ) : chart.isError ? (
+              <p role="alert" className="text-destructive">
+                {errorText(chart.error)}
+              </p>
+            ) : (
+              <p>{labelWindow === null ? t("label.sampling") : t("label.loadingChart")}</p>
+            )}
+          </div>
+        ) : (
+          <PlayerFrame
+            idleMs={params.controlsIdleMs}
+            notices={
+              notices.length === 0
+                ? undefined
+                : notices.map((text) => (
+                    <p
+                      key={text}
+                      role="status"
+                      className="bg-surface-raised/90 text-muted-foreground max-w-[90%] rounded-md border px-2.5 py-1 text-xs backdrop-blur"
+                    >
+                      {text}
+                    </p>
+                  ))
+            }
+            controls={
+              <PlayerControls
                 playing={playback.playing}
                 loading={playback.loading}
                 onToggle={() => {
                   player.toggle();
                 }}
+                clock={playback.clock}
+                windowStartMs={anchor?.t0Ms ?? 0}
                 range={rangeText}
                 duration={durationText}
+                rate={rate}
+                timeline={
+                  timelineWindow !== null && (
+                    <ChartTimeline
+                      span={
+                        timeline.data ?? {
+                          firstMs: chart.data.chartSpan.firstMs,
+                          // The chart window's span ends on the last row; a window may reach one past it.
+                          endMs: chart.data.chartSpan.endMs + 1,
+                        }
+                      }
+                      window={timelineWindow}
+                      density={timeline.data?.density ?? null}
+                      labelled={timeline.data?.labelled ?? NO_SPANS}
+                      locked={entry?.status.kind === "saved"}
+                      onMove={runMove}
+                      onResize={runResize}
+                    />
+                  )
+                }
+              />
+            }
+            settings={
+              <PlaybackSettings
                 offsetMs={offsetMs}
                 onOffset={(value) => {
                   setOffsetMs(value);
@@ -632,111 +685,143 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
                   setZoom(value);
                   writeZoom(value);
                 }}
-                onSettle={releaseFocus}
-              />
-              <SkinPicker
-                options={skinOptions(skinList.data, keymode)}
-                folder={skinFolder}
-                ready={skinList.data !== undefined}
-                reloading={skinReloading}
-                onChange={(folder) => {
-                  setSkinChoice({ folder });
-                  writeSkinChoice({ folder });
-                  releaseFocus();
+                rate={rate}
+                onRate={(value) => {
+                  const next = clampPlaybackRate(value);
+                  setRate(next);
+                  writePlaybackRate(next);
                 }}
-                onReload={() => {
-                  void reloadSkin();
+                skin={{
+                  options: skinOptions(skinList.data, keymode),
+                  folder: skinFolder,
+                  ready: skinList.data !== undefined,
+                  reloading: skinReloading,
+                  onChange: (folder) => {
+                    setSkinChoice({ folder });
+                    writeSkinChoice({ folder });
+                  },
+                  onReload: () => {
+                    void reloadSkin();
+                  },
                 }}
+                seed={state.seed}
               />
-              {skinNotices.map((text) => (
-                <p key={text} role="status" className="text-muted-foreground bg-muted/60 self-start rounded-md px-2.5 py-1 text-xs">
-                  {text}
-                </p>
-              ))}
-              {audioNotice !== null && (
-                <p role="status" className="text-muted-foreground bg-muted/60 self-start rounded-md px-2.5 py-1 text-xs">
-                  {audioNotice}
-                </p>
-              )}
-              <div data-testid="playfield" className="flex min-h-0 flex-1 justify-center">
-                <Playfield
-                  window={chart.data}
-                  clock={playback.clock}
-                  scroll={scrollFromPrefs(effectiveScroll)}
-                  zoom={zoom}
-                  {...skinProps}
-                  className="h-full w-full"
-                />
-              </div>
-            </>
+            }
+          >
+            <div data-testid="playfield" className="flex size-full justify-center">
+              <Playfield
+                window={chart.data}
+                clock={playback.clock}
+                scroll={scrollFromPrefs(effectiveScroll)}
+                zoom={zoom}
+                {...skinProps}
+                className="h-full w-full"
+              />
+            </div>
+          </PlayerFrame>
+        )}
+      </section>
+
+      <PanelResizer panel={panel} />
+
+      <aside
+        data-testid="pattern-panel"
+        style={{
+          width: panel.width,
+          scrollPaddingBottom: answerBarPx === null ? undefined : answerBarPx + ANSWER_BAR_CLEARANCE_PX,
+        }}
+        className="flex min-h-0 shrink-0 flex-col gap-4 overflow-y-auto pr-2 pl-1 [scrollbar-gutter:stable]"
+      >
+        {entry !== null ? (
+          <ChartHeader
+            window={entry.window}
+            origin={entry.origin}
+            background={backgroundDataUrl(background.data)}
+            details={details.data}
+            nav={nav}
+            counters={{
+              labelled: state.counts.labelled,
+              skipped: state.counts.skipped,
+              undone: state.counts.undone,
+              gold: stats.data?.total ?? 0,
+            }}
+          />
+        ) : (
+          // Between windows (sampling, plan finished) the navigation still has to be reachable.
+          <div className="bg-card flex shrink-0 items-center rounded-xl border px-2 py-1.5">{nav}</div>
+        )}
+        {notice !== null && (
+          <p
+            role={notice.tone === "error" ? "alert" : "status"}
+            className={cn(
+              "-mt-2 self-start rounded-md px-2.5 py-1 text-xs",
+              notice.tone === "error" ? "bg-destructive/10 text-destructive" : "bg-muted/60 text-muted-foreground",
+            )}
+          >
+            {notice.text}
+          </p>
+        )}
+
+        <section aria-label={t("label.patterns")} className="flex flex-col gap-2 pb-4">
+          <h3 className="sr-only">{t("label.patterns")}</h3>
+          {taxonomy.isError ? (
+            <p role="alert" className="text-destructive text-sm">
+              {errorText(taxonomy.error)}
+            </p>
+          ) : taxonomy.data === undefined ? (
+            <p className="text-muted-foreground text-sm">{t("common.loading")}</p>
+          ) : (
+            <PatternGrid
+              ref={patternGrid}
+              taxonomy={taxonomy.data}
+              examples={examples.isError ? NO_EXAMPLES : examples.data}
+              isActive={(pattern) => shownAnswer.patterns.includes(pattern.id)}
+              onToggle={(pattern) => {
+                dispatch({ type: "patternToggled", id: pattern.id });
+              }}
+            />
           )}
         </section>
 
-        <PanelResizer panel={panel} />
-
-        <aside
-          data-testid="pattern-panel"
-          style={{
-            width: panel.width,
-            scrollPaddingBottom: answerBarPx === null ? undefined : answerBarPx + ANSWER_BAR_CLEARANCE_PX,
+        <AnswerBar
+          taxonomy={taxonomy.data ?? NO_TAXONOMY}
+          answer={shownAnswer}
+          mode={answerMode}
+          busy={busy}
+          feedback={feedback}
+          onPick={(pattern) => {
+            dispatch({ type: "patternAdded", id: pattern.id });
           }}
-          className="flex min-h-0 shrink-0 flex-col gap-4 overflow-y-auto pr-2 pl-1 [scrollbar-gutter:stable]"
-        >
-          {entry !== null && (
-            <ChartHeader window={entry.window} origin={entry.origin} background={background.data ?? null} />
-          )}
-
-          <section aria-label={t("label.patterns")} className="flex flex-col gap-2 pb-4">
-            <h3 className="sr-only">{t("label.patterns")}</h3>
-            {taxonomy.isError ? (
-              <p role="alert" className="text-destructive text-sm">
-                {errorText(taxonomy.error)}
-              </p>
-            ) : taxonomy.data === undefined ? (
-              <p className="text-muted-foreground text-sm">{t("common.loading")}</p>
-            ) : (
-              <PatternGrid
-                taxonomy={taxonomy.data}
-                examples={examples.isError ? NO_EXAMPLES : examples.data}
-                isActive={(pattern) => shownAnswer.patterns.includes(pattern.id)}
-                onToggle={(pattern) => {
-                  dispatch({ type: "patternToggled", id: pattern.id });
-                }}
-              />
-            )}
-          </section>
-
-          <AnswerBar
-            taxonomy={taxonomy.data ?? NO_TAXONOMY}
-            answer={shownAnswer}
-            mode={answerMode}
-            busy={busy}
-            feedback={feedback}
-            onPick={(pattern) => {
-              dispatch({ type: "patternAdded", id: pattern.id });
-            }}
-            onRemove={(id) => {
-              dispatch({ type: "patternRemoved", id });
-            }}
-            onNoPattern={() => {
-              dispatch({ type: "noPatternToggled" });
-            }}
-            onFlag={(toggle) => {
-              dispatch({ type: "flagsToggled", toggle });
-            }}
-            onSave={() => {
-              void save();
-            }}
-            onClear={clearAnswer}
-            onUndo={() => {
-              void runUndo();
-            }}
-            onBlockSize={setAnswerBarPx}
-          />
-        </aside>
-      </div>
-
-      <SessionFooter counts={state.counts} goldTotal={stats.data?.total ?? null} seed={state.seed} />
+          onRemove={(id) => {
+            dispatch({ type: "patternRemoved", id });
+          }}
+          onNoPattern={() => {
+            dispatch({ type: "noPatternToggled" });
+          }}
+          onFlag={(toggle) => {
+            dispatch({ type: "flagsToggled", toggle });
+          }}
+          onSave={() => {
+            void save();
+          }}
+          onClear={clearAnswer}
+          onUndo={() => {
+            void runUndo();
+          }}
+          onSkip={() => {
+            setNotice(null);
+            setFeedback(null);
+            dispatch({ type: "skipped" });
+          }}
+          canSkip={canSkip}
+          onChipFocus={(id, how) => {
+            patternGrid.current?.focusPattern(id, how);
+          }}
+          holdMs={params.holdMs}
+          saveRef={saveHold}
+          onBlockSize={setAnswerBarPx}
+        />
+      </aside>
     </div>
   );
 }

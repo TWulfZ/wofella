@@ -1,6 +1,10 @@
 // Per-viewer conveniences only: a blocked or cleared storage must leave the screen working on defaults.
 
 import { clampOsuSpeed, clampZoom, DEFAULT_STAGE_PARAMS, type ScrollMode } from "@/features/playfield";
+import { SKIN_CHOICE_KEY } from "@/features/preferences";
+
+// Settings owns the default skin; the screen's picker writes the same key, so both always agree.
+export { readSkinChoice, type SkinChoice, writeSkinChoice } from "@/features/preferences";
 
 export type ScrollKind = ScrollMode["kind"];
 
@@ -26,14 +30,17 @@ export const LABEL_PREFS = {
   zoomKey: "wolluf.label.zoom",
   /** Pixels, clamped on use: the screen it was stored on may have been wider. */
   panelWidthKey: "wolluf.label.panelWidthPx",
-  /** JSON so a skin folder literally named like a sentinel cannot be mistaken for "None". */
-  skinKey: "wolluf.label.skin",
+  skinKey: SKIN_CHOICE_KEY,
+  playbackRateKey: "wolluf.label.playbackRate",
   /** Before scroll modes it held a px/ms number or "fit". */
   legacyScrollKey: "wolluf.label.scroll",
   minOffsetMs: -100,
   maxOffsetMs: 100,
   minPxPerMs: 0.2,
   maxPxPerMs: 3,
+  minPlaybackRate: 0.5,
+  maxPlaybackRate: 1.5,
+  playbackRateStep: 0.05,
 } as const;
 
 const SCROLL_KINDS: readonly ScrollKind[] = ["osu", "pxPerMs"];
@@ -94,34 +101,6 @@ export function hasStoredOsuSpeed(): boolean {
   return parseNumber(read(LABEL_PREFS.osuSpeedKey)) !== null;
 }
 
-/** `folder: null` is the procedural look; no stored choice follows the cfg's active skin. */
-export interface SkinChoice {
-  folder: string | null;
-}
-
-export function readSkinChoice(): SkinChoice | undefined {
-  const raw = read(LABEL_PREFS.skinKey);
-  if (raw === null) {
-    return undefined;
-  }
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed === "object" && parsed !== null && "folder" in parsed) {
-      const { folder } = parsed;
-      if (folder === null || typeof folder === "string") {
-        return { folder };
-      }
-    }
-  } catch {
-    // Unreadable: treated as never chosen.
-  }
-  return undefined;
-}
-
-export function writeSkinChoice(choice: SkinChoice): void {
-  write(LABEL_PREFS.skinKey, JSON.stringify({ folder: choice.folder }));
-}
-
 export function writeScrollKind(kind: ScrollKind): void {
   write(LABEL_PREFS.scrollKindKey, kind);
 }
@@ -152,6 +131,22 @@ export function readZoom(): number {
 
 export function writeZoom(zoom: number): void {
   write(LABEL_PREFS.zoomKey, String(zoom));
+}
+
+/** Snapped to the slider's step, so a hand-edited value still lands on a position the slider can show. */
+export function clampPlaybackRate(rate: number): number {
+  const steps = Math.round(rate / LABEL_PREFS.playbackRateStep);
+  const snapped = Math.round(steps * LABEL_PREFS.playbackRateStep * 100) / 100;
+  return clamp(snapped, LABEL_PREFS.minPlaybackRate, LABEL_PREFS.maxPlaybackRate);
+}
+
+export function readPlaybackRate(): number {
+  const n = parseNumber(read(LABEL_PREFS.playbackRateKey));
+  return n === null ? 1 : clampPlaybackRate(n);
+}
+
+export function writePlaybackRate(rate: number): void {
+  write(LABEL_PREFS.playbackRateKey, String(rate));
 }
 
 export function readPanelWidthPx(fallback: number): number {

@@ -28,8 +28,11 @@ pub struct SamplerParams {
     pub max_chart_tries: usize,
     /// How far `w+`/`w-` move the window end.
     pub reshape_step: TimeUs,
-    /// Shortest window `w-` leaves.
+    /// Shortest window `w-` and a resize leave.
     pub min_window: TimeUs,
+    /// Longest window a widen or a resize makes: past a minute the playfield turns into a
+    /// scroll through the song rather than one pattern in context.
+    pub max_window: TimeUs,
     /// Most slices a chart timeline is cut into; a bar wider than the screen in pixels gains
     /// nothing.
     pub max_timeline_buckets: u16,
@@ -46,6 +49,7 @@ impl Default for SamplerParams {
             max_chart_tries: 8,
             reshape_step: TimeUs::from_ms(1_000),
             min_window: TimeUs::from_ms(1_000),
+            max_window: TimeUs::from_ms(60_000),
             max_timeline_buckets: 4_096,
         }
     }

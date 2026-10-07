@@ -37,7 +37,7 @@ use crate::jobs::{ItemError, ItemResult, Job, JobCtx, JobFuture, JobSummary};
 
 pub const CATALOG_STAGE: StageId = StageId::from_static("catalog");
 /// Bump when the catalog rows derived from one osu!.db change (spec 003 "Versioned stages").
-pub const CATALOG_VERSION: u32 = 3;
+pub const CATALOG_VERSION: u32 = 4;
 /// osu!.db lists star ratings per ruleset: osu!, taiko, catch, mania.
 const MANIA_STAR_RATINGS: usize = 3;
 const NO_MODS: i32 = 0;
@@ -188,6 +188,8 @@ fn catalog_row(md5: wolluf_core::ChartMd5, b: &OsuDbBeatmap) -> CatalogChart {
             .iter()
             .find(|r| r.mods == NO_MODS)
             .map(|r| r.stars),
+        source: lossy(&b.source),
+        tags: lossy(&b.tags),
     }
 }
 
@@ -1089,6 +1091,35 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(row.status, DerivationStatus::Ok);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn catalog_keeps_the_maps_source_and_tags() {
+        let (tagged, bare) = (md5_hex(b"tagged"), md5_hex(b"bare"));
+        let mut with_meta = BeatmapBuilder::mania(&tagged, 7).build();
+        with_meta.source = OsuString::present(*b"Some Game");
+        with_meta.tags = OsuString::present(*b"dan  jumpstream");
+        let db = OsuDbBuilder::new()
+            .beatmap(with_meta)
+            .beatmap(BeatmapBuilder::mania(&bare, 7).build())
+            .encode();
+        let f = Fixture::new(&FakeInstall::new().osu_db(db)).await;
+        f.sync().await;
+        let meta: BTreeMap<String, (String, String)> = catalog(&f)
+            .into_iter()
+            .map(|c| (c.md5.to_string(), (c.source, c.tags)))
+            .collect();
+        assert_eq!(
+            meta,
+            [
+                (
+                    tagged,
+                    ("Some Game".to_owned(), "dan  jumpstream".to_owned())
+                ),
+                (bare, (String::new(), String::new())),
+            ]
+            .into()
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]

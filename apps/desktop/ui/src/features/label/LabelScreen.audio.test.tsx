@@ -156,7 +156,9 @@ beforeEach(() => {
   };
 });
 
-function render(audio: Audio, strict: boolean, params: LabelScreenParams = LABEL_SCREEN_PARAMS) {
+const FAST_HOLD: LabelScreenParams = { ...LABEL_SCREEN_PARAMS, holdMs: 20 };
+
+function render(audio: Audio, strict: boolean, params: LabelScreenParams = FAST_HOLD) {
   const windows = [labelWindow(ANCHOR_A, "Alpha"), labelWindow(ANCHOR_B, "Beta")];
   mockCommands({
     labelTaxonomy: () => [],
@@ -219,7 +221,8 @@ describe("LabelScreen section audio", () => {
       });
       expect(audio.live).toBe(2);
 
-      await userEvent.click(screen.getByRole("button", { name: "Skip" }));
+      // Skip confirms on a hold, not a click.
+      fireEvent.pointerDown(screen.getByRole("button", { name: "Skip" }), { button: 0, pointerId: 1 });
       await screen.findByRole("heading", { name: "Beta" });
       fireEvent.keyDown(document.body, { key: " " });
       await waitFor(() => {

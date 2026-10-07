@@ -74,6 +74,8 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::settings::settings_hand_layouts,
             commands::settings::settings_get_hand_layout,
             commands::settings::settings_set_hand_layout,
+            commands::label::label_resize_window,
+            commands::chart::chart_details,
         ])
 }
 

@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   AnchorDto,
+  ChartDetailsDto,
   ChartTimelineRequestDto,
   ChartWindowDto,
   LabelStatsDto,
@@ -11,6 +12,7 @@ import type {
   MoveWindowRequestDto,
   PatternDefDto,
   PatternExampleDto,
+  ResizeWindowRequestDto,
   SampleRequestDto,
   SkinDto,
   SkinEntryDto,
@@ -19,7 +21,7 @@ import type {
 import { type CommandHandlers, type MockCall, mockCommands, mockIpcError } from "@/ipc/mocks";
 import { renderWithRouter } from "@/shared/testing/renderWithRouter";
 import { writeOpenAxes } from "./components/patternGridPrefs";
-import { LabelScreen, type LabelScreenProps } from "./LabelScreen";
+import { LABEL_SCREEN_PARAMS, LabelScreen, type LabelScreenParams, type LabelScreenProps } from "./LabelScreen";
 import { LABEL_PREFS } from "./prefs";
 import { skinKeys } from "./queries";
 
@@ -130,9 +132,35 @@ const STATS: LabelStatsDto = {
   perStratum: [],
 };
 
+const DETAILS: ChartDetailsDto = {
+  md5: ANCHOR_A.md5,
+  title: "Alpha Song",
+  artist: "Artist",
+  creator: "Mapper",
+  version: "Insane",
+  source: "Some Game",
+  tags: ["dan", "reform"],
+  stars: 4.5,
+  od: 8,
+  hp: 7.5,
+  lengthMs: 154_000,
+  bpmMin: 150,
+  bpmMax: 180,
+  nNotes: 2345,
+  nLn: 120,
+  setId: 123_456,
+  beatmapId: 654_321,
+};
+
+/** Short enough to keep the suite fast, long enough that a tap (press and release) never confirms. */
+const HOLD_MS = 40;
+
+const TEST_PARAMS: LabelScreenParams = { ...LABEL_SCREEN_PARAMS, holdMs: HOLD_MS };
+
 interface FakeSourceNode {
   started: number;
   stops: number;
+  playbackRate: { value: number };
 }
 
 class FakeAudioContext {
@@ -146,10 +174,11 @@ class FakeAudioContext {
     FakeAudioContext.created++;
   }
   createBufferSource() {
-    const node: FakeSourceNode = { started: 0, stops: 0 };
+    const node: FakeSourceNode = { started: 0, stops: 0, playbackRate: { value: 1 } };
     FakeAudioContext.sources.push(node);
     return {
       buffer: null,
+      playbackRate: node.playbackRate,
       onended: null,
       connect: () => undefined,
       disconnect: () => undefined,
@@ -268,11 +297,18 @@ function renderScreen(
         labelled: [],
       };
     },
+    labelResizeWindow: (args) => {
+      const { anchor, t0Ms, t1Ms } = args["req"] as ResizeWindowRequestDto;
+      return { ...anchor, t0Ms, t1Ms };
+    },
     chartBackground: () => null,
+    chartDetails: (args) => ({ ...DETAILS, md5: String(args["md5"]) }),
     settingsGetHandLayout: () => RIGHT_THUMB,
     ...extra,
   });
-  ({ queryClient } = renderWithRouter(<LabelScreen keymode={7} seed="42" {...props} />, { path: "/label" }));
+  ({ queryClient } = renderWithRouter(<LabelScreen keymode={7} seed="42" params={TEST_PARAMS} {...props} />, {
+    path: "/label",
+  }));
   return calls;
 }
 
@@ -323,9 +359,54 @@ async function clickTool(name: string): Promise<void> {
   await userEvent.click(tool(name));
 }
 
+async function wait(ms: number): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  });
+}
+
+/** Presses a hold-to-confirm button for longer than the hold time, then releases it. */
+async function hold(button: HTMLElement): Promise<void> {
+  fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
+  await wait(HOLD_MS * 2);
+  fireEvent.pointerUp(button, { button: 0, pointerId: 1 });
+}
+
+async function holdSave(): Promise<void> {
+  await hold(inBar("Save"));
+}
+
+async function holdSkip(): Promise<void> {
+  await hold(inBar("Skip"));
+}
+
+/** Holds Enter wherever the focus is, past the hold time. */
+async function holdEnter(): Promise<void> {
+  await userEvent.keyboard("{Enter>}");
+  await wait(HOLD_MS * 2);
+  await userEvent.keyboard("{/Enter}");
+}
+
 async function saveNoPattern(): Promise<void> {
   await userEvent.click(inBar("No pattern"));
-  await userEvent.click(inBar("Save"));
+  await holdSave();
+}
+
+/** Opens the playback settings flyout, once the player is shown, and returns its panel. */
+async function openSettings(): Promise<HTMLElement> {
+  const open = screen.queryByRole("dialog", { name: "Playback settings" });
+  if (open !== null) {
+    return open;
+  }
+  await userEvent.click(await screen.findByRole("button", { name: "Playback settings" }));
+  return screen.getByRole("dialog", { name: "Playback settings" });
+}
+
+async function setting(
+  role: "slider" | "combobox" | "spinbutton" | "checkbox" | "button",
+  name: string,
+): Promise<HTMLElement> {
+  return within(await openSettings()).findByRole(role, { name });
 }
 
 async function playingSource(): Promise<FakeSourceNode> {
@@ -432,7 +513,7 @@ describe("LabelScreen", () => {
     expect(chips()).toEqual(["regular.stream.jumpstream", "regular.jack.minijack"]);
     expect(pressed("js jumpstream")).toBe("true");
     expect(pressed("Mixed")).toBe("true");
-    await userEvent.keyboard("{Enter}");
+    await holdEnter();
 
     await roundLoaded("Beta Song");
     expect(submitted(calls)).toEqual([
@@ -487,7 +568,7 @@ describe("LabelScreen", () => {
       expect(screen.queryByRole("combobox", { name: "Find a pattern" })).toBeNull();
     });
     expect(chips()).toEqual(["regular.stream.jumpstream"]);
-    await userEvent.keyboard("{Enter}");
+    await holdEnter();
     await roundLoaded("Beta Song");
     expect(submitted(calls)).toMatchObject([{ patterns: ["regular.stream.jumpstream"], noPattern: false }]);
   });
@@ -532,7 +613,7 @@ describe("LabelScreen", () => {
     expect(pressed("No pattern")).toBe("false");
     await userEvent.click(inBar("No pattern"));
 
-    await userEvent.click(inBar("Save"));
+    await holdSave();
 
     await roundLoaded("Beta Song");
     expect(submitted(calls)).toEqual([
@@ -545,7 +626,7 @@ describe("LabelScreen", () => {
     await roundLoaded();
     expect(inBar("Save")).toBeDisabled();
     await userEvent.click(inBar("Unsure"));
-    await userEvent.keyboard("{Enter}");
+    await holdEnter();
     await settle();
     expect(submitted(calls)).toEqual([]);
     expect(screen.getByRole("heading", { name: "Alpha Song" })).toBeInTheDocument();
@@ -589,11 +670,14 @@ describe("LabelScreen", () => {
     expect(screen.getByTestId("pattern-panel").style.scrollPaddingBottom).toBe("188px");
   });
 
-  it("skips with the toolbar: nothing stored, counted, and the next sample excludes the shown window", async () => {
+  it("skips only on a held Skip: nothing stored, counted, and the next sample excludes the shown window", async () => {
     const calls = renderScreen();
     await roundLoaded();
+    await userEvent.click(inBar("Skip"));
+    await settle();
+    expect(screen.getByRole("heading", { name: "Alpha Song" })).toBeInTheDocument();
 
-    await clickTool("Skip");
+    await holdSkip();
 
     await roundLoaded("Beta Song");
     expect(submitted(calls)).toEqual([]);
@@ -634,7 +718,7 @@ describe("LabelScreen", () => {
     await roundLoaded();
     await userEvent.click(screen.getByRole("button", { name: "lj longjack" }));
     await userEvent.click(inBar("Right thumb"));
-    await userEvent.click(inBar("Save"));
+    await holdSave();
     await roundLoaded("Beta Song");
 
     await clickTool("Previous");
@@ -645,7 +729,7 @@ describe("LabelScreen", () => {
     expect(pressed("Right thumb")).toBe("true");
     expect(inBar("Right thumb")).toBeDisabled();
     expect(within(answerBar()).queryByRole("button", { name: "Save" })).toBeNull();
-    expect(tool("Skip")).toHaveAttribute("aria-disabled", "true");
+    expect(inBar("Skip")).toBeDisabled();
     await userEvent.click(screen.getByRole("button", { name: "js jumpstream" }));
     expect(chips()).toEqual(["regular.jack.longjack"]);
 
@@ -709,12 +793,12 @@ describe("LabelScreen", () => {
   it("lets a skipped window be labelled when revisited, without counting it twice", async () => {
     const calls = renderScreen();
     await roundLoaded();
-    await clickTool("Skip");
+    await holdSkip();
     await roundLoaded("Beta Song");
     await clickTool("Previous");
     await roundLoaded("Alpha Song");
     expect(within(answerBar()).getByText("Skipped")).toBeInTheDocument();
-    await clickTool("Skip");
+    await holdSkip();
     await roundLoaded("Beta Song");
     expect(screen.getByText("Skipped: 1")).toBeInTheDocument();
 
@@ -797,7 +881,7 @@ describe("LabelScreen", () => {
 
     await clickTool("Now playing");
     await roundLoaded("Gamma Song");
-    await clickTool("Skip");
+    await holdSkip();
     await roundLoaded("Beta Song");
     await clickTool("Now playing");
 
@@ -855,22 +939,65 @@ describe("LabelScreen", () => {
     await userEvent.click(screen.getByTestId("playfield"));
     expect(document.body).toHaveFocus();
 
-    await userEvent.keyboard("{Enter}");
+    await holdEnter();
     await roundLoaded("Beta Song");
     expect(submitted(calls)).toMatchObject([{ patterns: ["regular.stream.jumpstream"] }]);
   });
 
-  it("takes focus back after a slider or the fit checkbox is used", async () => {
+  it("lets Space toggle the Fit window checkbox in the settings instead of playing", async () => {
     renderScreen();
     await roundLoaded();
-    const offset = await screen.findByRole("slider", { name: "Audio offset" });
-    await userEvent.pointer([
-      { keys: "[MouseLeft>]", target: offset },
-      { keys: "[/MouseLeft]", target: offset },
-    ]);
-    expect(document.body).toHaveFocus();
-    await userEvent.click(screen.getByRole("checkbox", { name: "Fit window" }));
-    expect(document.body).toHaveFocus();
+    const fit = await setting("checkbox", "Fit window");
+    fit.focus();
+    await userEvent.keyboard(" ");
+    expect(fit).toBeChecked();
+    expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
+  });
+
+  it("drops an Enter hold when the window loses focus, and a later Enter hold still saves", async () => {
+    const calls = renderScreen();
+    await roundLoaded();
+    await userEvent.click(inBar("No pattern"));
+
+    fireEvent.keyDown(document.body, { key: "Enter" });
+    await wait(HOLD_MS / 2);
+    fireEvent.blur(window);
+    await wait(HOLD_MS * 2);
+    expect(submitted(calls)).toEqual([]);
+
+    // The keyup went to another app, so this press arrives with no release in between.
+    fireEvent.keyDown(document.body, { key: "Enter" });
+    await wait(HOLD_MS * 2);
+    fireEvent.keyUp(document.body, { key: "Enter" });
+    await roundLoaded("Beta Song");
+    expect(submitted(calls)).toHaveLength(1);
+  });
+
+  it("drops a pointer hold on Save when the window loses focus", async () => {
+    const calls = renderScreen();
+    await roundLoaded();
+    await userEvent.click(inBar("No pattern"));
+
+    fireEvent.pointerDown(inBar("Save"), { button: 0, pointerId: 1 });
+    await wait(HOLD_MS / 2);
+    fireEvent.blur(window);
+    await wait(HOLD_MS * 2);
+
+    expect(submitted(calls)).toEqual([]);
+    expect(screen.getByRole("heading", { name: "Alpha Song" })).toBeInTheDocument();
+  });
+
+  it("keeps Enter for saving after a chip click shows its pattern card", async () => {
+    const calls = renderScreen();
+    await roundLoaded();
+    await userEvent.click(screen.getByRole("button", { name: "mj minijack" }));
+    await userEvent.click(within(answerBar()).getByRole("button", { name: "Show minijack in the pattern panel" }));
+    expect(screen.getByRole("button", { name: "mj minijack" })).toHaveAttribute("data-highlighted", "true");
+
+    await holdEnter();
+
+    await roundLoaded("Beta Song");
+    expect(submitted(calls)).toMatchObject([{ patterns: ["regular.jack.minijack"] }]);
   });
 
   it("stores one label while Enter is held across the round change", async () => {
@@ -883,7 +1010,7 @@ describe("LabelScreen", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  it("ignores a second Enter that lands before the next round renders", async () => {
+  it("drops a second Enter hold that starts while the save is in flight", async () => {
     const calls = renderScreen(undefined, {
       labelSubmit: () => {
         // Many microtask hops let the first submit settle, while React's render waits for a macrotask.
@@ -901,9 +1028,23 @@ describe("LabelScreen", () => {
     fireEvent.keyDown(document.body, { key: "Enter" });
 
     await roundLoaded("Beta Song");
-    await settle();
+    await wait(HOLD_MS * 3);
+    fireEvent.keyUp(document.body, { key: "Enter" });
     expect(submitted(calls)).toHaveLength(1);
     expect(screen.getByText("Labelled: 1")).toBeInTheDocument();
+  });
+
+  it("saves on a held Enter only, a tap stores nothing", async () => {
+    const calls = renderScreen();
+    await roundLoaded();
+    await userEvent.click(inBar("No pattern"));
+    await userEvent.keyboard("{Enter}");
+    await wait(HOLD_MS * 2);
+    expect(submitted(calls)).toEqual([]);
+
+    await holdEnter();
+    await roundLoaded("Beta Song");
+    expect(submitted(calls)).toHaveLength(1);
   });
 
   it("clears the answer with Escape or the Clear button", async () => {
@@ -933,7 +1074,7 @@ describe("LabelScreen", () => {
     expect(chips()).toEqual(["regular.stream.jumpstream"]);
     expect(pressed("Mixed")).toBe("true");
 
-    await userEvent.click(inBar("Save"));
+    await holdSave();
     await roundLoaded("Beta Song");
     expect(submitted(calls)).toMatchObject([{ anchor: { ...ANCHOR_A, t0Ms: 3000, t1Ms: 7000 }, mixed: true }]);
     expect(pressed("Mixed")).toBe("false");
@@ -947,7 +1088,7 @@ describe("LabelScreen", () => {
     await userEvent.click(inBar("Right thumb"));
     expect(pressed("Left thumb")).toBe("false");
     await userEvent.click(screen.getByRole("button", { name: "lj longjack" }));
-    await userEvent.keyboard("{Enter}");
+    await holdEnter();
 
     await roundLoaded("Beta Song");
     expect(submitted(calls)).toEqual([
@@ -1150,7 +1291,7 @@ describe("LabelScreen", () => {
     expect(screen.queryByTestId("playfield")).not.toBeInTheDocument();
   });
 
-  it("keeps the toolbar, history and undo usable once the plan is finished", async () => {
+  it("keeps the navigation, history and undo usable once the plan is finished", async () => {
     const calls = renderScreen([WINDOW_A], { labelRandom: () => WINDOW_C });
     await roundLoaded();
     await saveNoPattern();
@@ -1162,11 +1303,8 @@ describe("LabelScreen", () => {
     expect(screen.queryByTestId("playfield")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New session" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Patterns" })).toBeInTheDocument();
-    for (const name of ["Next", "Skip"]) {
-      expect(tool(name), name).toHaveAccessibleDescription(
-        "The plan has no window left; Random and Now playing still open one.",
-      );
-    }
+    expect(tool("Next")).toHaveAccessibleDescription("The plan has no window left; Random and Now playing still open one.");
+    expect(inBar("Skip")).toBeDisabled();
     for (const name of ["Previous", "Random", "Now playing"]) {
       expect(tool(name), name).toHaveAttribute("aria-disabled", "false");
     }
@@ -1279,15 +1417,234 @@ describe("LabelScreen pattern panel", () => {
   });
 });
 
+describe("LabelScreen player layout", () => {
+  function frame(): HTMLElement {
+    return screen.getByTestId("player-frame");
+  }
+
+  function controls(): HTMLElement {
+    return screen.getByRole("group", { name: "Playback controls" });
+  }
+
+  it("gives the left column to the playfield, with play, time and timeline over its bottom edge and no toolbar or footer", async () => {
+    renderScreen();
+    await roundLoaded();
+    await timelineShown();
+    const column = screen.getByRole("region", { name: "Label" });
+    expect(within(column).getByTestId("player-frame")).toContainElement(screen.getByTestId("playfield"));
+    expect(frame()).toContainElement(controls());
+    expect(within(controls()).getByRole("button", { name: "Play" })).toHaveAttribute("aria-keyshortcuts", "Space");
+    expect(within(controls()).getByText("00:01.000–00:05.000")).toBeInTheDocument();
+    expect(within(controls()).getByRole("slider", { name: "Window position" })).toBeInTheDocument();
+    expect(within(controls()).getByTestId("timeline-track")).toBeInTheDocument();
+    expect(within(column).queryByRole("toolbar")).toBeNull();
+    expect(screen.queryByRole("contentinfo")).toBeNull();
+  });
+
+  it("fades the controls out when idle and brings them back on pointer movement or keyboard focus", async () => {
+    renderScreen(undefined, {}, { params: { ...TEST_PARAMS, controlsIdleMs: 30 } });
+    await roundLoaded();
+    await timelineShown();
+    await waitFor(() => {
+      expect(controls()).toHaveAttribute("data-visible", "false");
+    });
+    fireEvent.pointerMove(frame());
+    expect(controls()).toHaveAttribute("data-visible", "true");
+    await waitFor(() => {
+      expect(controls()).toHaveAttribute("data-visible", "false");
+    });
+    act(() => {
+      timelineSlider().focus();
+    });
+    expect(controls()).toHaveAttribute("data-visible", "true");
+    await wait(90);
+    expect(controls()).toHaveAttribute("data-visible", "true");
+  });
+
+  it("holds every playback setting in the side flyout, which Escape closes without clearing the answer", async () => {
+    renderScreen();
+    await roundLoaded();
+    await userEvent.click(screen.getByRole("button", { name: "js jumpstream" }));
+    expect(await screen.findByRole("button", { name: "Playback settings" })).toHaveAttribute("aria-expanded", "false");
+
+    const panel = await openSettings();
+    expect(screen.getByRole("button", { name: "Playback settings" })).toHaveAttribute("aria-expanded", "true");
+    for (const [role, name] of [
+      ["slider", "Audio offset"],
+      ["combobox", "Scroll mode"],
+      ["spinbutton", "osu! speed"],
+      ["checkbox", "Fit window"],
+      ["slider", "Zoom"],
+      ["slider", "Playback rate"],
+      ["combobox", "Skin"],
+      ["button", "Reload skin"],
+    ] as const) {
+      expect(within(panel).getByRole(role, { name }), name).toBeInTheDocument();
+    }
+    expect(within(panel).getByText("Seed 42")).toBeInTheDocument();
+
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Playback settings" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Playback settings" })).toHaveFocus();
+    expect(chips()).toEqual(["regular.stream.jumpstream"]);
+  });
+
+  it("plays the section at the chosen playback rate and remembers it", async () => {
+    renderScreen();
+    await roundLoaded();
+    const rate = await setting("slider", "Playback rate");
+    expect(rate).toHaveValue("1");
+    expect(rate).toHaveAttribute("min", "0.5");
+    expect(rate).toHaveAttribute("max", "1.5");
+    expect(rate).toHaveAttribute("step", "0.05");
+    fireEvent.change(rate, { target: { value: "1.25" } });
+    expect(localStorage.getItem(LABEL_PREFS.playbackRateKey)).toBe("1.25");
+    expect(within(controls()).getByText("×1.25")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Play" }));
+    await waitFor(() => {
+      expect(FakeAudioContext.sources.length).toBeGreaterThan(0);
+    });
+    expect(FakeAudioContext.sources.map((s) => s.playbackRate.value)).toEqual([1.25, 1.25]);
+  });
+
+  it("applies a dragged playback rate once, on release, instead of restarting the loop on every step", async () => {
+    renderScreen();
+    await roundLoaded();
+    await playingSource();
+    const rate = await setting("slider", "Playback rate");
+    const before = FakeAudioContext.sources.length;
+
+    fireEvent.pointerDown(rate, { button: 0, pointerId: 1 });
+    for (const value of ["1.05", "1.1", "1.15", "1.2"]) {
+      fireEvent.change(rate, { target: { value } });
+    }
+    expect(within(await openSettings()).getByText("×1.20")).toBeInTheDocument();
+    expect(FakeAudioContext.sources).toHaveLength(before);
+    expect(localStorage.getItem(LABEL_PREFS.playbackRateKey)).toBeNull();
+
+    fireEvent.pointerUp(window, { pointerId: 1 });
+
+    await waitFor(() => {
+      expect(FakeAudioContext.sources.at(-1)?.playbackRate.value).toBe(1.2);
+    });
+    expect(FakeAudioContext.sources).toHaveLength(before + 2);
+    expect(localStorage.getItem(LABEL_PREFS.playbackRateKey)).toBe("1.2");
+  });
+
+  it("starts at a stored playback rate", async () => {
+    localStorage.setItem(LABEL_PREFS.playbackRateKey, "0.75");
+    renderScreen();
+    await roundLoaded();
+    expect(await setting("slider", "Playback rate")).toHaveValue("0.75");
+  });
+
+  it("resizes the window from the timeline's edge handles, reloading the chart without a new sample", async () => {
+    const calls = renderScreen();
+    await roundLoaded();
+    await timelineShown();
+    screen.getByRole("slider", { name: "Window end" }).focus();
+    await userEvent.keyboard("{PageUp}");
+
+    expect(await screen.findByText("00:01.000–00:10.000")).toBeInTheDocument();
+    expect(argsOf(calls, "label_resize_window")).toEqual([{ req: { anchor: ANCHOR_A, t0Ms: 1000, t1Ms: 10_000 } }]);
+    await waitFor(() => {
+      expect(argsOf(calls, "chart_window").at(-1)).toMatchObject({ fromMs: 1000, toMs: 10_000 });
+    });
+
+    screen.getByRole("slider", { name: "Window start" }).focus();
+    await userEvent.keyboard("{ArrowLeft}");
+    expect(await screen.findByText("00:00.000–00:10.000")).toBeInTheDocument();
+    expect(argsOf(calls, "label_resize_window").at(-1)).toEqual({
+      req: { anchor: { ...ANCHOR_A, t1Ms: 10_000 }, t0Ms: 0, t1Ms: 10_000 },
+    });
+    expect(argsOf(calls, "label_move_window")).toEqual([]);
+    expect(sampleRequests(calls)).toHaveLength(1);
+  });
+
+  it("keeps the window and words the error when a resize fails", async () => {
+    renderScreen([WINDOW_A, WINDOW_B], { labelResizeWindow: () => mockIpcError("NOT_FOUND") });
+    await roundLoaded();
+    await timelineShown();
+    screen.getByRole("slider", { name: "Window end" }).focus();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(await within(answerBar()).findByRole("alert")).toBeInTheDocument();
+    expect(screen.getByText("00:01.000–00:05.000")).toBeInTheDocument();
+  });
+
+  it("puts Previous, Next, Random and Now playing in the map card, with the session counters", async () => {
+    renderScreen();
+    await roundLoaded();
+    const header = screen.getByRole("heading", { name: "Alpha Song" }).closest("header");
+    if (header === null) {
+      throw new Error("the title is not in the map card");
+    }
+    const nav = within(header).getByRole("toolbar", { name: "Windows" });
+    expect(within(nav).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Previous",
+      "Next",
+      "Random",
+      "Now playing",
+    ]);
+    expect(within(header).getByText("Gold set: 37")).toBeInTheDocument();
+    expect(within(header).getByText("Labelled: 0")).toBeInTheDocument();
+  });
+
+  it("shows the map's full details from chart_details in the header dialog", async () => {
+    const calls = renderScreen();
+    await roundLoaded();
+    await waitFor(() => {
+      expect(argsOf(calls, "chart_details")).toEqual([{ md5: ANCHOR_A.md5 }]);
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Show the full image and map details" }));
+    const dialog = screen.getByRole("dialog", { name: "Alpha Song" });
+    expect(within(dialog).getByText("Length", { selector: "dt" }).nextElementSibling).toHaveTextContent("02:34");
+    expect(within(dialog).getByText("Source", { selector: "dt" }).nextElementSibling).toHaveTextContent("Some Game");
+  });
+
+  it("takes a clicked chip to its pattern card, opening the card's axis but leaving focus on the page", async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { value: scrollIntoView, configurable: true, writable: true });
+    try {
+      renderScreen();
+      await roundLoaded();
+      await userEvent.click(screen.getByRole("button", { name: "js jumpstream" }));
+      await userEvent.click(screen.getByRole("button", { name: "Stream" }));
+      expect(screen.queryByRole("button", { name: "js jumpstream" })).toBeNull();
+
+      await userEvent.click(inBar("Show jumpstream in the pattern panel"));
+
+      const card = await screen.findByRole("button", { name: "js jumpstream" });
+      expect(card).toHaveAttribute("data-highlighted", "true");
+      expect(scrollIntoView.mock.contexts).toContain(card);
+      expect(document.body).toHaveFocus();
+    } finally {
+      Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+    }
+  });
+
+  it("moves focus to the pattern card when a chip is activated from the keyboard", async () => {
+    renderScreen();
+    await roundLoaded();
+    await userEvent.click(screen.getByRole("button", { name: "js jumpstream" }));
+    inBar("Show jumpstream in the pattern panel").focus();
+
+    await userEvent.keyboard("{Enter}");
+
+    expect(await screen.findByRole("button", { name: "js jumpstream" })).toHaveFocus();
+    expect(chips()).toEqual(["regular.stream.jumpstream"]);
+  });
+});
+
 describe("LabelScreen scroll and zoom controls", () => {
   function osuSpeed(): HTMLElement {
-    return screen.getByRole("spinbutton", { name: "osu! speed" });
+    return within(screen.getByRole("dialog", { name: "Playback settings" })).getByRole("spinbutton", { name: "osu! speed" });
   }
 
   it("starts in the osu! mode at the default speed, overridable by a prop", async () => {
     renderScreen(undefined, {}, { defaultOsuSpeed: 30 });
     await roundLoaded();
-    expect(await screen.findByRole("combobox", { name: "Scroll mode" })).toHaveValue("osu");
+    expect(await setting("combobox", "Scroll mode")).toHaveValue("osu");
     expect(osuSpeed()).toHaveValue(30);
     expect(screen.queryByRole("slider", { name: "Scroll speed" })).not.toBeInTheDocument();
   });
@@ -1295,22 +1652,22 @@ describe("LabelScreen scroll and zoom controls", () => {
   it("defaults the osu! speed to 20 without a prop", async () => {
     renderScreen();
     await roundLoaded();
-    expect(await screen.findByRole("spinbutton", { name: "osu! speed" })).toHaveValue(20);
+    expect(await setting("spinbutton", "osu! speed")).toHaveValue(20);
   });
 
   it("changes the osu! speed with F3 and F4 even while typing in the pattern search, and keeps it", async () => {
     renderScreen();
     await roundLoaded();
-    await screen.findByRole("spinbutton", { name: "osu! speed" });
+    await timelineShown();
     const search = screen.getByRole("searchbox", { name: "Search patterns" });
     await userEvent.type(search, "js");
     await userEvent.keyboard("{F4}{F4}{F3}{F4}");
-    expect(osuSpeed()).toHaveValue(22);
     expect(search).toHaveValue("js");
     expect(search).toHaveFocus();
     expect(localStorage.getItem(LABEL_PREFS.osuSpeedKey)).toBe("22");
+    await openSettings();
+    expect(osuSpeed()).toHaveValue(22);
 
-    search.blur();
     await userEvent.keyboard("{F3}");
     expect(osuSpeed()).toHaveValue(21);
   });
@@ -1318,7 +1675,7 @@ describe("LabelScreen scroll and zoom controls", () => {
   it("stops F3 and F4 at the ends of the 1..40 range", async () => {
     renderScreen(undefined, {}, { defaultOsuSpeed: 40 });
     await roundLoaded();
-    await screen.findByRole("spinbutton", { name: "osu! speed" });
+    await setting("spinbutton", "osu! speed");
     await userEvent.keyboard("{F4}");
     expect(osuSpeed()).toHaveValue(40);
   });
@@ -1327,17 +1684,16 @@ describe("LabelScreen scroll and zoom controls", () => {
     localStorage.setItem(LABEL_PREFS.legacyScrollKey, "1.25");
     renderScreen();
     await roundLoaded();
-    await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Scroll mode" }), "pxPerMs");
+    await userEvent.selectOptions(await setting("combobox", "Scroll mode"), "pxPerMs");
     expect(screen.getByRole("slider", { name: "Scroll speed" })).toHaveValue("1.25");
     expect(screen.queryByRole("spinbutton", { name: "osu! speed" })).not.toBeInTheDocument();
     expect(localStorage.getItem(LABEL_PREFS.scrollKindKey)).toBe("pxPerMs");
-    expect(document.body).toHaveFocus();
   });
 
   it("keeps the zoom and draws the playfield without a fixed maximum width", async () => {
     renderScreen();
     await roundLoaded();
-    const zoom = await screen.findByRole("slider", { name: "Zoom" });
+    const zoom = await setting("slider", "Zoom");
     fireEvent.change(zoom, { target: { value: "1.5" } });
     expect(zoom).toHaveValue("1.5");
     expect(localStorage.getItem(LABEL_PREFS.zoomKey)).toBe("1.5");
@@ -1415,10 +1771,11 @@ describe("LabelScreen skins", () => {
   };
 
   function picker(): HTMLSelectElement {
-    return screen.getByRole("combobox", { name: "Skin" });
+    return within(screen.getByRole("dialog", { name: "Playback settings" })).getByRole("combobox", { name: "Skin" });
   }
 
   async function pickerReady(): Promise<HTMLSelectElement> {
+    await openSettings();
     await waitFor(() => {
       expect(picker()).toBeEnabled();
     });
@@ -1528,12 +1885,12 @@ describe("LabelScreen skins", () => {
     await waitFor(() => {
       expect(argsOf(calls, "skin_get")).toHaveLength(1);
     });
-    await userEvent.click(within(screen.getByRole("toolbar", { name: "Windows" })).getByRole("button", { name: "Skip" }));
+    await holdSkip();
     await roundLoaded("Beta Song");
     expect(argsOf(calls, "skin_get")).toHaveLength(1);
 
     mtime = "2";
-    await userEvent.click(screen.getByRole("button", { name: "Reload skin" }));
+    await userEvent.click(await setting("button", "Reload skin"));
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Reload skin" })).toBeEnabled();
     });
@@ -1656,6 +2013,7 @@ describe("LabelScreen skins", () => {
   it("defaults the osu! speed to the cfg ManiaSpeed until one is stored", async () => {
     renderScreen(undefined, { skinList: () => ({ ...LIST, maniaSpeed: 30 }) });
     await roundLoaded();
+    await openSettings();
     await waitFor(() => {
       expect(screen.getByRole("spinbutton", { name: "osu! speed" })).toHaveValue(30);
     });

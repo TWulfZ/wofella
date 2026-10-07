@@ -1,8 +1,18 @@
-import { useMutation, useSuspenseQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Settings as SettingsIcon, UserRound } from "lucide-react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { HandLayoutCard } from "@/features/preferences";
+import { labelPatternExamplesQuery, skinListQuery, useSkinFile } from "@/features/label";
+import {
+  DefaultSkinCard,
+  HandLayoutCard,
+  previewExample,
+  readSkinChoice,
+  selectedSkinFolder,
+  skinOptions,
+  writeSkinChoice,
+} from "@/features/preferences";
 import { setupStatusQuery } from "@/features/setup";
 import { commands } from "@/ipc/bindings";
 import { call } from "@/ipc/client";
@@ -25,6 +35,32 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       <dt className="text-muted-foreground text-sm">{label}</dt>
       <dd className="flex flex-col items-start gap-2">{children}</dd>
     </div>
+  );
+}
+
+// The MVP keymode; 4K adds its own cards once its profile has layout presets.
+const KEYMODE = 7;
+
+function DefaultSkinSection({ keymode }: { keymode: number }) {
+  const skinList = useQuery(skinListQuery());
+  const [choice, setChoice] = useState(readSkinChoice);
+  const folder = selectedSkinFolder(skinList.data, choice);
+  const skinFile = useSkinFile(folder, keymode, skinList.data);
+  // Null draws with the stored hand layout, as the Label screen's pattern previews do.
+  const examples = useQuery(labelPatternExamplesQuery(keymode, null));
+  return (
+    <DefaultSkinCard
+      options={skinOptions(skinList.data, keymode)}
+      folder={folder}
+      ready={skinList.data !== undefined}
+      skin={skinFile.data?.dto ?? null}
+      example={examples.isError ? null : examples.data === undefined ? undefined : (previewExample(examples.data) ?? null)}
+      error={skinList.error ?? skinFile.error ?? examples.error}
+      onChange={(next) => {
+        setChoice({ folder: next });
+        writeSkinChoice({ folder: next });
+      }}
+    />
   );
 }
 
@@ -101,8 +137,8 @@ function SettingsPage() {
             </dl>
           </CardContent>
         </Card>
-        {/* The MVP keymode; 4K adds its own card once its profile has layout presets. */}
-        <HandLayoutCard keymode={7} />
+        <HandLayoutCard keymode={KEYMODE} />
+        <DefaultSkinSection keymode={KEYMODE} />
       </div>
     </>
   );

@@ -31,6 +31,10 @@ pub struct CatalogChart {
     pub length_ms: u32,
     /// stable's cached no-mod osu!mania star rating; `None` until stable has computed it.
     pub stars: Option<f64>,
+    /// Empty when the map names none.
+    pub source: String,
+    /// osu!'s space-separated search tags, as stored.
+    pub tags: String,
 }
 
 str_enum! {
@@ -199,7 +203,7 @@ fn prune_vkeys_except(tx: &Tx<'_>, table: &str, keep: &[VersionKey]) -> Result<u
 pub mod catalog_chart {
     use super::*;
 
-    const COLUMNS: &str = "md5, keymode, title, artist, version, creator, set_id, beatmap_id, path, od, hp, length_ms, stars";
+    const COLUMNS: &str = "md5, keymode, title, artist, version, creator, set_id, beatmap_id, path, od, hp, length_ms, stars, source, tags";
 
     fn from_row(row: &Row<'_>) -> rusqlite::Result<CatalogChart> {
         Ok(CatalogChart {
@@ -216,6 +220,8 @@ pub mod catalog_chart {
             hp: row.get(10)?,
             length_ms: int(row, 11)?,
             stars: row.get(12)?,
+            source: row.get(13)?,
+            tags: row.get(14)?,
         })
     }
 
@@ -229,7 +235,7 @@ pub mod catalog_chart {
         tx.0.execute("DELETE FROM catalog_chart", [])?;
         let mut insert = tx.0.prepare_cached(&format!(
             "INSERT INTO catalog_chart ({COLUMNS}, snapshot_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)"
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)"
         ))?;
         for c in rows {
             insert.execute(rusqlite::params![
@@ -246,6 +252,8 @@ pub mod catalog_chart {
                 c.hp,
                 c.length_ms,
                 c.stars,
+                c.source,
+                c.tags,
                 snapshot_id.0,
             ])?;
         }
@@ -867,6 +875,8 @@ mod tests {
             hp: 7.0,
             length_ms: 150_000,
             stars: Some(4.25),
+            source: "Some Game".into(),
+            tags: "dan jumpstream".into(),
         }
     }
 

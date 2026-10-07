@@ -406,6 +406,51 @@ mod commands_smoke {
     }
 
     #[test]
+    fn label_player_commands_answer() {
+        let h = synced();
+        let anchor = json!({ "md5": CHART_MD5, "t0Ms": 0, "t1Ms": 2_000, "cols": [1, 2, 3] });
+        let resize = |t0: i32, t1: i32| {
+            h.invoke(
+                "label_resize_window",
+                json!({ "req": { "anchor": anchor, "t0Ms": t0, "t1Ms": t1 } }),
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            resize(0, 3_000),
+            json!({ "md5": CHART_MD5, "t0Ms": 0, "t1Ms": 3_000, "cols": [1, 2, 3, 4, 5, 6, 7] })
+        );
+        assert_eq!(resize(0, 90_000)["t1Ms"], json!(4_501));
+
+        let details = h
+            .invoke("chart_details", json!({ "md5": CHART_MD5 }))
+            .unwrap();
+        assert_eq!(details["md5"], json!(CHART_MD5));
+        assert_eq!(
+            (
+                &details["nNotes"],
+                &details["nLn"],
+                &details["lengthMs"],
+                &details["bpmMin"],
+                &details["bpmMax"],
+            ),
+            (
+                &json!(33),
+                &json!(1),
+                &json!(4_500),
+                &json!(120.0),
+                &json!(120.0)
+            ),
+            "{details}"
+        );
+        assert!(details["tags"].is_array(), "{details}");
+        let err = h
+            .invoke("chart_details", json!({ "md5": "0".repeat(32) }))
+            .unwrap_err();
+        assert_eq!(err["code"], json!("NOT_FOUND"), "{err}");
+    }
+
+    #[test]
     fn setup_status_ok() {
         let h = Harness::new();
         let status = h.invoke("setup_status", json!({})).unwrap();

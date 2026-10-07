@@ -102,6 +102,10 @@ export const commands = {
 	settingsGetHandLayout: (keymode: number) => typedError<string, IpcError>(__TAURI_INVOKE("settings_get_hand_layout", { keymode })),
 	/**  `INVALID_INPUT` unless `layoutId` is a preset of the keymode. */
 	settingsSetHandLayout: (keymode: number, layoutId: string) => typedError<null, IpcError>(__TAURI_INVOKE("settings_set_hand_layout", { keymode, layoutId })),
+	/**  The window resized to `[t0Ms, t1Ms)`, kept inside the chart and within the length bounds. */
+	labelResizeWindow: (req: ResizeWindowRequestDto) => typedError<AnchorDto, IpcError>(__TAURI_INVOKE("label_resize_window", { req })),
+	/**  The catalog row and parse counts the label card and its details dialog show. */
+	chartDetails: (md5: string) => typedError<ChartDetailsDto, IpcError>(__TAURI_INVOKE("chart_details", { md5 })),
 };
 
 /** Events */
@@ -166,6 +170,33 @@ export type ChartAudioDto = {
 	mime: string,
 	/**  RFC 4648 with padding. */
 	base64: string,
+};
+
+/**
+ *  What the label card and its details dialog show of one chart: the osu!.db row plus the
+ *  parse's counts. osu!.db fields a map leaves empty come back `None` or empty.
+ */
+export type ChartDetailsDto = {
+	md5: string,
+	title: string,
+	artist: string,
+	creator: string,
+	/**  The difficulty name. */
+	version: string,
+	source: string | null,
+	tags: string[],
+	/**  stable's cached no-mod star rating; `None` until stable has computed it. */
+	stars: number | null,
+	od: number | null,
+	hp: number | null,
+	lengthMs: number,
+	/**  Over the red lines up to the last row; `None` without one. */
+	bpmMin: number | null,
+	bpmMax: number | null,
+	nNotes: number,
+	nLn: number,
+	setId: number | null,
+	beatmapId: number | null,
 };
 
 /**
@@ -551,6 +582,16 @@ export type RandomRequestDto = {
 	round: number,
 	windowMs: number | null,
 	exclude: AnchorDto[],
+};
+
+/**
+ *  `anchor` resized to `[t0Ms, t1Ms)`: the edge that moved from the anchor's is clamped to
+ *  the chart and to the window length bounds.
+ */
+export type ResizeWindowRequestDto = {
+	anchor: AnchorDto,
+	t0Ms: number,
+	t1Ms: number,
 };
 
 /**  One labelling round. Label bounds are inclusive and match as in the library listing. */

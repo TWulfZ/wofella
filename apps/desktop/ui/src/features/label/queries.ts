@@ -6,6 +6,7 @@ import {
   type MoveWindowRequestDto,
   type NowPlayingRequestDto,
   type RandomRequestDto,
+  type ResizeWindowRequestDto,
   type SampleRequestDto,
   type SkinDto,
   type SkinListDto,
@@ -26,6 +27,7 @@ export const labelKeys = {
     qk("labels", "chartWindow", md5, fromMs, toMs, layoutId),
   chartAudio: (md5: string) => qk("labels", "chartAudio", md5),
   chartBackground: (md5: string) => qk("labels", "chartBackground", md5),
+  chartDetails: (md5: string) => qk("labels", "chartDetails", md5),
   chartTimelines: () => qk("labels", "chartTimeline"),
   chartTimeline: (keymode: number, md5: string, buckets: number) => qk("labels", "chartTimeline", keymode, md5, buckets),
 };
@@ -165,6 +167,14 @@ export function chartBackgroundQuery(md5: string | null) {
   });
 }
 
+export function chartDetailsQuery(md5: string | null) {
+  return queryOptions({
+    queryKey: labelKeys.chartDetails(md5 ?? ""),
+    queryFn: md5 === null ? skipToken : () => call(commands.chartDetails(md5)),
+    staleTime: Infinity,
+  });
+}
+
 export function chartTimelineQuery(keymode: number, md5: string | null, buckets: number) {
   return queryOptions({
     queryKey: labelKeys.chartTimeline(keymode, md5 ?? "", buckets),
@@ -201,6 +211,7 @@ export function useLabelMutations() {
       },
     }),
     move: useMutation({ mutationFn: (req: MoveWindowRequestDto) => call(commands.labelMoveWindow(req)) }),
+    resize: useMutation({ mutationFn: (req: ResizeWindowRequestDto) => call(commands.labelResizeWindow(req)) }),
     submit: useMutation({ mutationFn: (req: LabelSubmitDto) => call(commands.labelSubmit(req)), onSuccess: refreshLabelled }),
     undo: useMutation({ mutationFn: (eventId: string) => call(commands.labelUndo(eventId)), onSuccess: refreshLabelled }),
   };

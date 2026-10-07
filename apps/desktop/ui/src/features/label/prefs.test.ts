@@ -5,6 +5,7 @@ import {
   readSkinChoice,
   readOffsetMs,
   readPanelWidthPx,
+  readPlaybackRate,
   readScrollPrefs,
   readZoom,
   scrollFromPrefs,
@@ -13,6 +14,7 @@ import {
   writeOffsetMs,
   writeOsuSpeed,
   writePanelWidthPx,
+  writePlaybackRate,
   writePxPerMs,
   writeScrollKind,
   writeSkinChoice,
@@ -107,6 +109,25 @@ describe("zoom preference", () => {
     expect(readZoom()).toBe(0.75);
     localStorage.setItem(LABEL_PREFS.zoomKey, "big");
     expect(readZoom()).toBe(1);
+  });
+});
+
+describe("playback rate preference", () => {
+  it("defaults to 1 and round-trips a stored rate", () => {
+    expect(readPlaybackRate()).toBe(1);
+    writePlaybackRate(0.75);
+    expect(readPlaybackRate()).toBe(0.75);
+  });
+
+  it("clamps to 0.5..1.5, snaps to the 0.05 step and ignores garbage", () => {
+    localStorage.setItem(LABEL_PREFS.playbackRateKey, "3");
+    expect(readPlaybackRate()).toBe(LABEL_PREFS.maxPlaybackRate);
+    localStorage.setItem(LABEL_PREFS.playbackRateKey, "0.1");
+    expect(readPlaybackRate()).toBe(LABEL_PREFS.minPlaybackRate);
+    localStorage.setItem(LABEL_PREFS.playbackRateKey, "0.83");
+    expect(readPlaybackRate()).toBe(0.85);
+    localStorage.setItem(LABEL_PREFS.playbackRateKey, "fast");
+    expect(readPlaybackRate()).toBe(1);
   });
 });
 

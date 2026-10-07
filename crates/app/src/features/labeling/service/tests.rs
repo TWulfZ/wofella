@@ -5,8 +5,8 @@ use wolluf_core::ErrorCode;
 use super::*;
 use crate::features::labeling::dto::{
     AnchorDto, ChartTimelineDto, ChartTimelineRequestDto, LabelSubmitDto, MoveWindowRequestDto,
-    NowPlayingRequestDto, NowPlayingSourceDto, RandomRequestDto, SampleRequestDto, SpanDto,
-    WindowAtRequestDto, WindowOpDto,
+    NowPlayingRequestDto, NowPlayingSourceDto, RandomRequestDto, ResizeWindowRequestDto,
+    SampleRequestDto, SpanDto, WindowAtRequestDto, WindowOpDto,
 };
 use crate::features::library::testkit::{Map, install, osu_text, synced};
 use crate::features::plays::testkit::Fixture;
@@ -1352,6 +1352,101 @@ async fn move_window_keeps_its_length_inside_the_chart() {
     assert_eq!(unknown.unwrap_err().code, ErrorCode::NotFound);
     let bad = moved(anchor("nope", 0, 4_000), 0).await;
     assert_eq!(bad.unwrap_err().code, ErrorCode::InvalidInput);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn resize_window_clamps_to_the_chart_and_the_length_bounds() {
+    let taps: Vec<(u8, i32)> = (0..560).map(|i| ((i % 7) as u8, i * 125)).collect();
+    let seventy = Map::new("seventy", 7, osu_text(7, "seventy", &taps, &[]));
+    let (f, _) = synced(std::slice::from_ref(&seventy), &[]).await;
+    let svc = f.ctx.labeling();
+    let md5 = &seventy.md5;
+    let resized = |anchor: AnchorDto, t0_ms: i32, t1_ms: i32| {
+        svc.resize_window(ResizeWindowRequestDto {
+            anchor,
+            t0_ms,
+            t1_ms,
+        })
+    };
+    let at_ms = |a: AnchorDto| (a.t0_ms, a.t1_ms);
+    assert_eq!(
+        at_ms(
+            resized(anchor(md5, 1_000, 5_000), 1_000, 35_000)
+                .await
+                .unwrap()
+        ),
+        (1_000, 35_000)
+    );
+    assert_eq!(
+        at_ms(
+            resized(anchor(md5, 1_000, 5_000), 1_000, 69_000)
+                .await
+                .unwrap()
+        ),
+        (1_000, 61_000),
+        "the end stops at the 60 s cap"
+    );
+    assert_eq!(
+        at_ms(
+            resized(anchor(md5, 30_000, 34_000), 30_200, 34_000)
+                .await
+                .unwrap()
+        ),
+        (30_200, 34_000)
+    );
+    assert_eq!(
+        at_ms(
+            resized(anchor(md5, 30_000, 34_000), 33_800, 34_000)
+                .await
+                .unwrap()
+        ),
+        (33_000, 34_000),
+        "the start stops at the 1 s floor"
+    );
+    assert_eq!(
+        at_ms(
+            resized(anchor(md5, 65_000, 69_000), 65_000, 90_000)
+                .await
+                .unwrap()
+        ),
+        (65_000, 69_876),
+        "the end stops one past the last row"
+    );
+    assert_eq!(
+        at_ms(
+            resized(anchor(md5, 2_000, 6_000), -3_000, 6_000)
+                .await
+                .unwrap()
+        ),
+        (0, 6_000)
+    );
+    let narrow = AnchorDto {
+        cols: vec![1, 2],
+        ..anchor(md5, 1_000, 5_000)
+    };
+    assert_eq!(
+        resized(narrow, 1_000, 8_000).await.unwrap().cols,
+        ALL_COLS.to_vec(),
+        "columns are recomputed"
+    );
+    let unknown = resized(anchor(&"0".repeat(32), 0, 4_000), 0, 5_000).await;
+    assert_eq!(unknown.unwrap_err().code, ErrorCode::NotFound);
+    let bad = resized(anchor("nope", 0, 4_000), 0, 5_000).await;
+    assert_eq!(bad.unwrap_err().code, ErrorCode::InvalidInput);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn widen_stops_at_the_longest_window() {
+    let taps: Vec<(u8, i32)> = (0..560).map(|i| ((i % 7) as u8, i * 125)).collect();
+    let seventy = Map::new("seventy", 7, osu_text(7, "seventy", &taps, &[]));
+    let (f, _) = synced(std::slice::from_ref(&seventy), &[]).await;
+    let widened = f
+        .ctx
+        .labeling()
+        .reshape(anchor(&seventy.md5, 0, 59_500), WindowOpDto::Widen)
+        .await
+        .unwrap();
+    assert_eq!((widened.t0_ms, widened.t1_ms), (0, 60_000));
 }
 
 fn timeline(md5: &str, buckets: u16) -> ChartTimelineRequestDto {

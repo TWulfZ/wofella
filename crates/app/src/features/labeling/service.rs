@@ -31,7 +31,8 @@ use super::dto::{
     AnchorDto, ChartTimelineDto, ChartTimelineRequestDto, CountDto, LabelEventDto, LabelExportDto,
     LabelStatsDto, LabelSubmitDto, LabelWindowDto, MoveWindowRequestDto, NowPlayingDto,
     NowPlayingRequestDto, NowPlayingSourceDto, PatternDefDto, PatternExampleDto, RandomRequestDto,
-    SampleRequestDto, SpanDto, ThumbPrefDto, WindowAtRequestDto, WindowOpDto,
+    ResizeWindowRequestDto, SampleRequestDto, SpanDto, ThumbPrefDto, WindowAtRequestDto,
+    WindowOpDto,
 };
 use super::keys;
 use super::now_playing::{NowPlayingParams, title_matches};
@@ -366,7 +367,7 @@ impl<'a> LabelingService<'a> {
             how,
             span,
             p.reshape_step,
-            p.min_window,
+            (p.min_window, p.max_window),
         )
         .map_err(|_| {
             AppError::invalid_input()
@@ -392,6 +393,26 @@ impl<'a> LabelingService<'a> {
         let moved = SegmentAnchor::new(md5, t0, t1, ColMask::full(rows.keymode), rows.keymode)
             .map_err(|e| AppError::internal(format!("moved anchor: {e}")))?;
         anchor_dto(&moved)
+    }
+
+    /// `req.anchor` resized to `[req.t0Ms, req.t1Ms)`, kept inside the chart's rows and between
+    /// the shortest and the longest window; columns are recomputed as in `move_window`.
+    pub async fn resize_window(&self, req: ResizeWindowRequestDto) -> Result<AnchorDto, AppError> {
+        let md5 = parse_md5(&req.anchor.md5)?;
+        let rows = self.ctx.library().row_times(md5).await?;
+        let a = parse_anchor(md5, &req.anchor, rows.keymode)?;
+        let span = window::chart_span(&rows.times)
+            .ok_or_else(|| AppError::not_found().with_arg("md5", req.anchor.md5.clone()))?;
+        let (t0, t1) = window::resize(
+            (a.t0_us(), a.t1_us()),
+            (TimeUs::from_ms(req.t0_ms), TimeUs::from_ms(req.t1_ms)),
+            span,
+            self.params.min_window,
+            self.params.max_window,
+        );
+        let resized = SegmentAnchor::new(md5, t0, t1, ColMask::full(rows.keymode), rows.keymode)
+            .map_err(|e| AppError::internal(format!("resized anchor: {e}")))?;
+        anchor_dto(&resized)
     }
 
     /// The chart's span cut into `req.buckets` equal slices with their note counts, plus the

@@ -8,6 +8,8 @@ export interface AudioBufferLike {
 export interface AudioBufferSourceNodeLike {
   buffer: AudioBufferLike | null;
   onended: ((ev: Event) => unknown) | null;
+  /** Optional so minimal fakes need not model it; a rate of 1 never touches it. */
+  readonly playbackRate?: { value: number };
   connect(destination: object): unknown;
   disconnect(): void;
   /** Seconds, all three. */
@@ -57,6 +59,7 @@ export interface Clock {
 }
 
 export interface AudioLoopClock extends Clock {
+  /** Wall-clock ms whatever the playback rate, as the viewer's output latency is. */
   setOffsetMs(offsetMs: number): void;
 }
 
@@ -91,17 +94,20 @@ export function createAudioLoopClock(
   loop: LoopSpan,
   offsetMs: number,
   splice: LoopSpliceParams,
+  rate = 1,
 ): AudioLoopClock {
   // A one-shot asked to play past the buffer ends early, which would desync the clock from the sound.
   const span: LoopSpan = { startMs: loop.startMs, endMs: Math.min(loop.endMs, buffer.duration * MS_PER_S) };
   if (span.endMs <= span.startMs) {
     // The section lies past the end of the audio: an empty span would freeze the clock at its start.
-    return contextSilentLoopClock(ctx, loop, offsetMs, splice.gapMs);
+    return contextSilentLoopClock(ctx, loop, offsetMs, splice.gapMs, rate);
   }
   const lenMs = span.endMs - span.startMs;
-  const periodMs = lenMs + Math.max(0, splice.gapMs);
+  const gapMs = Math.max(0, splice.gapMs);
+  // Context (wall) time per iteration: the section plays `rate` times faster, the gap is heard and keeps its length.
+  const periodMs = lenMs / rate + gapMs;
   let offset = offsetMs;
-  // Scheduled (not heard) elapsed time into the loop: what was already sent to the device must not be sent again.
+  // Scheduled (not heard) chart time into the loop: what was already sent to the device must not be sent again.
   let pausedElapsedMs = 0;
   let playing = false;
   // The iteration playing (or waiting out the gap) first, then the one scheduled ahead of it.
@@ -111,8 +117,10 @@ export function createAudioLoopClock(
   let disposed = false;
 
   const latencyMs = (): number => (ctx.outputLatency ?? ctx.baseLatency ?? 0) * MS_PER_S;
-  const scheduledElapsedMs = (): number => (playing ? (ctx.currentTime - startedAtS) * MS_PER_S : pausedElapsedMs);
-  const heardMs = (): number => loopPosition(scheduledElapsedMs() - latencyMs(), span, splice.gapMs);
+  const scheduledWallMs = (): number => (playing ? (ctx.currentTime - startedAtS) * MS_PER_S : pausedElapsedMs / rate);
+  // A wall-time gap of g is g × rate in chart time, so the chart-time loop keeps the wall period.
+  const chartPosition = (wallMs: number): number => loopPosition(wallMs * rate, span, gapMs * rate);
+  const heardMs = (): number => chartPosition(scheduledWallMs() - latencyMs());
 
   const detach = (voice: Voice): void => {
     voice.source.onended = null;
@@ -127,15 +135,20 @@ export function createAudioLoopClock(
     const source = ctx.createBufferSource();
     const gain = ctx.createGain();
     source.buffer = buffer;
+    if (rate !== 1 && source.playbackRate !== undefined) {
+      source.playbackRate.value = rate;
+    }
     source.connect(gain);
     gain.connect(ctx.destination);
-    const durationS = durationMs / MS_PER_S;
-    const fadeS = Math.min(Math.max(0, splice.fadeMs), durationMs / 2) / MS_PER_S;
+    const wallMs = durationMs / rate;
+    const durationS = wallMs / MS_PER_S;
+    const fadeS = Math.min(Math.max(0, splice.fadeMs), wallMs / 2) / MS_PER_S;
     gain.gain.setValueAtTime(0, whenS);
     gain.gain.linearRampToValueAtTime(1, whenS + fadeS);
     gain.gain.setValueAtTime(1, whenS + durationS - fadeS);
     gain.gain.linearRampToValueAtTime(0, whenS + durationS);
-    source.start(whenS, fromMs / MS_PER_S, durationS);
+    // Per spec the one-shot's duration is buffer content, not context time.
+    source.start(whenS, fromMs / MS_PER_S, durationMs / MS_PER_S);
     const voice: Voice = { source, gain };
     source.onended = () => {
       if (voices[0] !== voice) {
@@ -158,7 +171,7 @@ export function createAudioLoopClock(
     if (!playing) {
       return;
     }
-    pausedElapsedMs = loopPosition(scheduledElapsedMs(), span, splice.gapMs) - span.startMs;
+    pausedElapsedMs = chartPosition(scheduledWallMs()) - span.startMs;
     playing = false;
     for (const voice of voices) {
       detach(voice);
@@ -171,7 +184,8 @@ export function createAudioLoopClock(
     get playing() {
       return playing;
     },
-    nowMs: () => heardMs() + offset,
+    // The offset is a latency correction in wall ms; at rate r it covers r times as much chart.
+    nowMs: () => heardMs() + offset * rate,
     play() {
       if (disposed || playing) {
         return;
@@ -180,7 +194,7 @@ export function createAudioLoopClock(
         void ctx.resume();
       }
       const nowS = ctx.currentTime;
-      startedAtS = nowS - pausedElapsedMs / MS_PER_S;
+      startedAtS = nowS - pausedElapsedMs / rate / MS_PER_S;
       iteration = 0;
       playing = true;
       schedule(nowS, span.startMs + pausedElapsedMs, lenMs - pausedElapsedMs);
@@ -197,14 +211,20 @@ export function createAudioLoopClock(
   };
 }
 
-function contextSilentLoopClock(ctx: AudioContextLike, loop: LoopSpan, offsetMs: number, gapMs: number): AudioLoopClock {
-  const silent = createSilentLoopClock(loop, () => ctx.currentTime * MS_PER_S, gapMs);
+function contextSilentLoopClock(
+  ctx: AudioContextLike,
+  loop: LoopSpan,
+  offsetMs: number,
+  gapMs: number,
+  rate: number,
+): AudioLoopClock {
+  const silent = createSilentLoopClock(loop, () => ctx.currentTime * MS_PER_S, gapMs, rate);
   let offset = offsetMs;
   return {
     get playing() {
       return silent.playing;
     },
-    nowMs: () => silent.nowMs() + offset,
+    nowMs: () => silent.nowMs() + offset * rate,
     play() {
       // A suspended context's currentTime stands still.
       if (ctx.state === "suspended") {
@@ -229,12 +249,14 @@ export function createSilentLoopClock(
   loop: LoopSpan,
   nowFn: () => number = () => performance.now(),
   gapMs = 0,
+  rate = 1,
 ): Clock {
   let positionMs = loop.startMs;
   let startedAtMs: number | null = null;
   let disposed = false;
 
-  const currentMs = (): number => (startedAtMs === null ? positionMs : loopPosition(nowFn() - startedAtMs, loop, gapMs));
+  const currentMs = (): number =>
+    startedAtMs === null ? positionMs : loopPosition((nowFn() - startedAtMs) * rate, loop, gapMs * rate);
   const stop = (): void => {
     positionMs = currentMs();
     startedAtMs = null;
@@ -249,7 +271,7 @@ export function createSilentLoopClock(
       if (disposed || startedAtMs !== null) {
         return;
       }
-      startedAtMs = nowFn() - (positionMs - loop.startMs);
+      startedAtMs = nowFn() - (positionMs - loop.startMs) / rate;
     },
     pause: stop,
     dispose() {

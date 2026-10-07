@@ -4,6 +4,7 @@ import { SectionPlayer, type SectionPlayerDeps } from "./sectionPlayer";
 
 class FakeSource implements AudioBufferSourceNodeLike {
   buffer: AudioBufferLike | null = null;
+  readonly playbackRate = { value: 1 };
   onended: ((ev: Event) => unknown) | null = null;
   starts: { when: number | undefined; offset: number | undefined; duration: number | undefined }[] = [];
   stopped = 0;
@@ -224,6 +225,36 @@ describe("SectionPlayer", () => {
     player.play();
     expect(player.getSnapshot()).toMatchObject({ notice: "decodeFailed", loading: false });
     expect(player.getSnapshot().clock?.playing).toBe(true);
+  });
+
+  it("plays the audio at the playback rate, rebuilding the playing loop when the rate changes", async () => {
+    const { player, contexts, decodes } = harness();
+    player.setRate(1.5);
+    player.setSection("a", DATA, LOOP);
+    player.play();
+    decodes[0]?.resolve(BUFFER);
+    await settle();
+    const ctx = onlyContext(contexts);
+    expect(ctx.sources.map((s) => s.playbackRate.value)).toEqual([1.5, 1.5]);
+    const first = player.getSnapshot().clock;
+
+    player.setRate(0.75);
+    const second = player.getSnapshot().clock;
+    expect(second).not.toBe(first);
+    expect(second?.playing).toBe(true);
+    expect(ctx.sources.at(-1)?.playbackRate.value).toBe(0.75);
+
+    player.setRate(0.75);
+    expect(player.getSnapshot().clock).toBe(second);
+  });
+
+  it("runs the silent clock at the playback rate", () => {
+    const { player, now } = harness();
+    player.setRate(2);
+    player.setSection("a", { kind: "missing" }, LOOP);
+    player.play();
+    now.ms = 250;
+    expect(player.getSnapshot().clock?.nowMs()).toBe(1500);
   });
 
   it("applies the offset to the audio clock without rebuilding it", async () => {

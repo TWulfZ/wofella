@@ -17,11 +17,39 @@
       "valueText": "{{from}} a {{to}}",
       "labelledCount_one": "{{count}} ventana etiquetada en este mapa",
       "labelledCount_other": "{{count}} ventanas etiquetadas en este mapa",
-      "locked": "Deshaz la etiqueta para mover una ventana guardada."
+      "locked": "Deshaz la etiqueta para mover una ventana guardada.",
+      "start": "Inicio de la ventana",
+      "end": "Fin de la ventana",
+      "edgeValueText": "{{time}}, ventana de {{seconds}} s"
     },
     "header": {
       "mappedBy": "mapeado por {{creator}}",
-      "stars": "{{stars}} estrellas"
+      "stars": "{{stars}} estrellas",
+      "details": "Ver la imagen completa y los detalles del mapa",
+      "imageAlt": "Fondo de {{title}}",
+      "field": {
+        "mapper": "Mapper",
+        "difficulty": "Dificultad",
+        "stars": "Estrellas",
+        "length": "Duración",
+        "bpm": "BPM",
+        "od": "OD",
+        "hp": "HP",
+        "notes": "Notas",
+        "longNotes": "Notas largas",
+        "source": "Fuente",
+        "tags": "Etiquetas",
+        "setId": "ID del beatmapset",
+        "beatmapId": "ID del beatmap",
+        "md5": "MD5"
+      },
+      "counters": {
+        "label": "Sesión",
+        "labelled": "Etiquetadas: {{count}}",
+        "skipped": "Saltadas: {{count}}",
+        "undone": "Deshechas: {{count}}",
+        "gold": "Gold set: {{count}}"
+      }
     },
     "transport": {
       "play": "Reproducir",
@@ -38,7 +66,9 @@
       "osuSpeed": "Velocidad osu!",
       "osuSpeedHint": "F3 más lento, F4 más rápido",
       "zoom": "Zoom",
-      "zoomValue": "×{{value}}"
+      "zoomValue": "×{{value}}",
+      "rate": "Velocidad de reproducción",
+      "rateValue": "×{{value}}"
     },
     "skin": {
       "label": "Skin",
@@ -104,19 +134,16 @@
       "findPlaceholder": "Escribe para filtrar · Enter añade",
       "options": "Patrones de la taxonomía",
       "needsPattern": "Elige un patrón o Sin patrón para guardar.",
-      "undoNotNewest": "Solo se puede deshacer la etiqueta guardada más reciente."
+      "undoNotNewest": "Solo se puede deshacer la etiqueta guardada más reciente.",
+      "savedNoSkip": "Una ventana guardada no se puede saltar; deshazla primero.",
+      "skip": "Saltar",
+      "focusChip": "Mostrar {{name}} en el panel de patrones",
+      "more": "{{count}} más: {{names}}"
     },
     "error": {
       "unknown_pattern": "Patrón desconocido: “{{pattern}}”."
     },
     "undone": "Se deshizo la última etiqueta.",
-    "footer": {
-      "labelled": "Etiquetadas: {{count}}",
-      "skipped": "Saltadas: {{count}}",
-      "undone": "Deshechas: {{count}}",
-      "goldTotal": "Gold set: {{count}}",
-      "seed": "Semilla {{seed}}"
-    },
     "done": {
       "exhausted": "No quedan ventanas por etiquetar.",
       "newSession": "Nueva sesión",
@@ -133,10 +160,8 @@
       "next": "Siguiente",
       "random": "Al azar",
       "nowPlaying": "Sonando ahora",
-      "skip": "Saltar",
       "firstWindow": "Es la primera ventana de la sesión.",
       "busy": "Espera a que termine el paso en curso.",
-      "savedNoSkip": "Una ventana guardada no se puede saltar; deshazla primero.",
       "planFinished": "El plan no tiene más ventanas; Al azar y Sonando ahora todavía abren una."
     },
     "notice": {
@@ -146,6 +171,16 @@
     "panel": {
       "resize": "Redimensionar el panel de patrones",
       "widthValue": "{{px}} px"
+    },
+    "hold": {
+      "description_one": "Mantén pulsado {{count}} segundo para {{action}}",
+      "description_other": "Mantén pulsado {{count}} segundos para {{action}}"
+    },
+    "player": {
+      "controls": "Controles de reproducción",
+      "settings": "Ajustes de reproducción",
+      "closeSettings": "Cerrar los ajustes de reproducción",
+      "seed": "Semilla {{seed}}"
     }
   }
 }

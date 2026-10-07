@@ -1,11 +1,12 @@
-import { Ban, Check, CircleSlash, Undo2, X } from "lucide-react";
-import { useEffect, useEffectEvent, useId, useRef } from "react";
+import { Ban, Check, CircleSlash, SkipForward, Undo2, X } from "lucide-react";
+import { type ReactNode, type Ref, useEffect, useEffectEvent, useId, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { PatternDefDto } from "@/ipc/bindings";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import type { Answer, FlagToggle } from "../session";
 import { FlagToggles } from "./FlagToggles";
+import { HoldButton, type HoldButtonHandle } from "./HoldButton";
 import { patternName } from "./patterns";
 import { PatternPicker } from "./PatternPicker";
 
@@ -33,8 +34,16 @@ interface AnswerBarProps {
   onSave: () => void;
   onClear: () => void;
   onUndo: () => void;
+  onSkip: () => void;
+  canSkip: boolean;
+  /** Takes the viewer to the chip's pattern card in the panel; focus follows only for a keyboard activation. */
+  onChipFocus: (patternId: string, how: { moveFocus: boolean }) => void;
   /** The bar's rendered height in px, so its scroll container can keep focused content clear of it. */
   onBlockSize?: (px: number) => void;
+  /** How long Save and Skip must be held. */
+  holdMs?: number;
+  /** Lets the screen's Enter shortcut run Save's hold, ring included. */
+  saveRef?: Ref<HoldButtonHandle>;
 }
 
 function useBlockSize(onBlockSize: ((px: number) => void) | undefined) {
@@ -61,6 +70,76 @@ function useBlockSize(onBlockSize: ((px: number) => void) | undefined) {
   return ref;
 }
 
+/** Fallback for `gap-1.5` when the computed style is unavailable. */
+const SUMMARY_GAP_PX = 6;
+
+interface SummaryItem {
+  key: string;
+  /** Spoken in the "+N" pill's name when the item is hidden. */
+  name: string;
+  node: ReactNode;
+}
+
+/** How many leading items fit in `available` px, reserving room for the "+N" pill whenever some are left out. */
+function fitCount(widths: readonly number[], available: number, gap: number, more: number): number {
+  // No layout (a hidden or not yet laid out line): show everything rather than collapse into "+N".
+  if (available <= 0) {
+    return widths.length;
+  }
+  let used = 0;
+  for (const [i, width] of widths.entries()) {
+    const next = used + (i > 0 ? gap : 0) + width;
+    const rest = widths.length - i - 1;
+    if (next + (rest > 0 ? gap + more : 0) > available) {
+      return i;
+    }
+    used = next;
+  }
+  return widths.length;
+}
+
+/**
+ * Measures every item off-screen and returns how many fit on the line. Re-measured when the items change and when
+ * the line resizes (panel drag, window resize).
+ */
+function useFitCount(itemsKey: string, total: number) {
+  const lineRef = useRef<HTMLDivElement>(null);
+  const measureRef = useRef<HTMLDivElement>(null);
+  const [fit, setFit] = useState(total);
+
+  const measure = useEffectEvent(() => {
+    const line = lineRef.current;
+    const ruler = measureRef.current;
+    if (line === null || ruler === null) {
+      return;
+    }
+    const widths = [...ruler.querySelectorAll<HTMLElement>("[data-fit=chip]")].map((el) => el.getBoundingClientRect().width);
+    const more = ruler.querySelector<HTMLElement>("[data-fit=more]")?.getBoundingClientRect().width ?? 0;
+    const gap = Number.parseFloat(getComputedStyle(line).columnGap);
+    setFit(fitCount(widths, line.getBoundingClientRect().width, Number.isFinite(gap) ? gap : SUMMARY_GAP_PX, more));
+  });
+
+  useLayoutEffect(() => {
+    measure();
+  }, [itemsKey]);
+
+  useEffect(() => {
+    const line = lineRef.current;
+    if (line === null) {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      measure();
+    });
+    observer.observe(line);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  return { lineRef, measureRef, fit: Math.min(fit, total) };
+}
+
 export function AnswerBar(props: AnswerBarProps) {
   const {
     taxonomy,
@@ -75,11 +154,17 @@ export function AnswerBar(props: AnswerBarProps) {
     onSave,
     onClear,
     onUndo,
+    onSkip,
+    canSkip,
+    onChipFocus,
     onBlockSize,
+    holdMs,
+    saveRef,
   } = props;
   const { t } = useTranslation();
   const hintId = useId();
   const undoReasonId = useId();
+  const skipReasonId = useId();
   const editing = mode.kind === "edit";
   const locked = !editing || busy;
   const needsPattern = mode.kind === "edit" && !mode.canSave;
@@ -97,6 +182,44 @@ export function AnswerBar(props: AnswerBarProps) {
     flagBadges.push(t(answer.thumb === "left" ? "label.flags.thumbLeft" : "label.flags.thumbRight"));
   }
   const badge = "border-border text-muted-foreground shrink-0 rounded-full border px-2 text-xs";
+
+  const summaryItems: SummaryItem[] = [
+    ...(answer.noPattern
+      ? [
+          {
+            key: "noPattern",
+            name: t("label.answer.noPatternChip"),
+            node: (
+              <span className="border-osu-yellow/60 bg-osu-yellow/10 text-osu-yellow shrink-0 rounded-full border px-2 font-semibold">
+                {t("label.answer.noPatternChip")}
+              </span>
+            ),
+          },
+        ]
+      : answer.patterns.map((id) => {
+          const def = byId.get(id);
+          return {
+            key: id,
+            name: patternName(id),
+            node: (
+              <span className="border-primary/60 bg-primary/10 inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 font-semibold">
+                {def !== undefined && <kbd className="text-primary font-mono text-[0.7rem]">{def.key}</kbd>}
+                <span className="capitalize">{patternName(id)}</span>
+              </span>
+            ),
+          };
+        })),
+    ...flagBadges.map((label) => ({
+      key: `flag:${label}`,
+      name: label,
+      node: <span className={badge}>{label}</span>,
+    })),
+  ];
+  const showEmpty = !answer.noPattern && answer.patterns.length === 0;
+  const itemsKey = summaryItems.map((item) => item.key).join("|");
+  const { lineRef, measureRef, fit } = useFitCount(itemsKey, summaryItems.length);
+  const shownItems = showEmpty ? summaryItems : summaryItems.slice(0, fit);
+  const hiddenItems = showEmpty ? [] : summaryItems.slice(fit);
 
   return (
     // Fixed block size: the expanded panel overlays upward, so hover never reflows the grid or the scroll padding.
@@ -154,14 +277,29 @@ export function AnswerBar(props: AnswerBarProps) {
                       <li
                         key={id}
                         data-pattern-id={id}
-                        className="border-primary/60 bg-primary/10 inline-flex h-8 items-center gap-1.5 rounded-full border pr-1 pl-1.5 text-xs font-semibold"
+                        className="border-primary/60 bg-primary/10 inline-flex h-8 items-center gap-0.5 rounded-full border pr-1 text-xs font-semibold"
                       >
-                        {def !== undefined && (
-                          <kbd className="border-primary/60 text-primary rounded border px-1 font-mono text-[0.7rem] leading-4">
-                            {def.key}
-                          </kbd>
-                        )}
-                        <span className="capitalize">{name}</span>
+                        <button
+                          type="button"
+                          aria-label={t("label.answer.focusChip", { name })}
+                          title={t("label.answer.focusChip", { name })}
+                          onClick={(e) => {
+                            // detail is 0 for a click synthesised from Enter/Space: the keyboard user goes on from the
+                            // card, while a pointer click keeps focus where it was so Enter still saves.
+                            onChipFocus(id, { moveFocus: e.detail === 0 });
+                          }}
+                          className={cn(
+                            "inline-flex h-full cursor-pointer items-center gap-1.5 rounded-full pr-1 pl-1.5 outline-none",
+                            "hover:text-primary focus-visible:ring-ring focus-visible:ring-2 motion-safe:transition-colors",
+                          )}
+                        >
+                          {def !== undefined && (
+                            <kbd className="border-primary/60 text-primary rounded border px-1 font-mono text-[0.7rem] leading-4">
+                              {def.key}
+                            </kbd>
+                          )}
+                          <span className="capitalize">{name}</span>
+                        </button>
                         {editing ? (
                           <button
                             type="button"
@@ -232,40 +370,58 @@ export function AnswerBar(props: AnswerBarProps) {
         <div className="flex h-14 items-center gap-2">
           {/* Decorative digest of the editable chips above; hidden while the panel is open to avoid doubling them. */}
           <div
-            data-testid="answer-summary"
             aria-hidden
             className={cn(
-              "flex min-w-0 flex-1 items-center gap-1.5 truncate text-xs",
+              "relative flex min-w-0 flex-1",
               "group-hover:invisible group-focus-within:invisible group-has-[[aria-expanded=true]]:invisible",
             )}
           >
-            {answer.noPattern ? (
-              <span className="border-osu-yellow/60 bg-osu-yellow/10 text-osu-yellow shrink-0 rounded-full border px-2 font-semibold">
-                {t("label.answer.noPatternChip")}
+            <div
+              ref={lineRef}
+              data-fit="line"
+              data-testid="answer-summary"
+              className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden text-xs whitespace-nowrap"
+            >
+              {showEmpty && <span className="text-muted-foreground truncate">{t("label.answer.empty")}</span>}
+              {shownItems.map((item) => (
+                <span key={item.key} className="contents">
+                  {item.node}
+                </span>
+              ))}
+              {hiddenItems.length > 0 && (
+                <span
+                  data-fit="more"
+                  data-testid="answer-overflow"
+                  className="border-border bg-muted text-foreground shrink-0 rounded-full border px-1.5 font-semibold tabular-nums"
+                >
+                  +{hiddenItems.length}
+                </span>
+              )}
+            </div>
+            {/* Off-screen ruler: every item at its natural width, so the fit is known before anything is hidden. */}
+            <div
+              ref={measureRef}
+              className="pointer-events-none invisible absolute top-0 left-0 flex gap-1.5 text-xs whitespace-nowrap"
+            >
+              {summaryItems.map((item) => (
+                <span key={item.key} data-fit="chip" className="inline-flex shrink-0">
+                  {item.node}
+                </span>
+              ))}
+              <span data-fit="more" className="shrink-0 rounded-full border px-1.5 font-semibold tabular-nums">
+                +{summaryItems.length}
               </span>
-            ) : answer.patterns.length === 0 ? (
-              <span className="text-muted-foreground truncate">{t("label.answer.empty")}</span>
-            ) : (
-              answer.patterns.map((id) => {
-                const def = byId.get(id);
-                return (
-                  <span
-                    key={id}
-                    className="border-primary/60 bg-primary/10 inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 font-semibold"
-                  >
-                    {def !== undefined && <kbd className="text-primary font-mono text-[0.7rem]">{def.key}</kbd>}
-                    <span className="capitalize">{patternName(id)}</span>
-                  </span>
-                );
-              })
-            )}
-            {flagBadges.map((label) => (
-              <span key={label} className={badge}>
-                {label}
-              </span>
-            ))}
+            </div>
           </div>
 
+          {hiddenItems.length > 0 && (
+            <span className="sr-only">
+              {t("label.answer.more", {
+                count: hiddenItems.length,
+                names: hiddenItems.map((item) => item.name).join(", "),
+              })}
+            </span>
+          )}
           <div className="max-w-[40%] min-w-0 shrink text-xs">
             {feedback !== null ? (
               <p
@@ -307,17 +463,32 @@ export function AnswerBar(props: AnswerBarProps) {
               )}
             </Button>
           ) : (
-            <Button
-              type="button"
-              size="lg"
-              aria-keyshortcuts="Enter"
-              aria-describedby={needsPattern && feedback === null ? hintId : undefined}
+            <HoldButton
+              ref={saveRef}
+              holdMs={holdMs}
+              label={t("label.answer.submit")}
+              icon={<Check aria-hidden />}
+              variant="primary"
               disabled={locked || needsPattern}
-              onClick={onSave}
-              className="min-w-24 shrink-0"
-            >
-              {t("label.answer.submit")}
-            </Button>
+              describedBy={needsPattern && feedback === null ? hintId : undefined}
+              onConfirm={onSave}
+              className="shrink-0"
+            />
+          )}
+          <HoldButton
+            holdMs={holdMs}
+            label={t("label.answer.skip")}
+            icon={<SkipForward aria-hidden />}
+            variant="secondary"
+            disabled={!canSkip || busy}
+            describedBy={mode.kind === "saved" ? skipReasonId : undefined}
+            onConfirm={onSkip}
+            className="shrink-0"
+          />
+          {mode.kind === "saved" && (
+            <span id={skipReasonId} hidden>
+              {t("label.answer.savedNoSkip")}
+            </span>
           )}
         </div>
       </div>

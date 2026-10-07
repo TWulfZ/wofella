@@ -13,7 +13,7 @@ use wolluf_engine::render::{RenderOpts, RowMark, render_window};
 use wolluf_engine::rows_blob::decode_rows;
 use wolluf_engine::stage::chart_parse::parse_chart;
 use wolluf_engine::taxonomy;
-use wolluf_engine::window::chart_window;
+use wolluf_engine::window::{TimingLine, chart_window};
 use wolluf_source_osu::song_image::{SongImageError, SongImageLimits, read_song_image};
 use wolluf_source_osu::songs::{
     ChartReadError, SongFileError, read_chart_verified, read_song_file,
@@ -27,8 +27,9 @@ use wolluf_store::{Conn, DbHandle, StoreError};
 use super::LibraryParams;
 use super::chart_audio::mime_of;
 use super::dto::{
-    ChartAudioDto, ChartDetailDto, ChartImageDto, ChartLabelDto, ChartWindowDto, HintAgreementDto,
-    LibraryChartDto, LibraryFilterDto, PatternCountDto, ScaleCountDto, SegmentDto,
+    ChartAudioDto, ChartDetailDto, ChartDetailsDto, ChartImageDto, ChartLabelDto, ChartWindowDto,
+    HintAgreementDto, LibraryChartDto, LibraryFilterDto, PatternCountDto, ScaleCountDto,
+    SegmentDto,
 };
 use super::index::{IndexLibraryJob, Keys, Segmenters};
 use crate::base64;
@@ -38,6 +39,7 @@ use crate::events::AppEvent;
 use crate::jobs::dto::{JobDto, JobId};
 
 const MS_PER_SECOND: f64 = 1_000.0;
+const MS_PER_MINUTE: f64 = 60_000.0;
 const US_PER_SECOND: f64 = 1_000_000.0;
 /// Shown for a pattern id the keymode's taxonomy does not know.
 const UNKNOWN_KEY: &str = "?";
@@ -328,6 +330,67 @@ impl<'a> LibraryService<'a> {
                     Ok(None)
                 }
             }
+        })
+        .await
+    }
+
+    /// The catalog row and the parse's counts of a chart; `NOT_FOUND` unless it is parsed.
+    pub async fn chart_details(&self, md5: &str) -> Result<ChartDetailsDto, AppError> {
+        let md5 = parse_md5(md5)?;
+        self.blocking(move |dbs, keys| {
+            let (chart, parsed) = dbs.cache.read(|c| {
+                Ok((
+                    catalog_chart::get(c, md5)?,
+                    chart_parsed::get(c, md5, keys.parse)?,
+                ))
+            })?;
+            let (Some(chart), Some(parsed)) = (chart, parsed) else {
+                return Err(not_found(md5));
+            };
+            let rows = decode_rows(&parsed.rows_blob)
+                .map_err(|e| AppError::internal(format!("rows blob of {md5}: {e}")))?;
+            let profile = Registry::builtin()
+                .profile(rows.keymode())
+                .ok_or_else(|| not_found(md5))?;
+            // The whole chart as one window: the engine's only public view of its timing lines.
+            let whole = chart_window(&rows, &profile.layout(), i32::MIN, i32::MAX);
+            let bpms: Vec<f64> = whole
+                .timing
+                .iter()
+                .filter_map(|line| match *line {
+                    TimingLine::Red {
+                        t_ms, beat_len_ms, ..
+                    } if t_ms <= whole.span.end_ms
+                        && beat_len_ms.is_finite()
+                        && beat_len_ms > 0.0 =>
+                    {
+                        Some(MS_PER_MINUTE / beat_len_ms)
+                    }
+                    _ => None,
+                })
+                .collect();
+            let summary = parsed.summary();
+            let bpm = |pick: fn(f64, f64) -> f64| bpms.iter().copied().reduce(pick);
+            // Display only: f32 keeps far more precision than the digits shown.
+            Ok(ChartDetailsDto {
+                md5: md5.to_string(),
+                source: Some(chart.source.trim().to_owned()).filter(|s| !s.is_empty()),
+                tags: chart.tags.split_whitespace().map(str::to_owned).collect(),
+                stars: chart.stars.map(|s| s as f32),
+                od: chart.od as f32,
+                hp: chart.hp as f32,
+                length_ms: i32::try_from(summary.length_ms).unwrap_or(i32::MAX),
+                bpm_min: bpm(f64::min).map(|b| b as f32),
+                bpm_max: bpm(f64::max).map(|b| b as f32),
+                n_notes: summary.n_notes,
+                n_ln: summary.n_ln,
+                set_id: chart.set_id,
+                beatmap_id: chart.beatmap_id,
+                title: chart.title,
+                artist: chart.artist,
+                creator: chart.creator,
+                version: chart.version,
+            })
         })
         .await
     }
@@ -824,9 +887,9 @@ mod tests {
     use crate::events::AppEvent;
     use crate::features::library::LibraryParams;
     use crate::features::library::dto::{
-        ChartAudioDto, ChartSpanDto, ChartWindowDto, FingerDto, HandDto, HintAgreementDto,
-        LibraryFilterDto, NoteDto, PatternCountDto, ScaleCountDto, SegmentDto, TimingDto,
-        TimingKindDto,
+        ChartAudioDto, ChartDetailsDto, ChartSpanDto, ChartWindowDto, FingerDto, HandDto,
+        HintAgreementDto, LibraryFilterDto, NoteDto, PatternCountDto, ScaleCountDto, SegmentDto,
+        TimingDto, TimingKindDto,
     };
     use crate::features::library::testkit::{Map, osu_text, osu_text_timed, synced};
     use crate::jobs::dto::{JobKindDto, JobStartDto, JobStatusDto};
@@ -1102,6 +1165,58 @@ mod tests {
                 (5, 2_800, 3_500),
             ],
         )
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn chart_details_combine_the_catalog_row_and_the_parse() {
+        let full = Map::new("full", 7, windowed_chart("full"))
+            .rated(4.5)
+            .described("Some Game", " dan  jumpstream ");
+        let bare = Map::k7("bare");
+        let lost = Map::k7("lost").missing();
+        let maps = [full.clone(), bare.clone(), lost.clone()];
+        let (f, _) = synced(&maps, &[]).await;
+        let svc = f.ctx.library();
+        assert_eq!(
+            svc.chart_details(&full.md5).await.unwrap(),
+            ChartDetailsDto {
+                md5: full.md5.clone(),
+                title: "full".into(),
+                artist: format!("artist-{}", full.md5),
+                creator: "wolluf".into(),
+                version: "Normal".into(),
+                source: Some("Some Game".into()),
+                tags: vec!["dan".into(), "jumpstream".into()],
+                stars: Some(4.5),
+                od: 8.0,
+                hp: 8.0,
+                length_ms: 2_500,
+                bpm_min: Some(120.0),
+                bpm_max: Some(150.0),
+                n_notes: 10,
+                n_ln: 4,
+                set_id: Some(100),
+                beatmap_id: Some(1),
+            },
+            "the 200 BPM line after the last row is not part of the chart"
+        );
+        let plain = svc.chart_details(&bare.md5).await.unwrap();
+        assert_eq!(
+            (plain.source, plain.tags, plain.stars),
+            (None, Vec::<String>::new(), None)
+        );
+        assert_eq!((plain.bpm_min, plain.bpm_max), (Some(120.0), Some(120.0)));
+        for (md5, code) in [
+            (lost.md5.clone(), ErrorCode::NotFound),
+            ("0".repeat(32), ErrorCode::NotFound),
+            ("nope".to_owned(), ErrorCode::InvalidInput),
+        ] {
+            assert_eq!(
+                svc.chart_details(&md5).await.unwrap_err().code,
+                code,
+                "{md5}"
+            );
+        }
     }
 
     #[tokio::test(flavor = "multi_thread")]

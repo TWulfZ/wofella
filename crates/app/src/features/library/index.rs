@@ -953,6 +953,8 @@ mod tests {
             hp: 8.0,
             length_ms: 0,
             stars: None,
+            source: String::new(),
+            tags: String::new(),
         };
         let mut charts = vec![chart("1"), chart("2"), chart("3"), chart("4")];
         let played: BTreeSet<ChartMd5> = [charts[1].md5, charts[3].md5].into();

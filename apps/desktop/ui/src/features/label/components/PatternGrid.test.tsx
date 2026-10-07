@@ -1,10 +1,11 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { createRef } from "react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PatternDefDto } from "@/ipc/bindings";
 import type { ChartWindow } from "@/features/playfield";
-import { PatternGrid } from "./PatternGrid";
-import { writeOpenAxes } from "./patternGridPrefs";
+import { PATTERN_GRID_PARAMS, PatternGrid, type PatternGridHandle } from "./PatternGrid";
+import { readOpenAxes, writeOpenAxes } from "./patternGridPrefs";
 
 const TAXONOMY: PatternDefDto[] = [
   { id: "regular.jack.minijack", axis: "7k.regular.jack", key: "mj", description: "exactly two notes in one column" },
@@ -200,6 +201,17 @@ describe("PatternGrid sections", () => {
     expect(cardNames()).toEqual([]);
   });
 
+  it("draws each axis card's note icon, tinted by its family", () => {
+    renderGrid();
+    const icons = ALL_AXES.map((axis) => {
+      const button = document.querySelector<HTMLElement>(`button[data-axis="${axis}"]`);
+      return button?.querySelector("svg[data-axis-icon]");
+    });
+    expect(icons.map((icon) => icon?.getAttribute("data-axis-icon"))).toEqual(ALL_AXES);
+    expect(icons[0]?.getAttribute("class")).toContain("--osu-pink");
+    expect(icons[2]?.getAttribute("class")).toContain("--osu-blue");
+  });
+
   it("has no Always collapsed checkbox any more", () => {
     renderGrid();
 
@@ -341,5 +353,152 @@ describe("PatternGrid search", () => {
 
     expect(search()).toHaveValue("");
     expect(expandedAxes()).toEqual([]);
+  });
+});
+
+describe("PatternGrid focusPattern", () => {
+  function renderWithHandle() {
+    const ref = createRef<PatternGridHandle>();
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { value: scrollIntoView, configurable: true, writable: true });
+    const view = render(
+      <PatternGrid ref={ref} taxonomy={TAXONOMY} examples={EXAMPLES} isActive={() => false} onToggle={vi.fn()} />,
+    );
+    const focus = (id: string): void => {
+      act(() => {
+        ref.current?.focusPattern(id);
+      });
+    };
+    const reveal = (id: string): void => {
+      act(() => {
+        ref.current?.focusPattern(id, { moveFocus: false });
+      });
+    };
+    return { focus, reveal, scrollIntoView, user: userEvent.setup(), unmount: view.unmount };
+  }
+
+  afterEach(() => {
+    Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+  });
+
+  it("opens the pattern's axis, scrolls its card into view and focuses it", () => {
+    const { focus, scrollIntoView } = renderWithHandle();
+    expect(expandedAxes()).toEqual([]);
+
+    focus(JUMPSTREAM.id);
+
+    expect(expandedAxes()).toEqual(["7k.regular.stream"]);
+    const card = screen.getByRole("button", { name: "js jumpstream" });
+    expect(card).toHaveFocus();
+    expect(scrollIntoView).toHaveBeenCalledOnce();
+    expect(scrollIntoView.mock.contexts[0]).toBe(card);
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "nearest" });
+  });
+
+  it("scrolls without animation when the viewer prefers reduced motion", () => {
+    vi.spyOn(window, "matchMedia").mockImplementation(
+      (query: string) => ({ matches: query.includes("reduce"), media: query }) as MediaQueryList,
+    );
+    const { focus, scrollIntoView } = renderWithHandle();
+
+    focus(MINIJACK.id);
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "auto", block: "nearest" });
+  });
+
+  it("highlights the card briefly", () => {
+    vi.useFakeTimers();
+    try {
+      const { focus } = renderWithHandle();
+
+      focus(LONGJACK.id);
+      const card = screen.getByRole("button", { name: "lj longjack" });
+      expect(card).toHaveAttribute("data-highlighted", "true");
+
+      act(() => {
+        vi.advanceTimersByTime(PATTERN_GRID_PARAMS.highlightMs);
+      });
+      expect(card).not.toHaveAttribute("data-highlighted");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the other open axes and opens the pattern's one for now only, leaving the stored layout alone", () => {
+    writeOpenAxes(["7k.ln.release"]);
+    const { focus, unmount } = renderWithHandle();
+
+    focus(MINIJACK.id);
+
+    expect(expandedAxes()).toEqual(["7k.regular.jack", "7k.ln.release"]);
+    expect([...readOpenAxes()]).toEqual(["7k.ln.release"]);
+    unmount();
+    renderGrid();
+    expect(expandedAxes()).toEqual(["7k.ln.release"]);
+  });
+
+  it("closes an axis it opened on the first click on its header, without storing either change", async () => {
+    const { focus, user } = renderWithHandle();
+    focus(MINIJACK.id);
+
+    await user.click(screen.getByRole("button", { name: "Jack" }));
+
+    expect(expandedAxes()).toEqual([]);
+    expect([...readOpenAxes()]).toEqual([]);
+  });
+
+  it("can reveal the card without moving focus to it", () => {
+    const { reveal, scrollIntoView } = renderWithHandle();
+    const jack = screen.getByRole("button", { name: "Jack" });
+    jack.focus();
+
+    reveal(JUMPSTREAM.id);
+
+    const card = screen.getByRole("button", { name: "js jumpstream" });
+    expect(card).toHaveAttribute("data-highlighted", "true");
+    expect(scrollIntoView.mock.contexts[0]).toBe(card);
+    expect(jack).toHaveFocus();
+  });
+
+  it("clears a search that hides the pattern", async () => {
+    const { focus, user } = renderWithHandle();
+    await user.type(search(), "release");
+
+    focus(MINIJACK.id);
+
+    expect(search()).toHaveValue("");
+    expect(screen.getByRole("button", { name: "mj minijack" })).toHaveFocus();
+  });
+
+  it("reopens the axis when it was closed during a matching search", async () => {
+    const { focus, user } = renderWithHandle();
+    await user.type(search(), "two");
+    await user.click(screen.getByRole("button", { name: "Jack" }));
+    expect(cardNames()).not.toContain("mj minijack");
+
+    focus(MINIJACK.id);
+
+    expect(search()).toHaveValue("two");
+    expect(screen.getByRole("button", { name: "mj minijack" })).toHaveFocus();
+  });
+
+  it("focuses the same pattern again on a second request", () => {
+    const { focus, scrollIntoView } = renderWithHandle();
+    focus(MINIJACK.id);
+    screen.getByRole("button", { name: "Jack" }).focus();
+
+    focus(MINIJACK.id);
+
+    expect(screen.getByRole("button", { name: "mj minijack" })).toHaveFocus();
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+  });
+
+  it("ignores an id outside the taxonomy", () => {
+    const { focus, scrollIntoView } = renderWithHandle();
+
+    focus("regular.jack.nope");
+
+    expect(expandedAxes()).toEqual([]);
+    expect(scrollIntoView).not.toHaveBeenCalled();
   });
 });

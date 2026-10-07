@@ -60,6 +60,33 @@ pub struct ChartDetailDto {
     pub segments: Vec<SegmentDto>,
 }
 
+/// What the label card and its details dialog show of one chart: the osu!.db row plus the
+/// parse's counts. osu!.db fields a map leaves empty come back `None` or empty.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ChartDetailsDto {
+    pub md5: String,
+    pub title: String,
+    pub artist: String,
+    pub creator: String,
+    /// The difficulty name.
+    pub version: String,
+    pub source: Option<String>,
+    pub tags: Vec<String>,
+    /// stable's cached no-mod star rating; `None` until stable has computed it.
+    pub stars: Option<f32>,
+    pub od: f32,
+    pub hp: f32,
+    pub length_ms: i32,
+    /// Over the red lines up to the last row; `None` without one.
+    pub bpm_min: Option<f32>,
+    pub bpm_max: Option<f32>,
+    pub n_notes: u32,
+    pub n_ln: u32,
+    pub set_id: Option<i32>,
+    pub beatmap_id: Option<i32>,
+}
+
 /// One pattern segment under the keymode profile's default layout, rows `t0Ms..=t1Ms`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]

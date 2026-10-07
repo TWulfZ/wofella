@@ -69,6 +69,7 @@ class FakeGain implements GainNodeLike {
 
 class FakeSource implements AudioBufferSourceNodeLike {
   buffer: AudioBufferLike | null = null;
+  readonly playbackRate = new FakeParam();
   onended: ((ev: Event) => unknown) | null = null;
   starts: { when: number | undefined; offset: number | undefined; duration: number | undefined }[] = [];
   /** The context time of each start call: WebAudio plays a `when` already in the past right away. */
@@ -469,7 +470,80 @@ describe("createAudioLoopClock", () => {
   });
 });
 
+describe("createAudioLoopClock at a playback rate", () => {
+  it("plays the buffer faster and advances chart time by the rate, the gap staying in wall time", () => {
+    const ctx = fakeContext();
+    const clock = createAudioLoopClock(ctx, BUFFER, LOOP, 0, SPLICE, 2);
+    clock.play();
+    const [first, next] = [nth(ctx.sources, 0), nth(ctx.sources, 1)];
+    expect(first.playbackRate.value).toBe(2);
+    // Offset and duration are buffer time; the 1 s section takes 0.5 s of the context, then the 150 ms gap. Fades and
+    // the gap are heard, so they keep their wall length.
+    expect(first.starts).toEqual([{ when: 10, offset: 1, duration: 1 }]);
+    expect(next.starts[0]?.when).toBeCloseTo(10.65);
+    expect(rounded(nth(ctx.gains, 0).gain.events)).toEqual([
+      ["set", 0, 10],
+      ["ramp", 1, 10.03],
+      ["set", 1, 10.47],
+      ["ramp", 0, 10.5],
+    ]);
+    ctx.currentTime = 10.25;
+    expect(clock.nowMs()).toBe(1500);
+    ctx.currentTime = 10.6;
+    expect(clock.nowMs()).toBe(1000);
+    ctx.currentTime = 10.7;
+    expect(clock.nowMs()).toBeCloseTo(1100);
+  });
+
+  it("keeps the audio offset in wall time: +30 ms at 1.5× leads by 45 ms of chart", () => {
+    const ctx = fakeContext();
+    const clock = createAudioLoopClock(ctx, BUFFER, LOOP, 30, NO_GAP, 1.5);
+    expect(clock.nowMs()).toBeCloseTo(1045);
+    clock.play();
+    ctx.currentTime = 10.2;
+    expect(clock.nowMs()).toBeCloseTo(1000 + 300 + 45);
+    clock.setOffsetMs(-20);
+    expect(clock.nowMs()).toBeCloseTo(1000 + 300 - 30);
+  });
+
+  it("keeps the offset in wall time on the silent fallback too", () => {
+    const ctx = fakeContext();
+    // The loop starts past the end of this buffer, so the clock runs silently on the context.
+    const clock = createAudioLoopClock(ctx, { duration: 0.5 }, LOOP, 30, NO_GAP, 0.5);
+    expect(clock.nowMs()).toBeCloseTo(1015);
+  });
+
+  it("resumes a slowed loop from where it paused", () => {
+    const ctx = fakeContext();
+    const clock = createAudioLoopClock(ctx, BUFFER, LOOP, 0, NO_GAP, 0.5);
+    clock.play();
+    ctx.currentTime = 10.4;
+    expect(clock.nowMs()).toBeCloseTo(1200);
+    clock.pause();
+    ctx.currentTime = 20;
+    clock.play();
+    const resumed = nth(ctx.sources, 2);
+    expect(resumed.starts[0]?.offset).toBeCloseTo(1.2);
+    expect(resumed.starts[0]?.duration).toBeCloseTo(0.8);
+    ctx.currentTime = 20.2;
+    expect(clock.nowMs()).toBeCloseTo(1300);
+  });
+});
+
 describe("createSilentLoopClock", () => {
+  it("advances chart time by the playback rate", () => {
+    let now = 0;
+    const clock = createSilentLoopClock(LOOP, () => now, 150, 1.5);
+    clock.play();
+    now = 200;
+    expect(clock.nowMs()).toBe(1300);
+    clock.pause();
+    now = 5000;
+    clock.play();
+    now = 5100;
+    expect(clock.nowMs()).toBe(1450);
+  });
+
   it("runs the same loop on a wall clock", () => {
     let now = 5000;
     const clock = createSilentLoopClock(LOOP, () => now);

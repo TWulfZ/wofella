@@ -2,7 +2,8 @@ use wolluf_app::errors::IpcError;
 use wolluf_app::features::labeling::dto::{
     AnchorDto, ChartTimelineDto, ChartTimelineRequestDto, LabelEventDto, LabelStatsDto,
     LabelSubmitDto, LabelWindowDto, MoveWindowRequestDto, NowPlayingDto, NowPlayingRequestDto,
-    PatternDefDto, PatternExampleDto, RandomRequestDto, SampleRequestDto, WindowAtRequestDto,
+    PatternDefDto, PatternExampleDto, RandomRequestDto, ResizeWindowRequestDto, SampleRequestDto,
+    WindowAtRequestDto,
 };
 
 use super::Ctx;
@@ -117,4 +118,15 @@ pub async fn label_chart_timeline(
     req: ChartTimelineRequestDto,
 ) -> Result<ChartTimelineDto, IpcError> {
     ctx.labeling().chart_timeline(req).await.map_err(to_ipc)
+}
+
+/// The window resized to `[t0Ms, t1Ms)`, kept inside the chart and within the length bounds.
+#[tauri::command]
+#[specta::specta]
+#[tracing::instrument(skip_all)]
+pub async fn label_resize_window(
+    ctx: Ctx<'_>,
+    req: ResizeWindowRequestDto,
+) -> Result<AnchorDto, IpcError> {
+    ctx.labeling().resize_window(req).await.map_err(to_ipc)
 }

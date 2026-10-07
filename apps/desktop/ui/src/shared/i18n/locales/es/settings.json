@@ -31,6 +31,16 @@
         "k7_34": "3 | 4",
         "k7_both_thumbs": "3 | 1 | 3 (cualquier pulgar)"
       }
+    },
+    "defaultSkin": {
+      "title": "Skin por defecto",
+      "description": "La skin con la que dibuja la pantalla Etiquetar hasta que elijas otra allí. Sin elección, sigue la skin activa de osu!.",
+      "none": "Ninguna (procedural)",
+      "defaults": "{{folder}} (por defecto)",
+      "preview": "{{skin}} en un patrón de ejemplo",
+      "previewUnavailable": "No hay un patrón de ejemplo para la vista previa.",
+      "saved": "Guardado",
+      "decodeFailed": "Algunas imágenes de la skin no se pudieron decodificar y se dibujan sin skin: {{slots}}"
     }
   }
 }

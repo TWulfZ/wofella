@@ -1,5 +1,7 @@
 use wolluf_app::errors::IpcError;
-use wolluf_app::features::library::dto::{ChartAudioDto, ChartImageDto, ChartWindowDto};
+use wolluf_app::features::library::dto::{
+    ChartAudioDto, ChartDetailsDto, ChartImageDto, ChartWindowDto,
+};
 
 use super::Ctx;
 use crate::error::to_ipc;
@@ -38,4 +40,12 @@ pub async fn chart_background(
     md5: String,
 ) -> Result<Option<ChartImageDto>, IpcError> {
     ctx.library().chart_background(&md5).await.map_err(to_ipc)
+}
+
+/// The catalog row and parse counts the label card and its details dialog show.
+#[tauri::command]
+#[specta::specta]
+#[tracing::instrument(skip_all)]
+pub async fn chart_details(ctx: Ctx<'_>, md5: String) -> Result<ChartDetailsDto, IpcError> {
+    ctx.library().chart_details(&md5).await.map_err(to_ipc)
 }

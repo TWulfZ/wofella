@@ -25,6 +25,7 @@ export { toChartWindow, toLabelWindow } from "./mappers";
 export {
   chartAudioQuery,
   chartBackgroundQuery,
+  chartDetailsQuery,
   chartTimelineQuery,
   chartWindowQuery,
   labelKeys,
@@ -36,4 +37,5 @@ export {
   skinKeys,
   skinListQuery,
   useLabelMutations,
+  useSkinFile,
 } from "./queries";

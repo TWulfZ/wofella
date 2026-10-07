@@ -76,6 +76,9 @@ pub(crate) struct Map {
     pub(crate) set_id: i32,
     /// stable's no-mod osu!mania star rating in osu!.db.
     pub(crate) stars: Option<f64>,
+    pub(crate) source: String,
+    /// Space-separated, as osu!.db stores them.
+    pub(crate) tags: String,
     /// `None`: missing from `Songs/`.
     pub(crate) bytes: Option<Vec<u8>>,
 }
@@ -92,6 +95,8 @@ impl Map {
             creator: "wolluf".to_owned(),
             set_id: 100,
             stars: None,
+            source: String::new(),
+            tags: String::new(),
             bytes: Some(bytes),
         }
     }
@@ -112,6 +117,12 @@ impl Map {
 
     pub(crate) fn rated(mut self, stars: f64) -> Self {
         self.stars = Some(stars);
+        self
+    }
+
+    pub(crate) fn described(mut self, source: &str, tags: &str) -> Self {
+        self.source = source.to_owned();
+        self.tags = tags.to_owned();
         self
     }
 
@@ -150,6 +161,8 @@ impl Map {
         .build();
         b.difficulty = OsuString::present(self.version.as_bytes());
         b.creator = OsuString::present(self.creator.as_bytes());
+        b.source = OsuString::present(self.source.as_bytes());
+        b.tags = OsuString::present(self.tags.as_bytes());
         b
     }
 }

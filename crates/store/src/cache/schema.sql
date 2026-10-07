@@ -31,6 +31,9 @@ CREATE TABLE catalog_chart (
     length_ms   INTEGER NOT NULL,
     -- stable's cached no-mod osu!mania star rating; NULL until stable has computed it.
     stars       REAL NULL,
+    source      TEXT NOT NULL,
+    -- osu!'s space-separated search tags, as stored.
+    tags        TEXT NOT NULL,
     snapshot_id INTEGER NOT NULL
 ) STRICT;
 
