@@ -1019,5 +1019,6 @@ fn inside(path: &Path, root: &Path) -> bool {
     full.starts_with(canonical(root))
 }
 
+mod session_labels;
 #[cfg(test)]
 mod tests;

@@ -5,6 +5,7 @@ use wolluf_core::Keymode;
 use wolluf_engine::profile::{KeymodeProfile, Registry};
 use wolluf_engine::window::layout_columns;
 use wolluf_store::repo::ledger::settings;
+use wolluf_store::{Conn, StoreError};
 
 use super::dto::HandLayoutDto;
 use crate::context::{AppContext, blocking_join_error};
@@ -62,6 +63,31 @@ impl<'a> SettingsService<'a> {
         .map_err(blocking_join_error)??;
         Ok(())
     }
+
+    /// Whether a finished self map flashes the window (ADR 0020); off by default.
+    pub async fn session_notify(&self) -> Result<bool, AppError> {
+        let user = self.ctx.user_db().clone();
+        let on = tokio::task::spawn_blocking(move || user.read(session_notify))
+            .await
+            .map_err(blocking_join_error)??;
+        Ok(on)
+    }
+
+    pub async fn set_session_notify(&self, on: bool) -> Result<(), AppError> {
+        let user = self.ctx.user_db().clone();
+        tokio::task::spawn_blocking(move || {
+            user.write(move |tx| settings::set_session_notify(tx, on))
+        })
+        .await
+        .map_err(blocking_join_error)??;
+        Ok(())
+    }
+}
+
+/// [`SettingsService::session_notify`] inside a caller's read, for code that must not hold the
+/// context (the session tracker).
+pub(crate) fn session_notify(c: Conn<'_>) -> Result<bool, StoreError> {
+    settings::session_notify(c)
 }
 
 fn profile(keymode: u8) -> Result<&'static KeymodeProfile, AppError> {
@@ -115,6 +141,20 @@ mod tests {
         );
         let err = ctx.settings().hand_layouts(4).unwrap_err();
         assert_eq!(err.code, ErrorCode::InvalidInput);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn session_notify_is_off_until_turned_on_and_persists() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = context(dir.path());
+        assert!(!ctx.settings().session_notify().await.unwrap());
+        ctx.settings().set_session_notify(true).await.unwrap();
+        assert!(ctx.settings().session_notify().await.unwrap());
+        drop(ctx);
+        let reopened = context(dir.path());
+        assert!(reopened.settings().session_notify().await.unwrap());
+        reopened.settings().set_session_notify(false).await.unwrap();
+        assert!(!reopened.settings().session_notify().await.unwrap());
     }
 
     #[tokio::test(flavor = "multi_thread")]

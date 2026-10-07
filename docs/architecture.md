@@ -312,7 +312,8 @@ It never lives in `settings`. That is what makes every model state replayable.
 - `segment_label` (gold labels from `wolluf label`, later the Playfield relabel):
   - subject `{"anchor":{chart_md5, t0_us, t1_us, cols:[0-based], keymode}}`;
   - payload `{"v":1, "action":"assert_set"|"assert_none", "origin":"gold", "patterns":[sorted PatternIds], "flags":{"mixed", "unsure", "thumb_pref"?: "left"|"right"}}`, where `assert_set` needs a non-empty `patterns` and `assert_none` (no clear pattern) needs an empty one.
-- `undo`: subject `{"event_id"}`, payload `{"undone_kind"}`. It compensates and never deletes, and only the same profile can undo, once.
+- `play_label` (a played map's dominant pattern from the session list; ADR 0020): subject `{"chart_md5", "keymode"}`, payload `{"v":1, "action":"assert_dominant"|"assert_none", "origin":"player_session", "pattern"?: PatternId}`, context adds `play_id`. Latest per chart wins. It never enters the gold set, its stats, export or the sampler's exclusions.
+- `undo`: subject `{"event_id"}`, payload `{"undone_kind"}`. It compensates and never deletes, and only the same profile can undo, once; each kind is undone only by its own path (ADR 0020).
 - Pattern ids and their meaning: ADR 0017.
 
 ### 5.4 cache.db (disposable)
@@ -547,8 +548,10 @@ Gate rules live in `params/gates.toml`. A pack cannot be released without a comm
 |---|---|
 | setup | `setup_detect_installs`, `setup_set_install_path`, `setup_status` |
 | players | `players_list_aliases` (stats + session-user match + decision), `players_list_profiles`, `players_set_profile_aliases`, `players_decide_alias`, `players_create_profile`, `players_set_default` |
-| library / chart | `library_search`, `chart_get` (rows, segments, difficulty per rate), `chart_window` (notes, timing and layout of one window, no segments), `chart_audio` (the chart's audio, read-only, base64; ADR 0018) |
-| label | `label_taxonomy`, `label_sample`, `label_resolve_patterns`, `label_reshape`, `label_submit`, `label_undo`, `label_stats` (gold-set rounds; ADR 0017, ADR 0018) |
+| library / chart | `library_search`, `chart_get` (rows, segments, difficulty per rate), `chart_window` (notes, timing and layout of one window, no segments), `chart_audio` (the chart's audio, read-only, base64; ADR 0018), `chart_background`, `chart_details` (map card and details dialog; ADR 0018 amendments) |
+| label | `label_taxonomy`, `label_sample`, `label_submit`, `label_undo`, `label_stats`, `label_pattern_examples`, `label_window_at`, `label_random`, `label_now_playing`, `label_move_window`, `label_resize_window`, `label_chart_timeline`, `label_progress` (gold-set rounds and the Label screen; ADR 0017, ADR 0018 and its amendments) |
+| session | `session_plays`, `session_label_submit`, `session_label_undo` (plays since the app opened and their dominant-pattern labels; ADR 0020) |
+| settings | `settings_hand_layouts`, `settings_get_hand_layout`, `settings_set_hand_layout`, `settings_get_session_notify`, `settings_set_session_notify` |
 | plays | `plays_list(scope)`, `plays_get_breakdown(play_id)` |
 | skill | `skill_overview(scope)`, `skill_axis_history(scope, axis)`, `skill_pattern_offsets(scope)`, `skill_compare(scope_a, scope_b)` |
 | sessions | `sessions_list(scope)`, `sessions_report(id)` (current + the impression shown at the time) |
@@ -565,6 +568,7 @@ Gate rules live in `params/gates.toml`. A pack cannot be released without a comm
 - `JobProgress {job_id, kind, stage, done, total, eta_ms}` (≤ 10 Hz);
 - `JobFinished {job_id, status, failed_items}`;
 - `DataChanged {domains[]}`;
+- `SessionPlayAdded {play_id, md5}` (a self play joined the session list; ADR 0020);
 - `PackActivated {from, to, theta_diff}`;
 - `LiveState` (tosu, optional).
 

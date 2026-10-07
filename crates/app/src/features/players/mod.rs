@@ -43,4 +43,5 @@ pub mod stats;
 pub(crate) mod testkit;
 
 pub use params::IdentityParams;
+pub(crate) use service::self_alias_ids;
 pub use service::{PlayersService, RefreshIdentityJob};

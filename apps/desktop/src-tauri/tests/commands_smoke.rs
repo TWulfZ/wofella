@@ -451,6 +451,75 @@ mod commands_smoke {
     }
 
     #[test]
+    fn session_commands_answer() {
+        let h = synced();
+        // Every fixture play predates the session, so nothing is pending.
+        let plays = h.invoke("session_plays", json!({ "keymode": 7 })).unwrap();
+        assert_eq!(plays["plays"], json!([]), "{plays}");
+        assert!(
+            plays["startedAt"].as_str().unwrap().ends_with('Z'),
+            "{plays}"
+        );
+
+        let event = h
+            .invoke(
+                "session_label_submit",
+                json!({ "req": {
+                    "keymode": 7, "md5": CHART_MD5, "playId": null,
+                    "pattern": "regular.stream.jumpstream",
+                } }),
+            )
+            .unwrap();
+        let id = event["id"].as_str().unwrap().to_owned();
+        assert_eq!(id.len(), ULID_LEN, "{id}");
+        let progress = |h: &Harness| {
+            h.invoke(
+                "label_progress",
+                json!({ "keymode": 7, "utcOffsetMin": -300 }),
+            )
+            .unwrap()
+        };
+        let p = progress(&h);
+        assert_eq!(
+            (&p["sessionLabels"], &p["goldTotal"]),
+            (&json!(1), &json!(0)),
+            "{p}"
+        );
+        assert_eq!(p["perDay"].as_array().unwrap().len(), 30, "{p}");
+        // ADR 0020: a session label never reaches the gold stats.
+        assert_eq!(
+            h.invoke("label_stats", json!({})).unwrap()["total"],
+            json!(0)
+        );
+
+        let err = h
+            .invoke("label_undo", json!({ "eventId": id }))
+            .unwrap_err();
+        assert_eq!(err["code"], json!("NOT_FOUND"), "{err}");
+        h.invoke("session_label_undo", json!({ "eventId": id }))
+            .unwrap();
+        assert_eq!(progress(&h)["sessionLabels"], json!(0));
+        let err = h
+            .invoke(
+                "session_label_submit",
+                json!({ "req": { "keymode": 7, "md5": CHART_MD5, "playId": null, "pattern": "x" } }),
+            )
+            .unwrap_err();
+        assert_eq!(err["code"], json!("INVALID_INPUT"), "{err}");
+
+        assert_eq!(
+            h.invoke("settings_get_session_notify", json!({})).unwrap(),
+            json!(false)
+        );
+        h.invoke("settings_set_session_notify", json!({ "on": true }))
+            .unwrap();
+        assert_eq!(
+            h.invoke("settings_get_session_notify", json!({})).unwrap(),
+            json!(true)
+        );
+    }
+
+    #[test]
     fn setup_status_ok() {
         let h = Harness::new();
         let status = h.invoke("setup_status", json!({})).unwrap();

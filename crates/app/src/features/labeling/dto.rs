@@ -233,3 +233,66 @@ pub enum WindowOpDto {
     Next,
     Prev,
 }
+
+/// The dominant pattern of a map the user played (ADR 0020). Never part of the gold set.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionLabelSubmitDto {
+    pub keymode: u8,
+    pub md5: String,
+    /// The self play the answer follows, hex as `SessionPlayDto.playId`.
+    pub play_id: Option<String>,
+    /// A full pattern id of the keymode; `None` is "no clear pattern".
+    pub pattern: Option<String>,
+}
+
+/// A chart's effective session answer: the latest one no undo cancels.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionLabelDto {
+    pub event_id: String,
+    /// `None` is "no clear pattern".
+    pub pattern: Option<String>,
+    pub at: String,
+}
+
+/// Labelled on one local day, oldest day first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DayCountDto {
+    /// `YYYY-MM-DD` at the request's UTC offset.
+    pub day: String,
+    pub gold: u32,
+    /// Maps whose effective session answer was given that day: a relabel moves its map, so the
+    /// days sum to `session_labels` over the window.
+    pub session: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentLabelDto {
+    pub event_id: String,
+    pub md5: String,
+    /// `None` once the chart left the library.
+    pub title: Option<String>,
+    pub version: Option<String>,
+    pub patterns: Vec<String>,
+    pub no_pattern: bool,
+    pub at: String,
+}
+
+/// The self profile's labelling of one keymode, over labels no undo cancels. Count lists are
+/// sorted by key.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LabelProgressDto {
+    pub gold_total: u32,
+    pub gold_no_pattern: u32,
+    pub per_pattern: Vec<CountDto>,
+    pub per_axis: Vec<CountDto>,
+    /// Maps with a session answer; relabelling a map does not add one.
+    pub session_labels: u32,
+    pub per_day: Vec<DayCountDto>,
+    /// Newest first.
+    pub recent: Vec<RecentLabelDto>,
+}

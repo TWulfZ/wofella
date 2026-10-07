@@ -37,3 +37,18 @@ pub async fn settings_set_hand_layout(
         .await
         .map_err(to_ipc)
 }
+
+/// Whether a finished map flashes the window; off until the user turns it on.
+#[tauri::command]
+#[specta::specta]
+#[tracing::instrument(skip_all)]
+pub async fn settings_get_session_notify(ctx: Ctx<'_>) -> Result<bool, IpcError> {
+    ctx.settings().session_notify().await.map_err(to_ipc)
+}
+
+#[tauri::command]
+#[specta::specta]
+#[tracing::instrument(skip_all)]
+pub async fn settings_set_session_notify(ctx: Ctx<'_>, on: bool) -> Result<(), IpcError> {
+    ctx.settings().set_session_notify(on).await.map_err(to_ipc)
+}

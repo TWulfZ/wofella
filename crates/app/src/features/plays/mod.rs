@@ -8,4 +8,5 @@ mod sync;
 pub(crate) mod testkit;
 
 pub use service::PlaysService;
+pub(crate) use service::plays_since;
 pub use sync::{CATALOG_STAGE, CATALOG_VERSION, SyncPlaysJob};

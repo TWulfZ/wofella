@@ -15,6 +15,7 @@ use tokio::runtime::Handle;
 use wolluf_app::clock::SystemClock;
 use wolluf_app::context::{AppContext, AppPaths};
 use wolluf_app::errors::AppError;
+use wolluf_app::features::session::SessionParams;
 use wolluf_app::logging::{self, LogGuard, LogOptions};
 
 /// Spec 005: a start that cannot open the context exits 1 after the dialog.
@@ -22,7 +23,7 @@ const EXIT_STARTUP_FAILURE: i32 = 1;
 const LOG_FILTER_ENV: &str = "WOLLUF_LOG";
 /// The CLI defaults to `warn`; the desktop keeps `info` so a user's log file explains a sync.
 const DEFAULT_LOG_FILTER: &str = "info";
-const MAIN_WINDOW: &str = "main";
+pub(crate) const MAIN_WINDOW: &str = "main";
 const FATAL_TITLE: &str = "wolluf";
 
 /// Registers the plugins every build uses, generic so tests can pass the mock runtime.
@@ -76,6 +77,12 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::settings::settings_set_hand_layout,
             commands::label::label_resize_window,
             commands::chart::chart_details,
+            commands::session::session_plays,
+            commands::session::session_label_submit,
+            commands::session::session_label_undo,
+            commands::session::label_progress,
+            commands::settings::settings_get_session_notify,
+            commands::settings::settings_set_session_notify,
         ])
 }
 
@@ -119,10 +126,12 @@ pub fn run(runtime: Handle) -> ExitCode {
             let started = opened.and_then(|ctx| {
                 let logs_dir = ctx.paths().logs_dir();
                 let bus = ctx.subscribe();
-                manage_context(app, Arc::new(ctx));
+                let ctx = Arc::new(ctx);
+                manage_context(app, ctx.clone());
                 specta.mount_events(app);
                 // Detached: it ends by itself when the context, and with it the bus, is dropped.
                 drop(events::spawn_bridge(app.handle().clone(), bus));
+                start_session(ctx);
                 // Before the window opens, so a dev server reload from the rewrite happens before
                 // the first page load rather than during it.
                 #[cfg(debug_assertions)]
@@ -152,6 +161,21 @@ pub fn run(runtime: Handle) -> ExitCode {
     // Explicit: the file writer flushes only on drop, and the event loop is over.
     drop(log_guard);
     u8::try_from(code).map_or(ExitCode::FAILURE, ExitCode::from)
+}
+
+/// Watches the selected install so a finished map syncs and joins the session (ADR 0020).
+/// Detached: the window must not wait on a slow drvfs mount, and a watcher that cannot start
+/// only costs live updates; `close_context` stops it.
+fn start_session(ctx: Arc<AppContext>) {
+    drop(tauri::async_runtime::spawn(async move {
+        if let Err(e) = ctx.session().start(SessionParams::default()).await {
+            tracing::warn!(
+                code = e.code.as_str(),
+                details = e.details.as_deref(),
+                "session watcher not started"
+            );
+        }
+    }));
 }
 
 /// Tauri state cannot be taken back out, so the shared context shuts down in place: the

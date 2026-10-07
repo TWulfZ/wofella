@@ -90,6 +90,28 @@ impl<'a> LibraryService<'a> {
             .map_err(blocking_join_error)?
     }
 
+    /// The catalog entries of `md5s` that osu!.db lists, by md5.
+    pub async fn catalog_charts(
+        &self,
+        md5s: Vec<ChartMd5>,
+    ) -> Result<BTreeMap<ChartMd5, CatalogChart>, AppError> {
+        let cache = self.ctx.cache_db().clone();
+        let found = tokio::task::spawn_blocking(move || {
+            cache.read(|c| {
+                let mut out = BTreeMap::new();
+                for md5 in md5s {
+                    if let Some(chart) = catalog_chart::get(c, md5)? {
+                        out.insert(md5, chart);
+                    }
+                }
+                Ok(out)
+            })
+        })
+        .await
+        .map_err(blocking_join_error)??;
+        Ok(found)
+    }
+
     /// Returns at once with the job id; a queued index is reused.
     pub async fn index(&self) -> Result<JobId, AppError> {
         Ok(self.ctx.jobs().submit(Box::new(IndexLibraryJob)))

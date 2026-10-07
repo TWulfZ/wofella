@@ -610,6 +610,30 @@ pub mod play {
         Ok(rows)
     }
 
+    /// Plays under one of `aliases` played at or after `since`, newest first. `played_at_utc`
+    /// is fixed-width RFC 3339 text, so text order is time order.
+    pub fn since(
+        conn: Conn<'_>,
+        aliases: &[AliasId],
+        since: UnixUs,
+    ) -> Result<Vec<Play>, StoreError> {
+        if aliases.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders = vec!["?"; aliases.len()].join(", ");
+        let mut stmt = conn.0.prepare(&format!(
+            "SELECT {COLUMNS} FROM play WHERE played_at_utc >= ? AND alias_id IN ({placeholders})
+             ORDER BY played_at_utc DESC, id"
+        ))?;
+        let params: Vec<rusqlite::types::Value> = std::iter::once(ms(since).into())
+            .chain(aliases.iter().map(|a| a.0.into()))
+            .collect();
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(params), from_row)?
+            .collect::<Result<_, _>>()?;
+        Ok(rows)
+    }
+
     pub fn charts_without_blob(conn: Conn<'_>) -> Result<Vec<ChartMd5>, StoreError> {
         let mut stmt = conn.0.prepare(
             "SELECT DISTINCT chart_md5 FROM play WHERE chart_sha IS NULL ORDER BY chart_md5",
@@ -752,6 +776,24 @@ pub mod settings {
 
     pub fn set_hand_layout(tx: &Tx<'_>, keymode: u8, layout_id: &str) -> Result<(), StoreError> {
         set(tx, &hand_layout_key(keymode), &serde_json::json!(layout_id))
+    }
+
+    /// Persisted: never renamed.
+    const SESSION_NOTIFY_KEY: &str = "session.notify_on_play";
+
+    /// Off unless the user turned it on: a taskbar flash per finished map is opt-in.
+    pub fn session_notify(conn: Conn<'_>) -> Result<bool, StoreError> {
+        match get(conn, SESSION_NOTIFY_KEY)? {
+            None => Ok(false),
+            Some(serde_json::Value::Bool(on)) => Ok(on),
+            Some(other) => Err(StoreError::InvalidData(format!(
+                "{SESSION_NOTIFY_KEY} = {other}"
+            ))),
+        }
+    }
+
+    pub fn set_session_notify(tx: &Tx<'_>, on: bool) -> Result<(), StoreError> {
+        set(tx, SESSION_NOTIFY_KEY, &serde_json::json!(on))
     }
 
     /// Persisted: never renamed.
@@ -1322,6 +1364,57 @@ pub(crate) mod tests {
             settings::hand_layout(tx.conn(), 4).unwrap().as_deref(),
             Some("k4.generic")
         );
+    }
+
+    #[test]
+    fn session_notify_setting_defaults_off_and_persists() {
+        let mut conn = migrated();
+        let tx = tx(&mut conn);
+        assert!(!settings::session_notify(tx.conn()).unwrap());
+        settings::set_session_notify(&tx, true).unwrap();
+        assert!(settings::session_notify(tx.conn()).unwrap());
+        assert_eq!(
+            settings::get(tx.conn(), "session.notify_on_play").unwrap(),
+            Some(serde_json::json!(true))
+        );
+        settings::set(&tx, "session.notify_on_play", &serde_json::json!("yes")).unwrap();
+        assert!(matches!(
+            settings::session_notify(tx.conn()),
+            Err(StoreError::InvalidData(_))
+        ));
+    }
+
+    #[test]
+    fn plays_since_keep_the_aliases_and_the_start_newest_first() {
+        let mut conn = migrated();
+        let tx = tx(&mut conn);
+        let snap = scores_snapshot(&tx);
+        let me = alias::upsert(&tx, Game::OsuStable, b"Alice").unwrap();
+        let other = alias::upsert(&tx, Game::OsuStable, b"Bob").unwrap();
+        let at = |p: NewPlay, offset_ms: i64| NewPlay {
+            played_at: UnixUs(T0.0 + offset_ms * 1_000),
+            ..p
+        };
+        let before = at(new_play(me, b"Alice", MD5_A, 1, Some(snap)), -1);
+        let first = at(new_play(me, b"Alice", MD5_A, 2, Some(snap)), 0);
+        let second = at(new_play(me, b"Alice", MD5_B, 3, Some(snap)), 5_000);
+        let theirs = at(new_play(other, b"Bob", MD5_A, 4, Some(snap)), 6_000);
+        play::insert_batch(
+            &tx,
+            &[before, first.clone(), second.clone(), theirs.clone()],
+        )
+        .unwrap();
+
+        let ids = |rows: Vec<Play>| rows.into_iter().map(|p| p.id).collect::<Vec<_>>();
+        assert_eq!(
+            ids(play::since(tx.conn(), &[me], T0).unwrap()),
+            [second.id, first.id]
+        );
+        assert_eq!(
+            ids(play::since(tx.conn(), &[me, other], T0).unwrap()),
+            [theirs.id, second.id, first.id]
+        );
+        assert!(play::since(tx.conn(), &[], T0).unwrap().is_empty());
     }
 
     #[test]

@@ -31,11 +31,23 @@ pub struct DataChangedDto {
     pub domains: Vec<String>,
 }
 
+/// A self play saved since the app started that the UI has not been told about (ADR 0020).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionPlayAddedDto {
+    pub play_id: String,
+    pub md5: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppEvent {
     JobProgress(JobProgressDto),
     JobFinished(JobFinishedDto),
     DataChanged(DataChangedDto),
+    SessionPlayAdded(SessionPlayAddedDto),
+    /// The user opted in to being told when a map ends; shells flash the window, never an OS
+    /// notification. Not a UI event.
+    AttentionRequested,
 }
 
 impl AppEvent {

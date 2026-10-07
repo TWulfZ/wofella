@@ -125,6 +125,15 @@ impl<'a> SetupService<'a> {
             .into_iter()
             .find(|i| i.id == id)
             .ok_or_else(|| AppError::internal("install vanished after registration"))?;
+        // The install is registered either way; a watcher that cannot start only costs live
+        // session updates until the next start.
+        if let Err(e) = self.ctx.session().follow_selected_install().await {
+            tracing::warn!(
+                code = e.code.as_str(),
+                details = e.details.as_deref(),
+                "install watcher not started"
+            );
+        }
         self.ctx.emit(AppEvent::data_changed(&[DOMAIN_SETUP]));
         install_dto(&install)
     }

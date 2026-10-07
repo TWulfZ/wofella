@@ -10,12 +10,17 @@ mod event_bridge {
     use tauri::test::{MockRuntime, mock_builder, mock_context, noop_assets};
     use tauri::{App, Listener};
     use tokio::sync::broadcast;
-    use wolluf_app::events::{AppEvent, JobFinishedDto, JobProgressDto};
+    use wolluf_app::events::{AppEvent, JobFinishedDto, JobProgressDto, SessionPlayAddedDto};
     use wolluf_app::jobs::dto::{JobId, JobKindDto, JobStageDto, JobStatusDto};
-    use wolluf_desktop::events::spawn_bridge;
+    use wolluf_desktop::events::{spawn_bridge, spawn_bridge_with};
     use wolluf_desktop::specta_builder;
 
-    const WIRE_NAMES: [&str; 3] = ["job-progress", "job-finished", "data-changed"];
+    const WIRE_NAMES: [&str; 4] = [
+        "job-progress",
+        "job-finished",
+        "data-changed",
+        "session-play-added",
+    ];
     const RECV_TIMEOUT: Duration = Duration::from_secs(5);
 
     struct Harness {
@@ -26,6 +31,14 @@ mod event_bridge {
     /// Records every bridged event as `(wire name, payload)`, in arrival order.
     fn harness(
         rx: broadcast::Receiver<AppEvent>,
+    ) -> (Harness, tauri::async_runtime::JoinHandle<()>) {
+        harness_with(rx, None)
+    }
+
+    /// `attention` counts the window flashes the bridge asks for; `None` uses the real one.
+    fn harness_with(
+        rx: broadcast::Receiver<AppEvent>,
+        attention: Option<mpsc::Sender<()>>,
     ) -> (Harness, tauri::async_runtime::JoinHandle<()>) {
         let specta = specta_builder::<MockRuntime>();
         let app = mock_builder()
@@ -41,7 +54,12 @@ mod event_bridge {
                 tx.send((name.to_owned(), payload)).unwrap();
             });
         }
-        let bridge = spawn_bridge(app.handle().clone(), rx);
+        let bridge = match attention {
+            Some(flashes) => spawn_bridge_with(app.handle().clone(), rx, move |_| {
+                flashes.send(()).unwrap();
+            }),
+            None => spawn_bridge(app.handle().clone(), rx),
+        };
         (
             Harness {
                 _app: app,
@@ -130,5 +148,45 @@ mod event_bridge {
         let (name, payload) = h.next();
         assert_eq!(name, "job-progress");
         assert_eq!(payload["done"], json!(2));
+    }
+
+    #[test]
+    fn forwards_session_play_added() {
+        let (tx, rx) = broadcast::channel(16);
+        let (h, _bridge) = harness(rx);
+        tx.send(AppEvent::SessionPlayAdded(SessionPlayAddedDto {
+            play_id: "ab".repeat(32),
+            md5: "cd".repeat(16),
+        }))
+        .unwrap();
+        assert_eq!(
+            h.next(),
+            (
+                "session-play-added".to_owned(),
+                json!({ "playId": "ab".repeat(32), "md5": "cd".repeat(16) })
+            )
+        );
+    }
+
+    /// The flash is a window call, never a webview event; the real call is a no-op without a
+    /// main window.
+    #[test]
+    fn attention_request_flashes_the_window_without_a_webview_event() {
+        let (tx, rx) = broadcast::channel(16);
+        let (flashes_tx, flashes) = mpsc::channel();
+        let (h, _bridge) = harness_with(rx, Some(flashes_tx));
+        tx.send(AppEvent::AttentionRequested).unwrap();
+        tx.send(AppEvent::data_changed(&["plays"])).unwrap();
+        flashes.recv_timeout(RECV_TIMEOUT).unwrap();
+        assert_eq!(
+            h.next(),
+            ("data-changed".to_owned(), json!({ "domains": ["plays"] }))
+        );
+
+        let (tx, rx) = broadcast::channel(16);
+        let (h, _bridge) = harness(rx);
+        tx.send(AppEvent::AttentionRequested).unwrap();
+        tx.send(AppEvent::data_changed(&["plays"])).unwrap();
+        assert_eq!(h.next().0, "data-changed");
     }
 }

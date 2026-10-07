@@ -23,6 +23,7 @@ use crate::features::labeling::LabelingService;
 use crate::features::library::LibraryService;
 use crate::features::players::PlayersService;
 use crate::features::plays::PlaysService;
+use crate::features::session::{SessionService, SessionState};
 use crate::features::settings::SettingsService;
 use crate::features::setup::SetupService;
 use crate::features::skins::SkinsService;
@@ -227,6 +228,7 @@ pub struct AppContext {
     cache: DbHandle,
     events: broadcast::Sender<AppEvent>,
     install: InstallRow,
+    session: SessionState,
     runtime: RuntimeHolder,
     // Taken after the stores close, so a reopen never races a closing writer.
     lock: Mutex<Option<InstanceLock>>,
@@ -234,6 +236,7 @@ pub struct AppContext {
 
 impl Drop for AppContext {
     fn drop(&mut self) {
+        drop(self.session.stop());
         self.jobs.stop();
         // A cancelled job keeps store clones until its task is polled again; closing here
         // makes its late writes fail instead of outliving the context.
@@ -292,6 +295,7 @@ impl AppContext {
             .thread_name(|i| format!("wolluf-cpu-{i}"))
             .build()
             .map_err(|e| AppError::internal(format!("rayon pool: {e}")))?;
+        let session = SessionState::new(clock.now());
         let (events, _) = broadcast::channel(EVENT_BUS_CAPACITY);
         let jobs = JobRunner::start(
             &runtime.handle(),
@@ -310,6 +314,7 @@ impl AppContext {
             cache,
             events,
             install,
+            session,
             runtime,
             lock: Mutex::new(Some(lock)),
         })
@@ -329,6 +334,10 @@ impl AppContext {
 
     pub fn subscribe(&self) -> broadcast::Receiver<AppEvent> {
         self.events.subscribe()
+    }
+
+    pub(crate) fn event_sender(&self) -> broadcast::Sender<AppEvent> {
+        self.events.clone()
     }
 
     /// No subscriber is not an error: the CLI may run without listening.
@@ -370,6 +379,14 @@ impl AppContext {
 
     pub fn settings(&self) -> SettingsService<'_> {
         SettingsService::new(self)
+    }
+
+    pub fn session(&self) -> SessionService<'_> {
+        SessionService::new(self)
+    }
+
+    pub(crate) fn session_state(&self) -> &SessionState {
+        &self.session
     }
 
     /// Reads the system environment (and `reg.exe` on WSL) at each call; shells that need a
@@ -415,6 +432,8 @@ impl AppContext {
     /// [`AppContext::close`] for a shell that cannot take ownership (Tauri managed state).
     /// Every later store call fails with `INTERNAL`. Idempotent.
     pub async fn shutdown(&self) {
+        // First, so no watcher submits a sync into a runner that is shutting down.
+        self.session().stop().await;
         self.jobs.shutdown().await;
         let (user, cache) = (self.user.clone(), self.cache.clone());
         if let Err(e) = tokio::task::spawn_blocking(move || {

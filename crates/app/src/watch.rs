@@ -7,7 +7,7 @@ use std::time::Duration;
 use wolluf_source_osu::paths::is_drvfs_path;
 use wolluf_source_osu::watch::{self as source_watch, SourceChange, WatchHandle, WatchMode};
 
-use crate::context::{AppContext, InstallId};
+use crate::context::{AppContext, InstallId, blocking_join_error};
 use crate::errors::AppError;
 use crate::features::plays::SyncPlaysJob;
 use crate::jobs::JobSubmitter;
@@ -75,7 +75,13 @@ impl InstallWatcher {
             .find(|i| i.id == install_id)
             .ok_or_else(|| AppError::not_found().with_arg("installId", install_id.0.to_string()))?;
         let mode = watch_mode(&install.root_path, &params);
-        let (handle, rx) = source_watch::spawn(&install.root_path, mode, params.debounce)?;
+        // A poll watcher scans the tree when it starts: over drvfs with thousands of replays that
+        // would stall a runtime worker.
+        let root = install.root_path.clone();
+        let (handle, rx) =
+            tokio::task::spawn_blocking(move || source_watch::spawn(&root, mode, params.debounce))
+                .await
+                .map_err(blocking_join_error)??;
         let submitter = ctx.jobs().submitter();
         let forwarder = std::thread::Builder::new()
             .name("wolluf-watch".into())

@@ -106,6 +106,19 @@ export const commands = {
 	labelResizeWindow: (req: ResizeWindowRequestDto) => typedError<AnchorDto, IpcError>(__TAURI_INVOKE("label_resize_window", { req })),
 	/**  The catalog row and parse counts the label card and its details dialog show. */
 	chartDetails: (md5: string) => typedError<ChartDetailsDto, IpcError>(__TAURI_INVOKE("chart_details", { md5 })),
+	/**
+	 *  Self plays of the keymode saved since the app started, newest first, with each chart's
+	 *  session answer (ADR 0020).
+	 */
+	sessionPlays: (keymode: number) => typedError<SessionPlaysDto, IpcError>(__TAURI_INVOKE("session_plays", { keymode })),
+	/**  Stores a played map's dominant pattern; `pattern` `None` is "no clear pattern". */
+	sessionLabelSubmit: (req: SessionLabelSubmitDto) => typedError<LabelEventDto, IpcError>(__TAURI_INVOKE("session_label_submit", { req })),
+	sessionLabelUndo: (eventId: string) => typedError<null, IpcError>(__TAURI_INVOKE("session_label_undo", { eventId })),
+	/**  Gold and session labelling of the keymode; days are cut at `utcOffsetMin` east of UTC. */
+	labelProgress: (keymode: number, utcOffsetMin: number) => typedError<LabelProgressDto, IpcError>(__TAURI_INVOKE("label_progress", { keymode, utcOffsetMin })),
+	/**  Whether a finished map flashes the window; off until the user turns it on. */
+	settingsGetSessionNotify: () => typedError<boolean, IpcError>(__TAURI_INVOKE("settings_get_session_notify")),
+	settingsSetSessionNotify: (on: boolean) => typedError<null, IpcError>(__TAURI_INVOKE("settings_set_session_notify", { on })),
 };
 
 /** Events */
@@ -113,6 +126,7 @@ export const events = {
 	dataChanged: makeEvent<DataChanged>("data-changed"),
 	jobFinished: makeEvent<JobFinished>("job-finished"),
 	jobProgress: makeEvent<JobProgress>("job-progress"),
+	sessionPlayAdded: makeEvent<SessionPlayAdded>("session-play-added"),
 };
 
 /* Types */
@@ -277,6 +291,18 @@ export type DataChangedDto = {
 	domains: string[],
 };
 
+/**  Labelled on one local day, oldest day first. */
+export type DayCountDto = {
+	/**  `YYYY-MM-DD` at the request's UTC offset. */
+	day: string,
+	gold: number,
+	/**
+	 *  Maps whose effective session answer was given that day: a relabel moves its map, so the
+	 *  days sum to `session_labels` over the window.
+	 */
+	session: number,
+};
+
 export type DecideAliasInput = {
 	decisions: AliasDecisionInput[],
 	completesWizard: boolean,
@@ -417,6 +443,22 @@ export type KeymodeCountDto = {
 export type LabelEventDto = {
 	/**  The feedback event's ULID; undo takes it back. */
 	id: string,
+};
+
+/**
+ *  The self profile's labelling of one keymode, over labels no undo cancels. Count lists are
+ *  sorted by key.
+ */
+export type LabelProgressDto = {
+	goldTotal: number,
+	goldNoPattern: number,
+	perPattern: CountDto[],
+	perAxis: CountDto[],
+	/**  Maps with a session answer; relabelling a map does not add one. */
+	sessionLabels: number,
+	perDay: DayCountDto[],
+	/**  Newest first. */
+	recent: RecentLabelDto[],
 };
 
 /**  Over the self profile's labels that are not undone. Lists are sorted by key. */
@@ -584,6 +626,17 @@ export type RandomRequestDto = {
 	exclude: AnchorDto[],
 };
 
+export type RecentLabelDto = {
+	eventId: string,
+	md5: string,
+	/**  `None` once the chart left the library. */
+	title: string | null,
+	version: string | null,
+	patterns: string[],
+	noPattern: boolean,
+	at: string,
+};
+
 /**
  *  `anchor` resized to `[t0Ms, t1Ms)`: the edge that moved from the anchor's is clamped to
  *  the chart and to the window length bounds.
@@ -617,6 +670,57 @@ export type ScopeDto = {
 	scopeHash: string,
 	aliasIds: number[],
 	keymode: number,
+};
+
+/**  A chart's effective session answer: the latest one no undo cancels. */
+export type SessionLabelDto = {
+	eventId: string,
+	/**  `None` is "no clear pattern". */
+	pattern: string | null,
+	at: string,
+};
+
+/**  The dominant pattern of a map the user played (ADR 0020). Never part of the gold set. */
+export type SessionLabelSubmitDto = {
+	keymode: number,
+	md5: string,
+	/**  The self play the answer follows, hex as `SessionPlayDto.playId`. */
+	playId: string | null,
+	/**  A full pattern id of the keymode; `None` is "no clear pattern". */
+	pattern: string | null,
+};
+
+export type SessionPlayAdded = SessionPlayAddedDto;
+
+/**  A self play saved since the app started that the UI has not been told about (ADR 0020). */
+export type SessionPlayAddedDto = {
+	playId: string,
+	md5: string,
+};
+
+export type SessionPlayDto = {
+	/**  Hex `PlayId`, as `session_label_submit` takes it back. */
+	playId: string,
+	md5: string,
+	playedAt: string,
+	title: string,
+	artist: string,
+	version: string,
+	creator: string,
+	/**  stable's cached no-mod star rating; `None` until stable has computed it. */
+	stars: number | null,
+	keymode: number,
+	/**  osu! beatmapset id, for the website link; `None` for an unsubmitted map. */
+	setId: number | null,
+	/**  The chart's effective session answer, from this session or an earlier one. */
+	label: SessionLabelDto | null,
+};
+
+export type SessionPlaysDto = {
+	/**  When the app started; plays from then on belong to the session. */
+	startedAt: string,
+	/**  Newest first; one row per play, so a map played twice is listed twice. */
+	plays: SessionPlayDto[],
 };
 
 export type SetProfileAliasesInput = {

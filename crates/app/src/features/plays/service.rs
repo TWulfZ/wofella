@@ -3,8 +3,9 @@
 use std::collections::BTreeSet;
 
 use tokio::sync::broadcast::error::RecvError;
-use wolluf_core::{AliasId, ChartMd5};
-use wolluf_store::repo::ledger::play;
+use wolluf_core::{AliasId, ChartMd5, PlayId, UnixUs};
+use wolluf_store::repo::ledger::{Play, play};
+use wolluf_store::{Conn, StoreError};
 
 use crate::context::{AppContext, InstallId, blocking_join_error};
 use crate::errors::AppError;
@@ -31,6 +32,26 @@ impl<'a> PlaysService<'a> {
                 .await
                 .map_err(blocking_join_error)??;
         Ok(played)
+    }
+
+    /// Plays under one of `aliases` saved at or after `since`, newest first; callers pass a
+    /// profile's aliases so another player's plays never count as the user's.
+    pub async fn since(&self, aliases: &[AliasId], since: UnixUs) -> Result<Vec<Play>, AppError> {
+        let user = self.ctx.user_db().clone();
+        let aliases = aliases.to_vec();
+        let plays =
+            tokio::task::spawn_blocking(move || user.read(|c| plays_since(c, &aliases, since)))
+                .await
+                .map_err(blocking_join_error)??;
+        Ok(plays)
+    }
+
+    pub async fn get(&self, id: PlayId) -> Result<Option<Play>, AppError> {
+        let user = self.ctx.user_db().clone();
+        let found = tokio::task::spawn_blocking(move || user.read(|c| play::get(c, id)))
+            .await
+            .map_err(blocking_join_error)??;
+        Ok(found)
     }
 
     /// Returns at once with the job id (a queued sync for the same install is reused). An
@@ -93,6 +114,16 @@ impl<'a> PlaysService<'a> {
             None => Err(AppError::not_found().with_arg("installId", install_id.0.to_string())),
         }
     }
+}
+
+/// [`PlaysService::since`] inside a caller's read, for code that must not hold the context (the
+/// session tracker).
+pub(crate) fn plays_since(
+    c: Conn<'_>,
+    aliases: &[AliasId],
+    since: UnixUs,
+) -> Result<Vec<Play>, StoreError> {
+    play::since(c, aliases, since)
 }
 
 #[cfg(test)]
@@ -191,6 +222,40 @@ mod tests {
             [md5(b"mine"), md5(b"theirs")].into()
         );
         assert!(plays.played_charts(&[]).await.unwrap().is_empty());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn since_lists_the_aliases_plays_newest_first_and_get_finds_one() {
+        let install = FakeInstall::new().scores_db(scores_db(&[
+            ScoreBuilder::mania(&md5_hex(b"mine"), "TWulfZ", 1),
+            ScoreBuilder::mania(&md5_hex(b"theirs"), "Kovacs", 2),
+        ]));
+        let f = Fixture::new(&install).await;
+        f.ctx.plays().sync_and_wait(f.install).await.unwrap();
+        let mine = f
+            .ctx
+            .user_db()
+            .read(wolluf_store::repo::ledger::alias::list)
+            .unwrap()
+            .into_iter()
+            .find(|a| a.raw_name == b"TWulfZ")
+            .unwrap()
+            .id;
+        let plays = f.ctx.plays();
+        let since = plays.since(&[mine], wolluf_core::UnixUs(0)).await.unwrap();
+        assert_eq!(since.len(), 1);
+        assert_eq!(since[0].alias_id, mine);
+        assert_eq!(
+            plays.get(since[0].id).await.unwrap(),
+            Some(since[0].clone())
+        );
+        assert!(
+            plays
+                .since(&[], wolluf_core::UnixUs(0))
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

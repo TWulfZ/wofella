@@ -4,6 +4,7 @@
 use wolluf_core::{AliasId, Keymode, ProfileId};
 use wolluf_store::repo::ledger::alias;
 use wolluf_store::repo::players::{profile, profile_alias};
+use wolluf_store::{Conn, StoreError};
 
 use super::IdentityParams;
 use super::identity::{AliasList, DecisionSource, EntryRef, Identity, ProfileEntry};
@@ -126,18 +127,7 @@ impl<'a> PlayersService<'a> {
 
     /// The aliases in the self profile, ascending; empty without one.
     pub async fn self_alias_ids(&self) -> Result<Vec<AliasId>, AppError> {
-        self.blocking(|i| {
-            Ok(i.user.read(|c| {
-                let Some(me) = profile::self_profile(c)? else {
-                    return Ok(Vec::new());
-                };
-                Ok(profile_alias::list(c, me.id)?
-                    .into_iter()
-                    .map(|r| r.alias_id)
-                    .collect())
-            })?)
-        })
-        .await
+        self.blocking(|i| Ok(i.user.read(self_alias_ids)?)).await
     }
 
     /// Raw names of the self profile's aliases, as `.osr` headers store them; empty without a
@@ -221,6 +211,18 @@ impl Job for RefreshIdentityJob {
             })
         })
     }
+}
+
+/// [`PlayersService::self_alias_ids`] inside a caller's read, for code that must not hold the
+/// context (the session tracker). The one place the self-alias rule (ADR 0005) is read.
+pub(crate) fn self_alias_ids(c: Conn<'_>) -> Result<Vec<AliasId>, StoreError> {
+    let Some(me) = profile::self_profile(c)? else {
+        return Ok(Vec::new());
+    };
+    Ok(profile_alias::list(c, me.id)?
+        .into_iter()
+        .map(|r| r.alias_id)
+        .collect())
 }
 
 #[cfg(test)]
