@@ -1,11 +1,34 @@
-// Mirrors the `wolluf label` REPL session (apps/cli/src/cmd/label.rs session()); IPC calls happen outside and only
-// their outcomes are dispatched here.
+// The label session: windows shown, their outcomes and the answer being built. IPC calls happen outside and only their
+// outcomes are dispatched here.
 import type { Anchor, LabelWindow, ThumbSide } from "./types";
 
-export interface SessionFlags {
+export interface Answer {
+  /** Full taxonomy ids in pick order; never typed, so only ids the taxonomy offers can be stored. */
+  patterns: readonly string[];
+  /** "No clear pattern": a stored answer, exclusive with `patterns`. */
+  noPattern: boolean;
   mixed: boolean;
   unsure: boolean;
   thumb: ThumbSide | null;
+}
+
+export const EMPTY_ANSWER: Answer = { patterns: [], noPattern: false, mixed: false, unsure: false, thumb: null };
+
+export type WindowOrigin =
+  | { kind: "plan"; round: number }
+  | { kind: "random" }
+  | { kind: "nowPlaying"; source: "osuWindow" | "lastReplay" };
+
+export type EntryStatus =
+  | { kind: "pending" }
+  | { kind: "saved"; eventId: string; answer: Answer }
+  | { kind: "skipped" };
+
+export interface HistoryEntry {
+  /** Its anchor follows reshapes. */
+  window: LabelWindow;
+  origin: WindowOrigin;
+  status: EntryStatus;
 }
 
 export interface SessionCounts {
@@ -17,14 +40,17 @@ export interface SessionCounts {
 export interface SessionState {
   /** A `u64` in decimal, as the sampler takes it. */
   seed: string;
+  /** The next stratified round; only planned windows consume one. */
   round: number;
-  /** Every window sampled this session, so the sampler never shows one twice (skips are not stored). */
+  randomRound: number;
+  /** Every window shown this session, so no source shows one twice. */
   shown: Anchor[];
   /** Event ids saved this session, newest last: the undo stack. */
   saved: string[];
-  flags: SessionFlags;
-  /** The current window, its anchor following reshapes. */
-  window: LabelWindow | null;
+  history: HistoryEntry[];
+  /** Index into `history`; one past its end while the next planned window is sampled. */
+  cursor: number;
+  answer: Answer;
   done: boolean;
   counts: SessionCounts;
 }
@@ -32,80 +58,184 @@ export interface SessionState {
 export type FlagToggle = "mixed" | "unsure" | "thumbLeft" | "thumbRight";
 
 export type SessionAction =
-  | { type: "windowLoaded"; window: LabelWindow }
+  | { type: "windowLoaded"; window: LabelWindow; origin: WindowOrigin }
   | { type: "windowReshaped"; anchor: Anchor }
-  | { type: "submitted"; eventId: string }
+  | { type: "moved"; to: "previous" | "next" }
+  | { type: "submitted"; eventId: string; answer: Answer }
   /** Dispatched only once the undo is stored, so a failed undo can be retried. */
   | { type: "undone"; eventId: string }
   | { type: "skipped" }
+  | { type: "patternToggled"; id: string }
+  /** The "+" picker only adds; removal stays on the chip and the card. */
+  | { type: "patternAdded"; id: string }
+  | { type: "patternRemoved"; id: string }
+  | { type: "noPatternToggled" }
   | { type: "flagsToggled"; toggle: FlagToggle }
-  | { type: "thumbSet"; side: ThumbSide | null }
+  | { type: "answerCleared" }
   | { type: "sessionDone" };
-
-const NEUTRAL_FLAGS: SessionFlags = { mixed: false, unsure: false, thumb: null };
 
 export function initialSession(seed: string): SessionState {
   return {
     seed,
     round: 0,
+    randomRound: 0,
     shown: [],
     saved: [],
-    flags: NEUTRAL_FLAGS,
-    window: null,
+    history: [],
+    cursor: 0,
+    answer: EMPTY_ANSWER,
     done: false,
     counts: { labelled: 0, skipped: 0, undone: 0 },
   };
+}
+
+export function currentEntry(state: SessionState): HistoryEntry | null {
+  return state.history[state.cursor] ?? null;
+}
+
+export function isSampling(state: SessionState): boolean {
+  return !state.done && state.cursor === state.history.length;
+}
+
+function sameAnchor(a: Anchor, b: Anchor): boolean {
+  return a.md5 === b.md5 && a.t0Ms === b.t0Ms && a.t1Ms === b.t1Ms;
 }
 
 function toggledThumb(current: ThumbSide | null, side: ThumbSide): ThumbSide | null {
   return current === side ? null : side;
 }
 
-function toggled(flags: SessionFlags, toggle: FlagToggle): SessionFlags {
+function withFlag(answer: Answer, toggle: FlagToggle): Answer {
   switch (toggle) {
     case "mixed":
-      return { ...flags, mixed: !flags.mixed };
+      return { ...answer, mixed: !answer.mixed };
     case "unsure":
-      return { ...flags, unsure: !flags.unsure };
+      return { ...answer, unsure: !answer.unsure };
     case "thumbLeft":
-      return { ...flags, thumb: toggledThumb(flags.thumb, "left") };
+      return { ...answer, thumb: toggledThumb(answer.thumb, "left") };
     case "thumbRight":
-      return { ...flags, thumb: toggledThumb(flags.thumb, "right") };
+      return { ...answer, thumb: toggledThumb(answer.thumb, "right") };
   }
 }
 
-function nextRound(state: SessionState, counts: SessionCounts): SessionState {
-  return { ...state, round: state.round + 1, window: null, counts };
+function editable(state: SessionState): boolean {
+  const entry = currentEntry(state);
+  return entry !== null && entry.status.kind !== "saved";
+}
+
+function moveTo(state: SessionState, cursor: number): SessionState {
+  return { ...state, cursor, answer: EMPTY_ANSWER };
+}
+
+function withStatus(state: SessionState, index: number, status: EntryStatus): HistoryEntry[] {
+  return state.history.map((entry, i) => (i === index ? { ...entry, status } : entry));
+}
+
+function loaded(state: SessionState, window: LabelWindow, origin: WindowOrigin): SessionState {
+  const known = state.history.findIndex((entry) => sameAnchor(entry.window.anchor, window.anchor));
+  if (known !== -1) {
+    return moveTo(state, known);
+  }
+  return moveTo(
+    {
+      ...state,
+      history: [...state.history, { window, origin, status: { kind: "pending" } }],
+      shown: [...state.shown, window.anchor],
+      round: origin.kind === "plan" ? state.round + 1 : state.round,
+      randomRound: origin.kind === "random" ? state.randomRound + 1 : state.randomRound,
+    },
+    state.history.length,
+  );
+}
+
+function editAnswer(state: SessionState, edit: (answer: Answer) => Answer): SessionState {
+  return editable(state) ? { ...state, answer: edit(state.answer) } : state;
 }
 
 export function sessionReducer(state: SessionState, action: SessionAction): SessionState {
   switch (action.type) {
     case "windowLoaded":
-      return { ...state, window: action.window, shown: [...state.shown, action.window.anchor], flags: NEUTRAL_FLAGS };
-    case "windowReshaped":
-      return state.window === null ? state : { ...state, window: { ...state.window, anchor: action.anchor } };
-    case "submitted":
-      return nextRound(
-        { ...state, saved: [...state.saved, action.eventId] },
-        { ...state.counts, labelled: state.counts.labelled + 1 },
+      return loaded(state, action.window, action.origin);
+    case "windowReshaped": {
+      const entry = currentEntry(state);
+      if (entry === null) {
+        return state;
+      }
+      const window = { ...entry.window, anchor: action.anchor };
+      return { ...state, history: state.history.map((e, i) => (i === state.cursor ? { ...e, window } : e)) };
+    }
+    case "moved":
+      if (action.to === "previous") {
+        return state.cursor === 0 ? state : moveTo(state, state.cursor - 1);
+      }
+      // Past the newest window sits the next sample, or the "plan finished" notice; nothing lies beyond it.
+      return state.cursor >= state.history.length ? state : moveTo(state, state.cursor + 1);
+    case "submitted": {
+      if (!editable(state)) {
+        return state;
+      }
+      const status: EntryStatus = { kind: "saved", eventId: action.eventId, answer: action.answer };
+      return moveTo(
+        {
+          ...state,
+          history: withStatus(state, state.cursor, status),
+          saved: [...state.saved, action.eventId],
+          counts: { ...state.counts, labelled: state.counts.labelled + 1 },
+        },
+        state.cursor + 1,
       );
-    case "skipped":
-      return nextRound(state, { ...state.counts, skipped: state.counts.skipped + 1 });
-    case "undone":
+    }
+    case "skipped": {
+      const entry = currentEntry(state);
+      if (entry === null || entry.status.kind === "saved") {
+        return state;
+      }
+      const counted = entry.status.kind === "pending" ? 1 : 0;
+      return moveTo(
+        {
+          ...state,
+          history: withStatus(state, state.cursor, { kind: "skipped" }),
+          counts: { ...state.counts, skipped: state.counts.skipped + counted },
+        },
+        state.cursor + 1,
+      );
+    }
+    case "undone": {
       if (undoTarget(state) !== action.eventId) {
         return state;
       }
+      const index = state.history.findIndex((e) => e.status.kind === "saved" && e.status.eventId === action.eventId);
       return {
         ...state,
+        history: index === -1 ? state.history : withStatus(state, index, { kind: "pending" }),
         saved: state.saved.slice(0, -1),
         counts: { ...state.counts, undone: state.counts.undone + 1 },
       };
+    }
+    case "patternToggled":
+      return editAnswer(state, (answer) =>
+        answer.patterns.includes(action.id)
+          ? { ...answer, patterns: answer.patterns.filter((id) => id !== action.id) }
+          : { ...answer, patterns: [...answer.patterns, action.id], noPattern: false },
+      );
+    case "patternAdded":
+      return editAnswer(state, (answer) =>
+        answer.patterns.includes(action.id)
+          ? answer
+          : { ...answer, patterns: [...answer.patterns, action.id], noPattern: false },
+      );
+    case "patternRemoved":
+      return editAnswer(state, (answer) => ({ ...answer, patterns: answer.patterns.filter((id) => id !== action.id) }));
+    case "noPatternToggled":
+      return editAnswer(state, (answer) =>
+        answer.noPattern ? { ...answer, noPattern: false } : { ...answer, noPattern: true, patterns: [] },
+      );
     case "flagsToggled":
-      return { ...state, flags: toggled(state.flags, action.toggle) };
-    case "thumbSet":
-      return { ...state, flags: { ...state.flags, thumb: action.side } };
+      return editAnswer(state, (answer) => withFlag(answer, action.toggle));
+    case "answerCleared":
+      return editAnswer(state, () => EMPTY_ANSWER);
     case "sessionDone":
-      return { ...state, window: null, done: true };
+      return { ...state, done: true };
   }
 }
 
@@ -113,24 +243,42 @@ export function undoTarget(state: SessionState): string | null {
   return state.saved.at(-1) ?? null;
 }
 
+/** True on a saved window whose event is the newest saved one: older ones would undo out of order. */
+export function canUndo(state: SessionState): boolean {
+  const status = currentEntry(state)?.status;
+  return status?.kind === "saved" && status.eventId === undoTarget(state);
+}
+
+export function canSave(state: SessionState): boolean {
+  return editable(state) && (state.answer.noPattern || state.answer.patterns.length > 0);
+}
+
 export function sampleExclusion(state: SessionState): { seed: string; round: number; exclude: Anchor[] } {
   return { seed: state.seed, round: state.round, exclude: state.shown };
 }
 
-export interface InlineFlags {
-  toggleMixed: boolean;
-  toggleUnsure: boolean;
-  thumb: ThumbSide | null;
+export function randomRequest(state: SessionState): { seed: string; round: number; exclude: Anchor[] } {
+  return { seed: state.seed, round: state.randomRound, exclude: state.shown };
 }
 
-/** The flags a label answer is stored with: inline toggles flip the window's, an inline thumb side wins. */
-export function submitFlags(
-  flags: SessionFlags,
-  inline: InlineFlags,
-): { mixed: boolean; unsure: boolean; thumbPref: ThumbSide | null } {
-  return {
-    mixed: flags.mixed !== inline.toggleMixed,
-    unsure: flags.unsure !== inline.toggleUnsure,
-    thumbPref: inline.thumb ?? flags.thumb,
-  };
+export function nowPlayingRequest(state: SessionState): { exclude: Anchor[] } {
+  return { exclude: state.shown };
+}
+
+export interface SubmitPayload {
+  anchor: Anchor;
+  patterns: string[];
+  noPattern: boolean;
+  mixed: boolean;
+  unsure: boolean;
+  thumbPref: ThumbSide | null;
+}
+
+export function submitPayload(state: SessionState): SubmitPayload | null {
+  const entry = currentEntry(state);
+  if (entry === null || !canSave(state)) {
+    return null;
+  }
+  const { patterns, noPattern, mixed, unsure, thumb } = state.answer;
+  return { anchor: entry.window.anchor, patterns: [...patterns], noPattern, mixed, unsure, thumbPref: thumb };
 }

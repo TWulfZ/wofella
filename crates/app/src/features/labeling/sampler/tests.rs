@@ -289,3 +289,35 @@ fn empty_pool_samples_nothing() {
     assert!(pool.is_empty());
     assert_eq!(run(1, 0, &pool, &[]), None);
 }
+
+#[test]
+fn random_order_is_a_seeded_permutation_per_round() {
+    let charts: Vec<ChartMd5> = (0..12).map(md5).collect();
+    let order = random_order(5, 0, charts.iter().copied());
+    assert_eq!(order, random_order(5, 0, charts.iter().copied()));
+    let sorted: BTreeSet<ChartMd5> = order.iter().copied().collect();
+    assert_eq!(sorted, charts.iter().copied().collect::<BTreeSet<_>>());
+    assert_ne!(order, charts, "shuffled, not md5 order");
+    assert_ne!(order, random_order(5, 1, charts.iter().copied()));
+    assert_ne!(order, random_order(6, 0, charts.iter().copied()));
+    assert_eq!(
+        random_order(5, 0, charts.iter().rev().copied()),
+        order,
+        "input order does not matter"
+    );
+}
+
+#[test]
+fn random_start_is_one_of_the_starts() {
+    let starts: Vec<TimeUs> = (0..40).map(|i| ms(i * 250)).collect();
+    let picks: BTreeSet<TimeUs> = (0..20)
+        .filter_map(|round| random_start(3, round, md5(1), &starts))
+        .collect();
+    assert!(picks.iter().all(|t| starts.contains(t)));
+    assert!(picks.len() > 1, "{picks:?}");
+    assert_eq!(random_start(3, 0, md5(1), &[]), None);
+    assert_eq!(
+        random_start(3, 0, md5(1), &starts),
+        random_start(3, 0, md5(1), &starts)
+    );
+}

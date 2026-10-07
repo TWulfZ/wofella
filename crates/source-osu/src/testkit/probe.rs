@@ -6,13 +6,20 @@ use crate::probe::{OsuProcessProbe, ProbeResult};
 #[derive(Debug)]
 pub struct FakeProbe {
     result: Mutex<ProbeResult>,
+    title: Mutex<Option<String>>,
 }
 
 impl FakeProbe {
     pub const fn new(result: ProbeResult) -> Self {
         Self {
             result: Mutex::new(result),
+            title: Mutex::new(None),
         }
+    }
+
+    pub fn with_title(self, title: impl Into<String>) -> Self {
+        *self.title.lock().unwrap_or_else(PoisonError::into_inner) = Some(title.into());
+        self
     }
 
     pub fn set(&self, result: ProbeResult) {
@@ -30,5 +37,12 @@ impl OsuProcessProbe for FakeProbe {
 
     fn name(&self) -> &'static str {
         "fake"
+    }
+
+    fn window_title(&self) -> Option<String> {
+        self.title
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }

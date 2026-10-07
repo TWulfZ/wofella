@@ -2,6 +2,7 @@
 //! features (D12), plus the `RefreshIdentity` job chained after every `SyncPlays`.
 
 use wolluf_core::{AliasId, Keymode, ProfileId};
+use wolluf_store::repo::ledger::alias;
 use wolluf_store::repo::players::{profile, profile_alias};
 
 use super::IdentityParams;
@@ -135,6 +136,21 @@ impl<'a> PlayersService<'a> {
                     .map(|r| r.alias_id)
                     .collect())
             })?)
+        })
+        .await
+    }
+
+    /// Raw names of the self profile's aliases, as `.osr` headers store them; empty without a
+    /// self profile.
+    pub async fn self_alias_names(&self) -> Result<Vec<Vec<u8>>, AppError> {
+        let ids = self.self_alias_ids().await?;
+        self.blocking(move |i| {
+            Ok(i.user
+                .read(alias::list)?
+                .into_iter()
+                .filter(|a| ids.contains(&a.id))
+                .map(|a| a.raw_name)
+                .collect())
         })
         .await
     }

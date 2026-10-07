@@ -28,6 +28,7 @@ const TAXONOMY: PatternDefDto[] = [
 
 const ANCHOR_A: AnchorDto = { md5: "a".repeat(32), t0Ms: 1000, t1Ms: 5000, cols: [1, 2, 3, 4, 5, 6, 7] };
 const ANCHOR_B: AnchorDto = { md5: "b".repeat(32), t0Ms: 20_000, t1Ms: 24_000, cols: [1, 2, 3, 4, 5, 6, 7] };
+const ANCHOR_C: AnchorDto = { md5: "c".repeat(32), t0Ms: 40_000, t1Ms: 44_000, cols: [1, 2, 3, 4, 5, 6, 7] };
 
 function labelWindow(anchor: AnchorDto, title: string): LabelWindowDto {
   return { anchor, title, artist: "Artist", version: "Insane", level: "dan:7", stratum: "dan_07/nps_2", played: true };
@@ -35,6 +36,7 @@ function labelWindow(anchor: AnchorDto, title: string): LabelWindowDto {
 
 const WINDOW_A = labelWindow(ANCHOR_A, "Alpha Song");
 const WINDOW_B = labelWindow(ANCHOR_B, "Beta Song");
+const WINDOW_C = labelWindow(ANCHOR_C, "Gamma Song");
 
 function chartWindow(md5: string, fromMs: number, toMs: number): ChartWindowDto {
   return {
@@ -222,13 +224,13 @@ function renderScreen(
     labelSample: (args) => windows[(args["req"] as SampleRequestDto).round] ?? null,
     chartWindow: (args) => chartWindow(String(args["md5"]), Number(args["fromMs"]), Number(args["toMs"])),
     chartAudio: () => ({ mime: "audio/mpeg", base64: "SUQz" }),
-    labelResolvePatterns: (args) =>
-      (args["tokens"] as string[]).map((token) => TAXONOMY.find((p) => p.key === token)?.id ?? token),
     labelSubmit: () => {
       eventSeq++;
       return { id: `01EVENT${eventSeq}` };
     },
     labelUndo: () => null,
+    labelRandom: () => null,
+    labelNowPlaying: () => null,
     skinList: () => NO_SKINS,
     skinGet: (args) => skinDto(String(args["folder"]), Number(args["keymode"])),
     labelReshape: (args) => {
@@ -246,8 +248,26 @@ async function roundLoaded(title = "Alpha Song"): Promise<void> {
   expect(await screen.findByRole("heading", { name: title })).toBeInTheDocument();
 }
 
-function answerBox(): HTMLElement {
-  return screen.getByRole("textbox", { name: "Answer" });
+function answerBar(): HTMLElement {
+  return screen.getByRole("region", { name: "Answer" });
+}
+
+function inBar(name: string): HTMLElement {
+  return within(answerBar()).getByRole("button", { name });
+}
+
+function toolbar(): HTMLElement {
+  return screen.getByRole("toolbar", { name: "Windows" });
+}
+
+function tool(name: string): HTMLElement {
+  return within(toolbar()).getByRole("button", { name });
+}
+
+/** Pattern names shown as chips in the answer bar, in pick order. */
+function chips(): string[] {
+  const list = within(answerBar()).queryByRole("list", { name: "Selected patterns" });
+  return list === null ? [] : within(list).queryAllByRole("listitem").map((li) => li.dataset["patternId"] ?? "");
 }
 
 function submitted(calls: MockCall[]): unknown[] {
@@ -256,6 +276,15 @@ function submitted(calls: MockCall[]): unknown[] {
 
 function pressed(name: string): string | null {
   return screen.getByRole("button", { name }).getAttribute("aria-pressed");
+}
+
+async function clickTool(name: string): Promise<void> {
+  await userEvent.click(tool(name));
+}
+
+async function saveNoPattern(): Promise<void> {
+  await userEvent.click(inBar("No pattern"));
+  await userEvent.click(inBar("Save"));
 }
 
 async function playingSource(): Promise<FakeSourceNode> {
@@ -288,6 +317,7 @@ describe("LabelScreen", () => {
     });
     expect(await screen.findByTestId("playfield")).toContainHTML("<canvas");
     expect(screen.getByText("00:01.000–00:05.000")).toBeInTheDocument();
+    expect(screen.getByText("Round 1")).toBeInTheDocument();
     expect(screen.getByText("Insane")).toBeInTheDocument();
     expect(screen.getByText("Played")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "js jumpstream" })).toHaveAttribute("aria-pressed", "false");
@@ -308,18 +338,30 @@ describe("LabelScreen", () => {
     expect(argsOf(calls, "label_pattern_examples")).toEqual([{ keymode: 7 }]);
   });
 
-  it("filters the cards from the pattern search without typing into the answer", async () => {
+  it("has no free-text answer: no Answer textbox, and printable keys outside a field run nothing", async () => {
+    const calls = renderScreen();
+    await roundLoaded();
+
+    expect(screen.queryByRole("textbox", { name: "Answer" })).toBeNull();
+    await userEvent.keyboard("sux");
+    expect(screen.getByText("Skipped: 0")).toBeInTheDocument();
+    expect(chips()).toEqual([]);
+    expect(pressed("No pattern")).toBe("false");
+    expect(argsOf(calls, "label_undo")).toEqual([]);
+    expect(screen.getByRole("heading", { name: "Alpha Song" })).toBeInTheDocument();
+  });
+
+  it("filters the cards from the pattern search without touching the answer", async () => {
     renderScreen();
     await roundLoaded();
-    await userEvent.type(answerBox(), "mj");
+    await userEvent.click(screen.getByRole("button", { name: "mj minijack" }));
 
     await userEvent.type(screen.getByRole("searchbox", { name: "Search patterns" }), "jump");
 
     expect(screen.getByRole("button", { name: "js jumpstream" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "mj minijack" })).toBeNull();
     expect(screen.queryByRole("button", { name: "lj longjack" })).toBeNull();
-    expect(screen.getByRole("searchbox", { name: "Search patterns" })).toHaveValue("jump");
-    expect(answerBox()).toHaveValue("mj");
+    expect(chips()).toEqual(["regular.jack.minijack"]);
   });
 
   it("still labels with the cards when the pattern examples fail", async () => {
@@ -335,23 +377,23 @@ describe("LabelScreen", () => {
     const jumpstream = screen.getByRole("button", { name: "js jumpstream" });
     expect(jumpstream.querySelector("canvas")).toBeNull();
     await userEvent.click(jumpstream);
-    expect(answerBox()).toHaveValue("js");
+    expect(chips()).toEqual(["regular.stream.jumpstream"]);
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("submits the clicked chips and flags on Enter", async () => {
+  it("submits the patterns picked on the cards and the flags on Enter, as taxonomy ids", async () => {
     const calls = renderScreen();
     await roundLoaded();
 
     await userEvent.click(screen.getByRole("button", { name: "js jumpstream" }));
     await userEvent.click(screen.getByRole("button", { name: "mj minijack" }));
-    await userEvent.click(screen.getByRole("button", { name: "Mixed" }));
-    expect(answerBox()).toHaveValue("js mj");
-    expect(screen.getByRole("button", { name: "Mixed" })).toHaveAttribute("aria-pressed", "true");
-    await userEvent.type(answerBox(), "{Enter}");
+    await userEvent.click(inBar("Mixed"));
+    expect(chips()).toEqual(["regular.stream.jumpstream", "regular.jack.minijack"]);
+    expect(pressed("js jumpstream")).toBe("true");
+    expect(pressed("Mixed")).toBe("true");
+    await userEvent.keyboard("{Enter}");
 
     await roundLoaded("Beta Song");
-    expect(argsOf(calls, "label_resolve_patterns")).toEqual([{ keymode: 7, tokens: ["js", "mj"] }]);
     expect(submitted(calls)).toEqual([
       {
         anchor: ANCHOR_A,
@@ -362,52 +404,155 @@ describe("LabelScreen", () => {
         thumbPref: null,
       },
     ]);
+    expect(argsOf(calls, "label_resolve_patterns")).toEqual([]);
     expect(sampleRequests(calls)[1]).toMatchObject({ round: 1, exclude: [ANCHOR_A] });
     expect(screen.getByText("Labelled: 1")).toBeInTheDocument();
-    expect(answerBox()).toHaveValue("");
+    expect(chips()).toEqual([]);
+    expect(pressed("Mixed")).toBe("false");
   });
 
-  it("submits a typed REPL line, reflecting its tokens on the chips", async () => {
+  it("removes a chip with its × and toggles it off from its card", async () => {
+    renderScreen();
+    await roundLoaded();
+    await userEvent.click(screen.getByRole("button", { name: "js jumpstream" }));
+    await userEvent.click(screen.getByRole("button", { name: "lj longjack" }));
+
+    await userEvent.click(inBar("Remove jumpstream"));
+    expect(chips()).toEqual(["regular.jack.longjack"]);
+    expect(pressed("js jumpstream")).toBe("false");
+    await userEvent.click(screen.getByRole("button", { name: "lj longjack" }));
+    expect(chips()).toEqual([]);
+  });
+
+  it("adds patterns from the + picker: type to filter, Enter adds, Esc closes, then Enter saves", async () => {
     const calls = renderScreen();
     await roundLoaded();
 
-    await userEvent.type(answerBox(), "lj m tl");
-    expect(screen.getByRole("button", { name: "lj longjack" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "Mixed" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "Left thumb" })).toHaveAttribute("aria-pressed", "true");
-    await userEvent.type(answerBox(), "{Enter}");
-
-    await roundLoaded("Beta Song");
-    expect(submitted(calls)).toEqual([
-      {
-        anchor: ANCHOR_A,
-        patterns: ["regular.jack.longjack"],
-        noPattern: false,
-        mixed: true,
-        unsure: false,
-        thumbPref: "left",
-      },
+    await userEvent.click(inBar("Add pattern"));
+    const find = await screen.findByRole("combobox", { name: "Find a pattern" });
+    expect(find).toHaveFocus();
+    await userEvent.keyboard("jump");
+    const list = screen.getByRole("listbox", { name: "Taxonomy patterns" });
+    expect(within(list).getAllByRole("option").map((o) => o.textContent)).toEqual([
+      expect.stringContaining("jumpstream"),
     ]);
+    await userEvent.keyboard("{Enter}");
+    expect(chips()).toEqual(["regular.stream.jumpstream"]);
+    expect(find).toHaveValue("");
+    expect(screen.getByRole("option", { name: "js jumpstream" })).toHaveAttribute("aria-checked", "true");
+
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("combobox", { name: "Find a pattern" })).toBeNull();
+    });
+    expect(chips()).toEqual(["regular.stream.jumpstream"]);
+    await userEvent.keyboard("{Enter}");
+    await roundLoaded("Beta Song");
+    expect(submitted(calls)).toMatchObject([{ patterns: ["regular.stream.jumpstream"], noPattern: false }]);
   });
 
-  it("stores x as no pattern without resolving anything", async () => {
+  it("only adds from the + picker: picking a chosen pattern again keeps it", async () => {
+    renderScreen();
+    await roundLoaded();
+    await userEvent.click(inBar("Add pattern"));
+    await screen.findByRole("combobox", { name: "Find a pattern" });
+
+    await userEvent.keyboard("jump{Enter}jump{Enter}");
+    expect(chips()).toEqual(["regular.stream.jumpstream"]);
+    await userEvent.click(screen.getByRole("option", { name: "js jumpstream" }));
+    expect(chips()).toEqual(["regular.stream.jumpstream"]);
+    expect(pressed("js jumpstream")).toBe("true");
+  });
+
+  it("moves through the + picker with the arrow keys", async () => {
+    renderScreen();
+    await roundLoaded();
+    await userEvent.click(inBar("Add pattern"));
+    const find = await screen.findByRole("combobox", { name: "Find a pattern" });
+
+    expect(screen.getByRole("option", { name: "mj minijack" })).toHaveAttribute("aria-selected", "true");
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowUp}");
+    const longjack = screen.getByRole("option", { name: "lj longjack" });
+    expect(longjack).toHaveAttribute("aria-selected", "true");
+    expect(find).toHaveAttribute("aria-activedescendant", longjack.id);
+    await userEvent.keyboard("{Enter}");
+    expect(chips()).toEqual(["regular.jack.longjack"]);
+    expect(pressed("lj longjack")).toBe("true");
+  });
+
+  it("makes No pattern exclusive with the patterns and stores it without patterns", async () => {
     const calls = renderScreen();
     await roundLoaded();
+    await userEvent.click(screen.getByRole("button", { name: "js jumpstream" }));
+    await userEvent.click(inBar("No pattern"));
+    expect(chips()).toEqual([]);
+    expect(pressed("No pattern")).toBe("true");
+    await userEvent.click(screen.getByRole("button", { name: "mj minijack" }));
+    expect(pressed("No pattern")).toBe("false");
+    await userEvent.click(inBar("No pattern"));
 
-    await userEvent.type(answerBox(), "x{Enter}");
+    await userEvent.click(inBar("Save"));
 
     await roundLoaded("Beta Song");
-    expect(argsOf(calls, "label_resolve_patterns")).toEqual([]);
     expect(submitted(calls)).toEqual([
       { anchor: ANCHOR_A, patterns: [], noPattern: true, mixed: false, unsure: false, thumbPref: null },
     ]);
   });
 
-  it("skips with s: nothing stored, the next sample excludes the shown window", async () => {
+  it("keeps Save disabled and Enter inert until the answer has a pattern or No pattern", async () => {
+    const calls = renderScreen();
+    await roundLoaded();
+    expect(inBar("Save")).toBeDisabled();
+    await userEvent.click(inBar("Unsure"));
+    await userEvent.keyboard("{Enter}");
+    await settle();
+    expect(submitted(calls)).toEqual([]);
+    expect(screen.getByRole("heading", { name: "Alpha Song" })).toBeInTheDocument();
+  });
+
+  it("pins the answer bar to the bottom of the scrolling pattern panel", async () => {
+    renderScreen();
+    await roundLoaded();
+    const bar = answerBar();
+    expect(bar).toHaveClass("sticky", "bottom-0");
+    const panel = screen.getByTestId("pattern-panel");
+    expect(panel).toHaveClass("overflow-y-auto");
+    expect(panel.lastElementChild).toBe(bar);
+    expect(within(panel).getByRole("region", { name: "Patterns" })).toBeInTheDocument();
+  });
+
+  it("pads the panel's scrolling by the answer bar's height, so a card focused with Tab never hides under it", async () => {
+    const barPx = 180;
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(private readonly onResize: ResizeObserverCallback) {}
+        observe(target: Element): void {
+          if (target.getAttribute("aria-label") === "Answer") {
+            this.onResize(
+              [{ target, borderBoxSize: [{ blockSize: barPx, inlineSize: 300 }] } as unknown as ResizeObserverEntry],
+              this,
+            );
+          }
+        }
+        unobserve(): void {
+          // Nothing is held.
+        }
+        disconnect(): void {
+          // Nothing is held.
+        }
+      },
+    );
+    renderScreen();
+    await roundLoaded();
+    expect(screen.getByTestId("pattern-panel").style.scrollPaddingBottom).toBe("188px");
+  });
+
+  it("skips with the toolbar: nothing stored, counted, and the next sample excludes the shown window", async () => {
     const calls = renderScreen();
     await roundLoaded();
 
-    await userEvent.type(answerBox(), "s{Enter}");
+    await clickTool("Skip");
 
     await roundLoaded("Beta Song");
     expect(submitted(calls)).toEqual([]);
@@ -415,88 +560,282 @@ describe("LabelScreen", () => {
     expect(screen.getByText("Skipped: 1")).toBeInTheDocument();
   });
 
-  it("types keys pressed outside the answer box into it instead of running them as commands", async () => {
-    const calls = renderScreen();
+  it("walks the session history with Previous and Next, sampling only past the newest window", async () => {
+    const calls = renderScreen([WINDOW_A, WINDOW_B, WINDOW_C]);
     await roundLoaded();
+    expect(tool("Previous")).toHaveAttribute("aria-disabled", "true");
+    expect(tool("Previous")).toHaveAccessibleDescription("This is the first window of the session.");
 
-    answerBox().blur();
-    await userEvent.keyboard("st");
-    expect(answerBox()).toHaveValue("st");
-    expect(answerBox()).toHaveFocus();
-    answerBox().blur();
-    await userEvent.keyboard(" bu");
-    expect(answerBox()).toHaveValue("st bu");
-    expect(screen.getByText("Skipped: 0")).toBeInTheDocument();
-    expect(argsOf(calls, "label_undo")).toEqual([]);
-
-    answerBox().blur();
-    await userEvent.keyboard("{Enter}");
+    await clickTool("Next");
     await roundLoaded("Beta Song");
-    expect(argsOf(calls, "label_resolve_patterns")).toEqual([{ keymode: 7, tokens: ["st", "bu"] }]);
+    expect(sampleRequests(calls)).toHaveLength(2);
+    await clickTool("Previous");
+    await roundLoaded("Alpha Song");
+    await clickTool("Next");
+    await roundLoaded("Beta Song");
+    expect(sampleRequests(calls)).toHaveLength(2);
+    expect(screen.getByText("Skipped: 0")).toBeInTheDocument();
+
+    await clickTool("Next");
+    await roundLoaded("Gamma Song");
+    expect(sampleRequests(calls)[2]).toMatchObject({ round: 2, exclude: [ANCHOR_A, ANCHOR_B] });
   });
 
-  it("toggles play with Space outside the answer box only while it is empty", async () => {
+  it("does nothing on a disabled Previous", async () => {
     renderScreen();
     await roundLoaded();
-    answerBox().blur();
+    await clickTool("Previous");
+    expect(screen.getByRole("heading", { name: "Alpha Song" })).toBeInTheDocument();
+  });
+
+  it("shows a saved window read-only when revisited and undoes it, letting it be labelled again", async () => {
+    const calls = renderScreen();
+    await roundLoaded();
+    await userEvent.click(screen.getByRole("button", { name: "lj longjack" }));
+    await userEvent.click(inBar("Right thumb"));
+    await userEvent.click(inBar("Save"));
+    await roundLoaded("Beta Song");
+
+    await clickTool("Previous");
+    await roundLoaded("Alpha Song");
+    expect(within(answerBar()).getByText("Saved")).toBeInTheDocument();
+    expect(chips()).toEqual(["regular.jack.longjack"]);
+    expect(within(answerBar()).queryByRole("button", { name: "Remove longjack" })).toBeNull();
+    expect(pressed("Right thumb")).toBe("true");
+    expect(inBar("Right thumb")).toBeDisabled();
+    expect(within(answerBar()).queryByRole("button", { name: "Save" })).toBeNull();
+    expect(tool("Skip")).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(screen.getByRole("button", { name: "js jumpstream" }));
+    expect(chips()).toEqual(["regular.jack.longjack"]);
+
+    await userEvent.click(inBar("Undo"));
+    await waitFor(() => {
+      expect(argsOf(calls, "label_undo")).toEqual([{ eventId: "01EVENT1" }]);
+    });
+    expect(await screen.findByText("Undone: 1")).toBeInTheDocument();
+    expect(screen.getByText("Last label undone.")).toBeInTheDocument();
+    expect(within(answerBar()).queryByText("Saved")).toBeNull();
+    expect(chips()).toEqual([]);
+
+    await saveNoPattern();
+    await roundLoaded("Beta Song");
+    expect(submitted(calls)).toHaveLength(2);
+    expect(sampleRequests(calls)).toHaveLength(2);
+  });
+
+  it("only offers Undo on the newest saved window", async () => {
+    const calls = renderScreen([WINDOW_A, WINDOW_B, WINDOW_C]);
+    await roundLoaded();
+    await saveNoPattern();
+    await roundLoaded("Beta Song");
+    await saveNoPattern();
+    await roundLoaded("Gamma Song");
+
+    await clickTool("Previous");
+    await roundLoaded("Beta Song");
+    expect(inBar("Undo")).toHaveAttribute("aria-disabled", "false");
+    await clickTool("Previous");
+    await roundLoaded("Alpha Song");
+    expect(inBar("Undo")).toHaveAttribute("aria-disabled", "true");
+    expect(inBar("Undo")).toHaveAccessibleDescription("Only the newest saved label can be undone.");
+    await userEvent.click(inBar("Undo"));
+    expect(argsOf(calls, "label_undo")).toEqual([]);
+  });
+
+  it("keeps the undo stack when an undo fails, so it can be retried", async () => {
+    let undoCalls = 0;
+    const calls = renderScreen(undefined, {
+      labelUndo: () => {
+        undoCalls++;
+        return undoCalls === 1 ? mockIpcError("INTERNAL") : null;
+      },
+    });
+    await roundLoaded();
+    await saveNoPattern();
+    await roundLoaded("Beta Song");
+    await clickTool("Previous");
+    await roundLoaded("Alpha Song");
+
+    await userEvent.click(inBar("Undo"));
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.getByText("Undone: 0")).toBeInTheDocument();
+
+    await userEvent.click(inBar("Undo"));
+    expect(await screen.findByText("Undone: 1")).toBeInTheDocument();
+    expect(argsOf(calls, "label_undo")).toEqual([{ eventId: "01EVENT1" }, { eventId: "01EVENT1" }]);
+  });
+
+  it("lets a skipped window be labelled when revisited, without counting it twice", async () => {
+    const calls = renderScreen();
+    await roundLoaded();
+    await clickTool("Skip");
+    await roundLoaded("Beta Song");
+    await clickTool("Previous");
+    await roundLoaded("Alpha Song");
+    expect(within(answerBar()).getByText("Skipped")).toBeInTheDocument();
+    await clickTool("Skip");
+    await roundLoaded("Beta Song");
+    expect(screen.getByText("Skipped: 1")).toBeInTheDocument();
+
+    await clickTool("Previous");
+    await roundLoaded("Alpha Song");
+    await saveNoPattern();
+    await roundLoaded("Beta Song");
+    expect(submitted(calls)).toMatchObject([{ anchor: ANCHOR_A, noPattern: true }]);
+  });
+
+  it("picks a random window outside the stratified plan and says when none is left", async () => {
+    let randomCalls = 0;
+    const calls = renderScreen(undefined, {
+      labelRandom: () => {
+        randomCalls++;
+        return randomCalls === 1 ? WINDOW_C : null;
+      },
+    });
+    await roundLoaded();
+
+    await clickTool("Random");
+    await roundLoaded("Gamma Song");
+    expect(screen.getByText("Random pick")).toBeInTheDocument();
+    expect(argsOf(calls, "label_random")).toEqual([
+      { req: { keymode: 7, seed: "42", round: 0, windowMs: null, exclude: [ANCHOR_A] } },
+    ]);
+    expect(sampleRequests(calls)).toHaveLength(1);
+
+    await clickTool("Random");
+    expect(await screen.findByText("No chart has a free window left for a random pick.")).toBeInTheDocument();
+    expect(argsOf(calls, "label_random")[1]).toEqual({
+      req: { keymode: 7, seed: "42", round: 1, windowMs: null, exclude: [ANCHOR_A, ANCHOR_C] },
+    });
+    expect(screen.getByRole("heading", { name: "Gamma Song" })).toBeInTheDocument();
+
+    await clickTool("Next");
+    await roundLoaded("Beta Song");
+    expect(sampleRequests(calls)[1]).toMatchObject({ round: 1, exclude: [ANCHOR_A, ANCHOR_C] });
+  });
+
+  it("words a failed random pick", async () => {
+    renderScreen(undefined, { labelRandom: () => mockIpcError("INTERNAL") });
+    await roundLoaded();
+    await clickTool("Random");
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Alpha Song" })).toBeInTheDocument();
+  });
+
+  it("opens the chart osu! is playing and names where it came from", async () => {
+    const calls = renderScreen(undefined, {
+      labelNowPlaying: () => ({ window: WINDOW_C, source: "osuWindow" }),
+    });
+    await roundLoaded();
+
+    await clickTool("Now playing");
+    await roundLoaded("Gamma Song");
+    expect(screen.getByText("From osu!")).toBeInTheDocument();
+    expect(argsOf(calls, "label_now_playing")).toEqual([{ req: { keymode: 7, exclude: [ANCHOR_A] } }]);
+
+    await clickTool("Now playing");
+    await settle();
+    await clickTool("Previous");
+    await roundLoaded("Alpha Song");
+    await clickTool("Next");
+    await roundLoaded("Gamma Song");
+    await clickTool("Next");
+    await roundLoaded("Beta Song");
+    expect(sampleRequests(calls)[1]).toMatchObject({ round: 1, exclude: [ANCHOR_A, ANCHOR_C] });
+  });
+
+  it("sends the shown windows with Now playing, so a skipped one is not offered again", async () => {
+    let nowPlayingCalls = 0;
+    const calls = renderScreen(undefined, {
+      labelNowPlaying: () => {
+        nowPlayingCalls++;
+        return nowPlayingCalls === 1 ? { window: WINDOW_C, source: "osuWindow" } : null;
+      },
+    });
+    await roundLoaded();
+
+    await clickTool("Now playing");
+    await roundLoaded("Gamma Song");
+    await clickTool("Skip");
+    await roundLoaded("Beta Song");
+    await clickTool("Now playing");
+
+    expect(
+      await screen.findByText("osu! is not playing a chart and none of your replays was found."),
+    ).toBeInTheDocument();
+    expect(argsOf(calls, "label_now_playing")).toEqual([
+      { req: { keymode: 7, exclude: [ANCHOR_A] } },
+      { req: { keymode: 7, exclude: [ANCHOR_A, ANCHOR_C, ANCHOR_B] } },
+    ]);
+  });
+
+  it("falls back to the last replay, and says so when nothing is playing or was played", async () => {
+    let nowPlayingCalls = 0;
+    renderScreen(undefined, {
+      labelNowPlaying: () => {
+        nowPlayingCalls++;
+        return nowPlayingCalls === 1 ? null : { window: WINDOW_C, source: "lastReplay" };
+      },
+    });
+    await roundLoaded();
+
+    await clickTool("Now playing");
+    expect(
+      await screen.findByText("osu! is not playing a chart and none of your replays was found."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Alpha Song" })).toBeInTheDocument();
+
+    await clickTool("Now playing");
+    await roundLoaded("Gamma Song");
+    expect(screen.getByText("Last played")).toBeInTheDocument();
+  });
+
+  it("toggles play with Space outside a text field or button", async () => {
+    renderScreen();
+    await roundLoaded();
+    await screen.findByRole("button", { name: "Play" });
     await userEvent.keyboard(" ");
     expect(await screen.findByRole("button", { name: "Pause" })).toBeInTheDocument();
   });
 
-  it("keeps focus in the answer box when Play or the playfield is clicked", async () => {
+  it("toggles play once while Space is held", async () => {
     renderScreen();
     await roundLoaded();
-    await userEvent.type(answerBox(), "js");
-
-    await userEvent.click(await screen.findByRole("button", { name: "Play" }));
-    expect(answerBox()).toHaveFocus();
-    await userEvent.click(screen.getByTestId("playfield"));
-    expect(answerBox()).toHaveFocus();
-    await userEvent.keyboard(" mj");
-    expect(answerBox()).toHaveValue("js mj");
+    await screen.findByRole("button", { name: "Play" });
+    await userEvent.keyboard("[Space>2]");
+    expect(await screen.findByRole("button", { name: "Pause" })).toBeInTheDocument();
   });
 
-  it("sends keys typed on a slider or the fit checkbox to the answer box, and takes focus back after using them", async () => {
+  it("keeps focus off clicked buttons and the playfield, so Enter still saves", async () => {
+    const calls = renderScreen();
+    await roundLoaded();
+    await userEvent.click(screen.getByRole("button", { name: "js jumpstream" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Play" }));
+    await userEvent.click(screen.getByTestId("playfield"));
+    expect(document.body).toHaveFocus();
+
+    await userEvent.keyboard("{Enter}");
+    await roundLoaded("Beta Song");
+    expect(submitted(calls)).toMatchObject([{ patterns: ["regular.stream.jumpstream"] }]);
+  });
+
+  it("takes focus back after a slider or the fit checkbox is used", async () => {
     renderScreen();
     await roundLoaded();
     const offset = await screen.findByRole("slider", { name: "Audio offset" });
-
-    offset.focus();
-    await userEvent.keyboard("js");
-    expect(answerBox()).toHaveValue("js");
-    expect(answerBox()).toHaveFocus();
-
     await userEvent.pointer([
       { keys: "[MouseLeft>]", target: offset },
       { keys: "[/MouseLeft]", target: offset },
     ]);
-    expect(answerBox()).toHaveFocus();
+    expect(document.body).toHaveFocus();
     await userEvent.click(screen.getByRole("checkbox", { name: "Fit window" }));
-    expect(answerBox()).toHaveFocus();
-  });
-
-  it("toggles play once while Space is held in the empty answer box", async () => {
-    renderScreen();
-    await roundLoaded();
-    await screen.findByRole("button", { name: "Play" });
-    answerBox().focus();
-    await userEvent.keyboard("[Space>2]");
-    expect(await screen.findByRole("button", { name: "Pause" })).toBeInTheDocument();
-    expect(answerBox()).toHaveValue("");
-  });
-
-  it("does not toggle play on a Space typed between pattern keys", async () => {
-    renderScreen();
-    await roundLoaded();
-    await userEvent.type(answerBox(), "js mj");
-    expect(answerBox()).toHaveValue("js mj");
-    expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
+    expect(document.body).toHaveFocus();
   });
 
   it("stores one label while Enter is held across the round change", async () => {
     const calls = renderScreen();
     await roundLoaded();
-    await userEvent.type(answerBox(), "x");
+    await userEvent.click(inBar("No pattern"));
     await userEvent.keyboard("{Enter>20}");
     await roundLoaded("Beta Song");
     expect(submitted(calls)).toHaveLength(1);
@@ -504,7 +843,6 @@ describe("LabelScreen", () => {
   });
 
   it("ignores a second Enter that lands before the next round renders", async () => {
-    let form: HTMLFormElement | null = null;
     const calls = renderScreen(undefined, {
       labelSubmit: () => {
         // Many microtask hops let the first submit settle, while React's render waits for a macrotask.
@@ -512,59 +850,62 @@ describe("LabelScreen", () => {
           for (let i = 0; i < 1000; i++) {
             await Promise.resolve();
           }
-          if (form !== null) {
-            fireEvent.submit(form);
-          }
+          fireEvent.keyDown(document.body, { key: "Enter" });
         })();
         return { id: "01EVENT1" };
       },
     });
     await roundLoaded();
-    await userEvent.type(answerBox(), "x");
-    form = answerBox().closest("form");
-    fireEvent.submit(answerBox());
+    await userEvent.click(inBar("No pattern"));
+    fireEvent.keyDown(document.body, { key: "Enter" });
 
     await roundLoaded("Beta Song");
+    await settle();
     expect(submitted(calls)).toHaveLength(1);
     expect(screen.getByText("Labelled: 1")).toBeInTheDocument();
   });
 
-  it("clears the draft with Escape or the Clear button", async () => {
+  it("clears the answer with Escape or the Clear button", async () => {
     renderScreen();
     await roundLoaded();
-    await userEvent.type(answerBox(), "js mj");
-    await userEvent.keyboard("{Escape}");
-    expect(answerBox()).toHaveValue("");
-    expect(pressed("js jumpstream")).toBe("false");
-
     await userEvent.click(screen.getByRole("button", { name: "js jumpstream" }));
-    await userEvent.click(screen.getByRole("button", { name: "Clear" }));
-    expect(answerBox()).toHaveValue("");
-    expect(answerBox()).toHaveFocus();
+    await userEvent.click(inBar("Mixed"));
+    await userEvent.keyboard("{Escape}");
+    expect(chips()).toEqual([]);
+    expect(pressed("js jumpstream")).toBe("false");
+    expect(pressed("Mixed")).toBe("false");
+
+    await userEvent.click(inBar("No pattern"));
+    await userEvent.click(inBar("Clear"));
+    expect(pressed("No pattern")).toBe("false");
   });
 
-  it("keeps the chip selection when reshape, help or undo come from a button", async () => {
-    renderScreen();
+  it("keeps the answer and flags across a reshape and resets them on the next window", async () => {
+    const calls = renderScreen();
     await roundLoaded();
-    await userEvent.click(await screen.findByRole("button", { name: "js jumpstream" }));
+    await userEvent.click(screen.getByRole("button", { name: "js jumpstream" }));
+    await userEvent.click(inBar("Mixed"));
 
-    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    await userEvent.click(screen.getByRole("button", { name: "Shift window later" }));
     expect(await screen.findByText("00:03.000–00:07.000")).toBeInTheDocument();
-    expect(answerBox()).toHaveValue("js");
-    await userEvent.click(screen.getByRole("button", { name: "Help" }));
-    expect(answerBox()).toHaveValue("js");
-    await userEvent.click(screen.getByRole("button", { name: "Undo" }));
-    expect(await screen.findByText("Nothing to undo in this session.")).toBeInTheDocument();
-    expect(answerBox()).toHaveValue("js");
-    expect(pressed("js jumpstream")).toBe("true");
+    expect(chips()).toEqual(["regular.stream.jumpstream"]);
+    expect(pressed("Mixed")).toBe("true");
+
+    await userEvent.click(inBar("Save"));
+    await roundLoaded("Beta Song");
+    expect(submitted(calls)).toMatchObject([{ anchor: { ...ANCHOR_A, t0Ms: 3000, t1Ms: 7000 }, mixed: true }]);
+    expect(pressed("Mixed")).toBe("false");
   });
 
   it("stores the flags set with the buttons", async () => {
     const calls = renderScreen();
     await roundLoaded();
-    await userEvent.click(screen.getByRole("button", { name: "Unsure" }));
-    await userEvent.click(screen.getByRole("button", { name: "Right thumb" }));
-    await userEvent.type(answerBox(), "lj{Enter}");
+    await userEvent.click(inBar("Unsure"));
+    await userEvent.click(inBar("Left thumb"));
+    await userEvent.click(inBar("Right thumb"));
+    expect(pressed("Left thumb")).toBe("false");
+    await userEvent.click(screen.getByRole("button", { name: "lj longjack" }));
+    await userEvent.keyboard("{Enter}");
 
     await roundLoaded("Beta Song");
     expect(submitted(calls)).toEqual([
@@ -579,95 +920,86 @@ describe("LabelScreen", () => {
     ]);
   });
 
-  it("keeps the window's flags across a reshape and resets them on the next window", async () => {
+  it("reshapes with the window buttons and refetches the window", async () => {
     const calls = renderScreen();
     await roundLoaded();
-    await userEvent.click(screen.getByRole("button", { name: "Mixed" }));
-    await userEvent.type(answerBox(), "n{Enter}");
+    const window = await screen.findByRole("group", { name: "Window" });
+    expect(within(window).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Widen window",
+      "Narrow window",
+      "Shift window earlier",
+      "Shift window later",
+    ]);
+
+    await userEvent.click(within(window).getByRole("button", { name: "Shift window later" }));
+
     expect(await screen.findByText("00:03.000–00:07.000")).toBeInTheDocument();
-    expect(pressed("Mixed")).toBe("true");
-
-    await userEvent.type(answerBox(), "x{Enter}");
-    await roundLoaded("Beta Song");
-    expect(submitted(calls)).toMatchObject([{ mixed: true }]);
-    expect(pressed("Mixed")).toBe("false");
-  });
-
-  it("drops an inline thumb side when a thumb button is clicked, so the buttons show what is saved", async () => {
-    const calls = renderScreen();
-    await roundLoaded();
-    await userEvent.type(answerBox(), "js tl");
-    expect(pressed("Left thumb")).toBe("true");
-
-    await userEvent.click(screen.getByRole("button", { name: "Left thumb" }));
-    expect(answerBox()).toHaveValue("js");
-    expect(pressed("Left thumb")).toBe("false");
-
-    await userEvent.type(answerBox(), " tl");
-    await userEvent.click(screen.getByRole("button", { name: "Right thumb" }));
-    expect(answerBox()).toHaveValue("js");
-    expect(pressed("Left thumb")).toBe("false");
-    expect(pressed("Right thumb")).toBe("true");
-
-    await userEvent.type(answerBox(), "{Enter}");
-    await roundLoaded("Beta Song");
-    expect(submitted(calls)).toMatchObject([{ thumbPref: "right" }]);
-  });
-
-  it("undoes the last saved label with u", async () => {
-    const calls = renderScreen();
-    await roundLoaded();
-    await userEvent.type(answerBox(), "x{Enter}");
-    await roundLoaded("Beta Song");
-
-    await userEvent.type(answerBox(), "u{Enter}");
-
+    expect(argsOf(calls, "label_reshape")).toEqual([{ anchor: ANCHOR_A, op: "next" }]);
     await waitFor(() => {
-      expect(argsOf(calls, "label_undo")).toEqual([{ eventId: "01EVENT1" }]);
+      expect(argsOf(calls, "chart_window").at(-1)).toEqual({ md5: ANCHOR_A.md5, fromMs: 3000, toMs: 7000, layoutId: null });
     });
-    expect(await screen.findByText("Undone: 1")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Beta Song" })).toBeInTheDocument();
+    expect(sampleRequests(calls)).toHaveLength(1);
+    expect(argsOf(calls, "chart_audio")).toHaveLength(1);
   });
 
-  it("says there is nothing to undo before any label is saved", async () => {
-    const calls = renderScreen();
-    await roundLoaded();
-    await userEvent.type(answerBox(), "u{Enter}");
-    expect(await screen.findByText("Nothing to undo in this session.")).toBeInTheDocument();
-    expect(argsOf(calls, "label_undo")).toEqual([]);
-  });
-
-  it("keeps the undo stack when an undo fails, so it can be retried", async () => {
-    let undoCalls = 0;
-    const calls = renderScreen(undefined, {
-      labelUndo: () => {
-        undoCalls++;
-        return undoCalls === 1 ? mockIpcError("INTERNAL") : null;
-      },
+  it("words a failed save and keeps the window", async () => {
+    renderScreen([WINDOW_A], {
+      labelSubmit: () => mockIpcError("INVALID_INPUT", { pattern: "zz" }, { messageKey: "label.error.unknown_pattern" }),
     });
     await roundLoaded();
-    await userEvent.type(answerBox(), "x{Enter}");
-    await roundLoaded("Beta Song");
-
-    await userEvent.type(answerBox(), "u{Enter}");
-    expect(await screen.findByRole("alert")).toBeInTheDocument();
-    expect(screen.getByText("Undone: 0")).toBeInTheDocument();
-
-    await userEvent.type(answerBox(), "u{Enter}");
-    expect(await screen.findByText("Undone: 1")).toBeInTheDocument();
-    expect(argsOf(calls, "label_undo")).toEqual([{ eventId: "01EVENT1" }, { eventId: "01EVENT1" }]);
+    await saveNoPattern();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Unknown pattern “zz”.");
+    expect(screen.getByRole("heading", { name: "Alpha Song" })).toBeInTheDocument();
+    expect(pressed("No pattern")).toBe("true");
   });
 
-  it("ends the session with q and stops the section audio", async () => {
-    renderScreen();
+  it("shows the done state when no window is left", async () => {
+    renderScreen([null]);
+    expect(await screen.findByText("No window left to label.")).toBeInTheDocument();
+    expect(screen.queryByTestId("playfield")).not.toBeInTheDocument();
+  });
+
+  it("keeps the toolbar, history and undo usable once the plan is finished", async () => {
+    const calls = renderScreen([WINDOW_A], { labelRandom: () => WINDOW_C });
+    await roundLoaded();
+    await saveNoPattern();
+
+    expect(await screen.findByText("No window left to label.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Previous still reaches this session's windows; Random and Now playing can open more."),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("playfield")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New session" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Patterns" })).toBeInTheDocument();
+    for (const name of ["Next", "Skip"]) {
+      expect(tool(name), name).toHaveAccessibleDescription(
+        "The plan has no window left; Random and Now playing still open one.",
+      );
+    }
+    for (const name of ["Previous", "Random", "Now playing"]) {
+      expect(tool(name), name).toHaveAttribute("aria-disabled", "false");
+    }
+
+    await clickTool("Previous");
+    await roundLoaded("Alpha Song");
+    await userEvent.click(inBar("Undo"));
+    expect(await screen.findByText("Last label undone.")).toBeInTheDocument();
+    expect(argsOf(calls, "label_undo")).toEqual([{ eventId: "01EVENT1" }]);
+
+    await clickTool("Random");
+    await roundLoaded("Gamma Song");
+    expect(sampleRequests(calls)).toHaveLength(2);
+  });
+
+  it("stops and releases the section audio when the plan runs out", async () => {
+    renderScreen([WINDOW_A]);
     await roundLoaded();
     const source = await playingSource();
 
-    await userEvent.type(answerBox(), "q{Enter}");
+    await saveNoPattern();
 
-    expect(await screen.findByText("Session ended.")).toBeInTheDocument();
+    expect(await screen.findByText("No window left to label.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New session" })).toBeInTheDocument();
-    expect(FakeAudioContext.sources.map((s) => s.stops)).toEqual([1, 1]);
     expect(source.stops).toBe(1);
     expect(FakeAudioContext.closed).toBe(1);
   });
@@ -679,49 +1011,11 @@ describe("LabelScreen", () => {
     await roundLoaded();
     const source = await playingSource();
 
-    await userEvent.type(answerBox(), "x{Enter}");
+    await saveNoPattern();
 
     expect(await screen.findByText("Picking a window…")).toBeInTheDocument();
     expect(sampleRequests(calls)).toHaveLength(2);
     expect(source.stops).toBe(1);
-  });
-
-  it("reshapes with n and refetches the window", async () => {
-    const calls = renderScreen();
-    await roundLoaded();
-
-    await userEvent.type(answerBox(), "n{Enter}");
-
-    expect(await screen.findByText("00:03.000–00:07.000")).toBeInTheDocument();
-    expect(argsOf(calls, "label_reshape")).toEqual([{ anchor: ANCHOR_A, op: "next" }]);
-    await waitFor(() => {
-      expect(argsOf(calls, "chart_window").at(-1)).toEqual({ md5: ANCHOR_A.md5, fromMs: 3000, toMs: 7000, layoutId: null });
-    });
-    expect(sampleRequests(calls)).toHaveLength(1);
-    expect(argsOf(calls, "chart_audio")).toHaveLength(1);
-  });
-
-  it("words a parser error and keeps the round", async () => {
-    const calls = renderScreen();
-    await roundLoaded();
-    await userEvent.type(answerBox(), "js s{Enter}");
-    expect(await screen.findByRole("alert")).toHaveTextContent("“s” is a command");
-    expect(submitted(calls)).toEqual([]);
-  });
-
-  it("words the service's unknown pattern error", async () => {
-    renderScreen([WINDOW_A], {
-      labelResolvePatterns: () => mockIpcError("INVALID_INPUT", { pattern: "zz" }, { messageKey: "label.error.unknown_pattern" }),
-    });
-    await roundLoaded();
-    await userEvent.type(answerBox(), "zz{Enter}");
-    expect(await screen.findByRole("alert")).toHaveTextContent("Unknown pattern “zz”.");
-  });
-
-  it("shows the done state when no window is left", async () => {
-    renderScreen([null]);
-    expect(await screen.findByText("No window left to label.")).toBeInTheDocument();
-    expect(screen.queryByTestId("playfield")).not.toBeInTheDocument();
   });
 
   it("plays silently with a notice when the chart has no audio", async () => {
@@ -748,6 +1042,52 @@ describe("LabelScreen", () => {
   });
 });
 
+describe("LabelScreen pattern panel", () => {
+  function separator(): HTMLElement {
+    return screen.getByRole("separator", { name: "Resize the pattern panel" });
+  }
+
+  it("resizes from the keyboard within its bounds and remembers the width", async () => {
+    renderScreen();
+    await roundLoaded();
+    const handle = separator();
+    expect(handle).toHaveAttribute("aria-orientation", "vertical");
+    expect(handle).toHaveAttribute("aria-valuenow", "416");
+    expect(handle).toHaveAttribute("aria-valuemin", "320");
+    expect(handle).toHaveAttribute("aria-valuemax", String(Math.floor(window.innerWidth * 0.7)));
+
+    handle.focus();
+    await userEvent.keyboard("{ArrowLeft}{ArrowLeft}{ArrowRight}");
+    expect(handle).toHaveAttribute("aria-valuenow", "432");
+    expect(localStorage.getItem(LABEL_PREFS.panelWidthKey)).toBe("432");
+    await userEvent.keyboard("{Home}");
+    expect(handle).toHaveAttribute("aria-valuenow", "320");
+    await userEvent.keyboard("{End}");
+    expect(handle).toHaveAttribute("aria-valuenow", String(Math.floor(window.innerWidth * 0.7)));
+    expect(screen.getByTestId("pattern-panel").style.width).toBe(`${Math.floor(window.innerWidth * 0.7)}px`);
+  });
+
+  it("resizes by dragging the separator", async () => {
+    renderScreen();
+    await roundLoaded();
+    const handle = separator();
+    fireEvent.pointerDown(handle, { clientX: 600, pointerId: 1 });
+    fireEvent.pointerMove(window, { clientX: 500, pointerId: 1 });
+    fireEvent.pointerUp(window, { clientX: 500, pointerId: 1 });
+    expect(handle).toHaveAttribute("aria-valuenow", "516");
+    expect(localStorage.getItem(LABEL_PREFS.panelWidthKey)).toBe("516");
+    fireEvent.pointerMove(window, { clientX: 100, pointerId: 1 });
+    expect(handle).toHaveAttribute("aria-valuenow", "516");
+  });
+
+  it("restores a stored width, clamped to the screen", async () => {
+    localStorage.setItem(LABEL_PREFS.panelWidthKey, "5000");
+    renderScreen();
+    await roundLoaded();
+    expect(separator()).toHaveAttribute("aria-valuenow", String(Math.floor(window.innerWidth * 0.7)));
+  });
+});
+
 describe("LabelScreen scroll and zoom controls", () => {
   function osuSpeed(): HTMLElement {
     return screen.getByRole("spinbutton", { name: "osu! speed" });
@@ -767,18 +1107,19 @@ describe("LabelScreen scroll and zoom controls", () => {
     expect(await screen.findByRole("spinbutton", { name: "osu! speed" })).toHaveValue(20);
   });
 
-  it("changes the osu! speed with F3 and F4 while typing in the answer box, and keeps it", async () => {
+  it("changes the osu! speed with F3 and F4 even while typing in the pattern search, and keeps it", async () => {
     renderScreen();
     await roundLoaded();
     await screen.findByRole("spinbutton", { name: "osu! speed" });
-    await userEvent.type(answerBox(), "js");
+    const search = screen.getByRole("searchbox", { name: "Search patterns" });
+    await userEvent.type(search, "js");
     await userEvent.keyboard("{F4}{F4}{F3}{F4}");
     expect(osuSpeed()).toHaveValue(22);
-    expect(answerBox()).toHaveValue("js");
-    expect(answerBox()).toHaveFocus();
+    expect(search).toHaveValue("js");
+    expect(search).toHaveFocus();
     expect(localStorage.getItem(LABEL_PREFS.osuSpeedKey)).toBe("22");
 
-    answerBox().blur();
+    search.blur();
     await userEvent.keyboard("{F3}");
     expect(osuSpeed()).toHaveValue(21);
   });
@@ -799,7 +1140,7 @@ describe("LabelScreen scroll and zoom controls", () => {
     expect(screen.getByRole("slider", { name: "Scroll speed" })).toHaveValue("1.25");
     expect(screen.queryByRole("spinbutton", { name: "osu! speed" })).not.toBeInTheDocument();
     expect(localStorage.getItem(LABEL_PREFS.scrollKindKey)).toBe("pxPerMs");
-    expect(answerBox()).toHaveFocus();
+    expect(document.body).toHaveFocus();
   });
 
   it("keeps the zoom and draws the playfield without a fixed maximum width", async () => {
@@ -992,7 +1333,7 @@ describe("LabelScreen skins", () => {
     await waitFor(() => {
       expect(argsOf(calls, "skin_get")).toHaveLength(1);
     });
-    await userEvent.type(answerBox(), "s{Enter}");
+    await userEvent.click(within(screen.getByRole("toolbar", { name: "Windows" })).getByRole("button", { name: "Skip" }));
     await roundLoaded("Beta Song");
     expect(argsOf(calls, "skin_get")).toHaveLength(1);
 

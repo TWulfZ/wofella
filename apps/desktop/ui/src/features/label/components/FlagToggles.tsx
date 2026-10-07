@@ -1,18 +1,20 @@
 import { useTranslation } from "react-i18next";
+import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import type { FlagToggle } from "../session";
 import type { ThumbSide } from "../types";
 
 interface FlagTogglesProps {
-  flags: { mixed: boolean; unsure: boolean; thumbPref: ThumbSide | null };
+  flags: { mixed: boolean; unsure: boolean; thumb: ThumbSide | null };
+  disabled: boolean;
   onToggle: (toggle: FlagToggle) => void;
 }
 
-const TOGGLES: readonly { toggle: FlagToggle; labelKey: string; shortcut: string }[] = [
-  { toggle: "mixed", labelKey: "label.flags.mixed", shortcut: "m" },
-  { toggle: "unsure", labelKey: "label.flags.unsure", shortcut: "?" },
-  { toggle: "thumbLeft", labelKey: "label.flags.thumbLeft", shortcut: "tl" },
-  { toggle: "thumbRight", labelKey: "label.flags.thumbRight", shortcut: "tr" },
+const TOGGLES: readonly { toggle: FlagToggle; labelKey: string }[] = [
+  { toggle: "mixed", labelKey: "label.flags.mixed" },
+  { toggle: "unsure", labelKey: "label.flags.unsure" },
+  { toggle: "thumbLeft", labelKey: "label.flags.thumbLeft" },
+  { toggle: "thumbRight", labelKey: "label.flags.thumbRight" },
 ];
 
 function pressed(flags: FlagTogglesProps["flags"], toggle: FlagToggle): boolean {
@@ -22,33 +24,35 @@ function pressed(flags: FlagTogglesProps["flags"], toggle: FlagToggle): boolean 
     case "unsure":
       return flags.unsure;
     case "thumbLeft":
-      return flags.thumbPref === "left";
+      return flags.thumb === "left";
     case "thumbRight":
-      return flags.thumbPref === "right";
+      return flags.thumb === "right";
   }
 }
 
-export function FlagToggles({ flags, onToggle }: FlagTogglesProps) {
+export function FlagToggles({ flags, disabled, onToggle }: FlagTogglesProps) {
   const { t } = useTranslation();
   return (
-    <div role="group" aria-label={t("label.flags.title")} className="grid grid-cols-2 gap-1.5">
-      {TOGGLES.map(({ toggle, labelKey, shortcut }) => {
+    <div role="group" aria-label={t("label.flags.title")} className="flex flex-wrap gap-1">
+      {TOGGLES.map(({ toggle, labelKey }) => {
         const on = pressed(flags, toggle);
         return (
           <Button
             key={toggle}
+            type="button"
             size="sm"
-            variant={on ? "default" : "outline"}
+            variant="outline"
             aria-pressed={on}
+            disabled={disabled}
             onClick={() => {
               onToggle(toggle);
             }}
-            className="justify-between"
+            className={cn(
+              "rounded-full",
+              on && "border-osu-blue/70 bg-osu-blue/15 text-osu-blue hover:bg-osu-blue/20 hover:text-osu-blue",
+            )}
           >
             {t(labelKey)}
-            <kbd aria-hidden="true" className="font-mono text-[0.7rem] opacity-70">
-              {shortcut}
-            </kbd>
           </Button>
         );
       })}

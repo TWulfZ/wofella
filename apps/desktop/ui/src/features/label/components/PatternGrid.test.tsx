@@ -69,7 +69,7 @@ afterEach(() => {
 
 function renderGrid(props: Partial<Parameters<typeof PatternGrid>[0]> = {}) {
   const onToggle = vi.fn<(p: PatternDefDto) => void>();
-  render(
+  const view = render(
     <PatternGrid
       taxonomy={TAXONOMY}
       examples={EXAMPLES}
@@ -78,7 +78,7 @@ function renderGrid(props: Partial<Parameters<typeof PatternGrid>[0]> = {}) {
       {...props}
     />,
   );
-  return { onToggle, user: userEvent.setup() };
+  return { onToggle, user: userEvent.setup(), unmount: view.unmount, container: view.container };
 }
 
 function cardNames(): string[] {
@@ -86,6 +86,17 @@ function cardNames(): string[] {
     .queryAllByRole("button")
     .filter((b) => b.hasAttribute("aria-pressed"))
     .map((b) => b.getAttribute("aria-label") ?? "");
+}
+
+// Compact pills carry no thumbnail, so a drawn canvas inside a card is the expanded density.
+function thumbnailCount(): number {
+  return screen
+    .queryAllByRole("button")
+    .filter((b) => b.hasAttribute("aria-pressed") && b.querySelector("canvas") !== null).length;
+}
+
+function alwaysCollapsed(): HTMLElement {
+  return screen.getByRole("checkbox", { name: "Always collapsed" });
 }
 
 describe("PatternGrid", () => {
@@ -169,6 +180,7 @@ describe("PatternGrid", () => {
 
     await user.tab();
     await user.tab();
+    await user.tab();
     expect(screen.getByRole("button", { name: "mj minijack" })).toHaveFocus();
 
     const preview = await screen.findByRole("img", { name: "Example of minijack" });
@@ -189,6 +201,7 @@ describe("PatternGrid", () => {
     const { user } = renderGrid();
     await user.tab();
     await user.tab();
+    await user.tab();
     await screen.findByRole("img", { name: "Example of minijack" });
 
     await user.tab();
@@ -196,5 +209,84 @@ describe("PatternGrid", () => {
     await waitFor(() => {
       expect(screen.queryByRole("img", { name: "Example of minijack" })).toBeNull();
     });
+  });
+
+  it("forwards its className to the root so the panel can size it", () => {
+    const { container } = renderGrid({ className: "panel-fill" });
+
+    expect(container.firstElementChild).toHaveClass("panel-fill");
+  });
+});
+
+describe("PatternGrid density", () => {
+  it("starts expanded, with thumbnails, and the collapse box unticked", () => {
+    renderGrid();
+
+    expect(thumbnailCount()).toBe(2);
+    expect(alwaysCollapsed()).not.toBeChecked();
+  });
+
+  it("collapses to compact pills while the search has text and expands when it is cleared", async () => {
+    const { user } = renderGrid();
+    const search = screen.getByRole("searchbox", { name: "Search patterns" });
+
+    await user.type(search, "j");
+
+    expect(cardNames()).toEqual(["mj minijack", "lj longjack", "js jumpstream"]);
+    expect(thumbnailCount()).toBe(0);
+    expect(screen.getByRole("button", { name: "mj minijack" })).toHaveAttribute("aria-pressed", "true");
+
+    await user.clear(search);
+
+    expect(thumbnailCount()).toBe(2);
+  });
+
+  it("stays compact with an empty search while Always collapsed is ticked, across remounts", async () => {
+    const { user, unmount } = renderGrid();
+
+    await user.click(alwaysCollapsed());
+
+    expect(alwaysCollapsed()).toBeChecked();
+    expect(cardNames()).toHaveLength(3);
+    expect(thumbnailCount()).toBe(0);
+
+    unmount();
+    renderGrid();
+
+    expect(alwaysCollapsed()).toBeChecked();
+    expect(thumbnailCount()).toBe(0);
+  });
+
+  it("expands again when Always collapsed is unticked", async () => {
+    const { user } = renderGrid();
+
+    await user.click(alwaysCollapsed());
+    await user.click(alwaysCollapsed());
+
+    expect(thumbnailCount()).toBe(2);
+  });
+
+  it("still toggles a pattern from a compact pill", async () => {
+    const { onToggle, user } = renderGrid();
+    await user.click(alwaysCollapsed());
+
+    await user.click(screen.getByRole("button", { name: "js jumpstream" }));
+
+    expect(onToggle).toHaveBeenCalledExactlyOnceWith(JUMPSTREAM);
+  });
+
+  it("still opens the enlarged preview when a compact pill takes keyboard focus", async () => {
+    const { user } = renderGrid();
+    await user.click(alwaysCollapsed());
+
+    await user.tab();
+    expect(screen.getByRole("button", { name: "mj minijack" })).toHaveFocus();
+
+    const preview = await screen.findByRole("img", { name: "Example of minijack" });
+    const card = preview.closest<HTMLElement>("[data-slot=hover-card-content]");
+    expect(within(card ?? document.body).getByText("exactly two notes in one column")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "lj longjack" })).toHaveAccessibleDescription(
+      "three or more notes in one column",
+    );
   });
 });

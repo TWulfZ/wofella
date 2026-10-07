@@ -58,7 +58,6 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::chart::chart_window,
             commands::label::label_taxonomy,
             commands::label::label_sample,
-            commands::label::label_resolve_patterns,
             commands::label::label_reshape,
             commands::label::label_submit,
             commands::label::label_undo,
@@ -67,6 +66,9 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::skin::skin_list,
             commands::skin::skin_get,
             commands::label::label_pattern_examples,
+            commands::label::label_window_at,
+            commands::label::label_random,
+            commands::label::label_now_playing,
         ])
 }
 

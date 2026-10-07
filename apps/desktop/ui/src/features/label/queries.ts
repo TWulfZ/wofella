@@ -4,6 +4,8 @@ import {
   commands,
   type AnchorDto,
   type LabelSubmitDto,
+  type NowPlayingRequestDto,
+  type RandomRequestDto,
   type SampleRequestDto,
   type SkinDto,
   type SkinListDto,
@@ -147,7 +149,7 @@ export function chartAudioQuery(md5: string | null) {
   });
 }
 
-export function useLabelMutations(keymode: number) {
+export function useLabelMutations() {
   const queryClient = useQueryClient();
   const refreshStats = () => queryClient.invalidateQueries({ queryKey: labelKeys.stats() });
   return {
@@ -157,7 +159,18 @@ export function useLabelMutations(keymode: number) {
         return window === null ? null : toLabelWindow(window);
       },
     }),
-    resolve: useMutation({ mutationFn: (tokens: string[]) => call(commands.labelResolvePatterns(keymode, tokens)) }),
+    random: useMutation({
+      mutationFn: async (req: RandomRequestDto) => {
+        const window = await call(commands.labelRandom(req));
+        return window === null ? null : toLabelWindow(window);
+      },
+    }),
+    nowPlaying: useMutation({
+      mutationFn: async (req: NowPlayingRequestDto) => {
+        const found = await call(commands.labelNowPlaying(req));
+        return found === null ? null : { window: toLabelWindow(found.window), source: found.source };
+      },
+    }),
     reshape: useMutation({
       mutationFn: ({ anchor, op }: { anchor: AnchorDto; op: WindowOpDto }) => call(commands.labelReshape(anchor, op)),
     }),

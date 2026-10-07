@@ -141,7 +141,7 @@ impl DetectEnv {
     }
 }
 
-fn current_platform() -> Platform {
+pub(crate) fn current_platform() -> Platform {
     if cfg!(windows) {
         Platform::Windows
     } else if Path::new(WSL_INTEROP_MARKER).exists()

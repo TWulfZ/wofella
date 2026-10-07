@@ -52,6 +52,55 @@ pub struct SampleRequestDto {
     pub exclude: Vec<AnchorDto>,
 }
 
+/// A window inside one chart the user picked, start chosen like the sampler's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowAtRequestDto {
+    pub keymode: u8,
+    pub md5: String,
+    /// A `u64` in decimal.
+    pub seed: String,
+    pub window_ms: Option<u32>,
+    pub exclude: Vec<AnchorDto>,
+}
+
+/// Any eligible chart of the keymode, outside the stratified plan: it neither follows nor
+/// consumes the sampler's rounds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RandomRequestDto {
+    pub keymode: u8,
+    /// A `u64` in decimal.
+    pub seed: String,
+    pub round: u32,
+    pub window_ms: Option<u32>,
+    pub exclude: Vec<AnchorDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct NowPlayingRequestDto {
+    pub keymode: u8,
+    /// Windows already shown this session, so a skipped one is not offered again.
+    pub exclude: Vec<AnchorDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct NowPlayingDto {
+    pub window: LabelWindowDto,
+    pub source: NowPlayingSourceDto,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub enum NowPlayingSourceDto {
+    /// osu! stable's window title named the chart.
+    OsuWindow,
+    /// The newest replay in `Data/r` played by the self profile.
+    LastReplay,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct LabelWindowDto {

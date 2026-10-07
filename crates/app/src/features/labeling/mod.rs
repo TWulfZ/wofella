@@ -2,6 +2,7 @@
 //! pattern labels as append-only feedback events (architecture §5.3, §6.1).
 
 pub mod dto;
+pub mod now_playing;
 pub mod sampler;
 mod service;
 pub mod window;

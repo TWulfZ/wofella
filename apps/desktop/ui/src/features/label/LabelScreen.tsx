@@ -1,8 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import {
-  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
-  type SyntheticEvent,
   useEffect,
   useEffectEvent,
   useReducer,
@@ -14,16 +12,16 @@ import { useTranslation } from "react-i18next";
 import { type ChartWindow, clampOsuSpeed, DEFAULT_STAGE_PARAMS, Playfield, useLoadedSkin } from "@/features/playfield";
 import type { PatternDefDto } from "@/ipc/bindings";
 import { useErrorText } from "@/ipc/errorText";
+import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
-import { type AnswerError, parseAnswer } from "./answer";
-import { ActionBar, type Action } from "./components/ActionBar";
+import { AnswerBar, type AnswerFeedback, type AnswerMode } from "./components/AnswerBar";
 import { ChartHeader } from "./components/ChartHeader";
-import { FlagToggles } from "./components/FlagToggles";
+import { PanelResizer, usePanelWidth } from "./components/PanelResizer";
 import { PatternGrid } from "./components/PatternGrid";
 import { SessionFooter } from "./components/SessionFooter";
+import { type ToolbarAction, type ToolbarState, SessionToolbar } from "./components/SessionToolbar";
 import { SkinPicker } from "./components/SkinPicker";
 import { Transport } from "./components/Transport";
-import { isPatternActive, togglePattern, withoutThumb } from "./draft";
 import { formatClock } from "./format";
 import {
   hasStoredOsuSpeed,
@@ -52,9 +50,22 @@ import {
   useSkinFile,
 } from "./queries";
 import { type AudioInput, type ClosableAudioContext, type LoopSpliceParams, SectionPlayer } from "./sectionPlayer";
-import { type FlagToggle, initialSession, sampleExclusion, sessionReducer, submitFlags, undoTarget } from "./session";
+import {
+  canSave,
+  canUndo,
+  currentEntry,
+  type HistoryEntry,
+  initialSession,
+  isSampling,
+  nowPlayingRequest,
+  randomRequest,
+  sampleExclusion,
+  sessionReducer,
+  submitPayload,
+  undoTarget,
+} from "./session";
 import { selectedSkinFolder, skinOptions } from "./skins";
-import type { Anchor, LabelWindow, ThumbSide } from "./types";
+import type { Anchor, WindowOp } from "./types";
 
 export interface LabelScreenParams {
   /** Audio heard before the window, so its first notes land in context. */
@@ -79,25 +90,9 @@ export const LABEL_SCREEN_PARAMS: LabelScreenParams = {
 const OSU_SPEED_KEYS: Readonly<Record<string, number>> = { F3: -1, F4: 1 };
 
 const MS_PER_SECOND = 1000;
-const NO_INLINE = { toggleMixed: false, toggleUnsure: false, thumb: null } as const;
 
-// Not a REPL word: the action bar handles it before the answer grammar sees it.
-const CLEAR_COMMAND = "clear";
-
-const ANSWER_ACTIONS: readonly Action[] = [
-  { labelKey: "label.answer.noPattern", command: "x" },
-  { labelKey: "label.answer.skip", command: "s" },
-  { labelKey: "label.answer.undo", command: "u" },
-  { labelKey: "label.answer.help", command: "h", variant: "ghost" },
-  { labelKey: "label.answer.clear", command: CLEAR_COMMAND, hint: "Esc", variant: "ghost" },
-];
-
-const WINDOW_ACTIONS: readonly Action[] = [
-  { labelKey: "label.reshape.widen", command: "w+" },
-  { labelKey: "label.reshape.narrow", command: "w-" },
-  { labelKey: "label.reshape.prev", command: "p" },
-  { labelKey: "label.reshape.next", command: "n" },
-];
+/** Room kept between a focused card and the answer bar pinned over the panel's bottom edge. */
+const ANSWER_BAR_CLEARANCE_PX = 8;
 
 export interface LabelScreenProps {
   keymode: number;
@@ -141,11 +136,6 @@ interface LabelSessionProps {
   onRestart: () => void;
 }
 
-interface Feedback {
-  tone: "error" | "info";
-  text: string;
-}
-
 function useSectionPlayer(createContext: () => ClosableAudioContext, splice: LoopSpliceParams): SectionPlayer {
   const [player] = useState(() => new SectionPlayer({ createContext, splice }));
   useEffect(
@@ -160,6 +150,8 @@ function useSectionPlayer(createContext: () => ClosableAudioContext, splice: Loo
 // A failed fetch shows the still placeholders of an id with no example, not loading pulses forever.
 const NO_EXAMPLES: ReadonlyMap<string, ChartWindow> = new Map();
 
+const NO_TAXONOMY: readonly PatternDefDto[] = [];
+
 const TEXT_INPUT_TYPES: ReadonlySet<string> = new Set(["text", "search", "number", "email", "url", "tel", "password"]);
 
 function isTextField(target: EventTarget | null): boolean {
@@ -169,37 +161,45 @@ function isTextField(target: EventTarget | null): boolean {
   return target instanceof HTMLTextAreaElement || (target instanceof HTMLElement && target.isContentEditable);
 }
 
-function thumbSide(toggle: FlagToggle): ThumbSide | null {
-  return toggle === "thumbLeft" ? "left" : toggle === "thumbRight" ? "right" : null;
+/** Keys these handle themselves (Enter presses a button, Space opens a select). */
+const OWN_KEY_CONTROLS = "button, select, a[href], [role='separator'], [role='option'], [role='checkbox']";
+
+/** Hands focus back to the page, where Enter saves and Space plays. */
+function releaseFocus(): void {
+  const active = document.activeElement;
+  if (active instanceof HTMLElement && active !== document.body) {
+    active.blur();
+  }
 }
 
 function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpeed, onRestart }: LabelSessionProps) {
   const { t } = useTranslation();
   const errorText = useErrorText();
   const [state, dispatch] = useReducer(sessionReducer, seed, initialSession);
-  const [draft, setDraft] = useState("");
-  const [feedback, setFeedback] = useState<Feedback | null>(null);
-  const [showHelp, setShowHelp] = useState(false);
-  const [quit, setQuit] = useState(false);
+  const [feedback, setFeedback] = useState<AnswerFeedback | null>(null);
+  const [notice, setNotice] = useState<AnswerFeedback | null>(null);
   const [sampleAttempt, setSampleAttempt] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
-  // The window an action runs against, kept after the action moves past it: an Enter that lands before the next
-  // render still holds that window in its closure, and isPending only flips on that render.
-  const actedOn = useRef<LabelWindow | null>(null);
+  const panel = usePanelWidth();
+  const [answerBarPx, setAnswerBarPx] = useState<number | null>(null);
+  // The entry a save runs against, kept after the save moves past it: an Enter that lands before the next render
+  // still holds that entry in its closure, and isPending only flips on that render.
+  const actedOn = useRef<HistoryEntry | null>(null);
 
   const taxonomy = useQuery(labelTaxonomyQuery(keymode));
   const examples = useQuery(labelPatternExamplesQuery(keymode));
   const stats = useQuery(labelStatsQuery());
-  const { sample, resolve, reshape, submit, undo } = useLabelMutations(keymode);
-  const labelWindow = state.window;
+  const { sample, random, nowPlaying, reshape, submit, undo } = useLabelMutations();
+  const entry = currentEntry(state);
+  const labelWindow = entry?.window ?? null;
   const anchor: Anchor | null = labelWindow?.anchor ?? null;
   const chart = useQuery(chartWindowQuery(anchor));
   const audio = useQuery(chartAudioQuery(anchor?.md5 ?? null));
+  const sampling = isSampling(state);
 
   const sampledKey = useRef<string | null>(null);
   const sampleWindow = sample.mutate;
   useEffect(() => {
-    if (state.done || state.window !== null) {
+    if (!isSampling(state)) {
       return;
     }
     const key = `${state.round}:${sampleAttempt}`;
@@ -212,7 +212,9 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
       { keymode, seed: s, round, windowMs: null, scale: null, levelMin: null, levelMax: null, exclude },
       {
         onSuccess: (next) => {
-          dispatch(next === null ? { type: "sessionDone" } : { type: "windowLoaded", window: next });
+          dispatch(
+            next === null ? { type: "sessionDone" } : { type: "windowLoaded", window: next, origin: { kind: "plan", round } },
+          );
         },
       },
     );
@@ -226,9 +228,13 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
   const loopStart = anchor === null ? 0 : Math.max(0, anchor.t0Ms - params.prerollMs);
   const loopEnd = anchor === null ? 0 : anchor.t1Ms + params.postrollMs;
   useEffect(() => {
+    if (md5 !== null) {
+      return;
+    }
+    // A finished plan may wait long for Random or Now playing; the audio context is not held meanwhile.
     if (state.done) {
       player.release();
-    } else if (md5 === null) {
+    } else {
       player.pause();
     }
   }, [player, state.done, md5]);
@@ -291,127 +297,114 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
     }
   };
 
-  useEffect(() => {
-    if (md5 !== null) {
-      inputRef.current?.focus();
-    }
-  }, [md5, state.round]);
+  const busy = submit.isPending || reshape.isPending || undo.isPending || random.isPending || nowPlaying.isPending;
 
-  const parsed = parseAnswer(draft);
-  const inline = parsed.ok && parsed.answer.kind === "labels" ? parsed.answer : NO_INLINE;
-  const effectiveFlags = submitFlags(state.flags, inline);
-  const busy = resolve.isPending || submit.isPending || reshape.isPending || undo.isPending;
-
-  const answerErrorText = (error: AnswerError): string =>
-    error.code === "commandInLine"
-      ? t("label.answerError.commandInLine", { word: error.word })
-      : t(`label.answerError.${error.code}`);
-
-  const focusAnswer = (): void => {
-    inputRef.current?.focus();
-  };
-
-  const runLine = async (line: string): Promise<void> => {
-    if (labelWindow === null || actedOn.current === labelWindow) {
+  const save = async (): Promise<void> => {
+    const payload = submitPayload(state);
+    if (entry === null || payload === null || actedOn.current === entry) {
       return;
     }
-    const result = parseAnswer(line);
-    if (!result.ok) {
-      setFeedback({ tone: "error", text: answerErrorText(result.error) });
-      return;
-    }
+    actedOn.current = entry;
     setFeedback(null);
-    const answer = result.answer;
-    // A command from a button must not wipe the chips picked so far.
-    const fromDraft = line === draft;
-    const consumeDraft = (): void => {
-      if (fromDraft) {
-        setDraft("");
-      }
-    };
-    const toggleFlag = (toggle: FlagToggle): void => {
-      dispatch({ type: "flagsToggled", toggle });
-      consumeDraft();
-    };
-    actedOn.current = labelWindow;
-    let movedOn = false;
+    let saved = false;
     try {
-      switch (answer.kind) {
-        case "labels": {
-          const patterns = answer.noPattern ? [] : await resolve.mutateAsync(answer.tokens);
-          const { mixed, unsure, thumbPref } = submitFlags(state.flags, answer);
-          const event = await submit.mutateAsync({
-            anchor: labelWindow.anchor,
-            patterns,
-            noPattern: answer.noPattern,
-            mixed,
-            unsure,
-            thumbPref,
-          });
-          dispatch({ type: "submitted", eventId: event.id });
-          setDraft("");
-          movedOn = true;
-          break;
-        }
-        case "thumb":
-          toggleFlag(answer.side === "left" ? "thumbLeft" : "thumbRight");
-          break;
-        case "mixed":
-          toggleFlag("mixed");
-          break;
-        case "unsure":
-          toggleFlag("unsure");
-          break;
-        case "skip":
-          dispatch({ type: "skipped" });
-          setDraft("");
-          movedOn = true;
-          break;
-        case "undo": {
-          const target = undoTarget(state);
-          consumeDraft();
-          if (target === null) {
-            setFeedback({ tone: "info", text: t("label.nothingToUndo") });
-            break;
-          }
-          await undo.mutateAsync(target);
-          dispatch({ type: "undone", eventId: target });
-          setFeedback({ tone: "info", text: t("label.undone") });
-          break;
-        }
-        case "reshape": {
-          const next = await reshape.mutateAsync({ anchor: labelWindow.anchor, op: answer.op });
-          dispatch({ type: "windowReshaped", anchor: next });
-          consumeDraft();
-          movedOn = true;
-          break;
-        }
-        case "help":
-          setShowHelp((v) => !v);
-          consumeDraft();
-          break;
-        case "leave":
-          setQuit(true);
-          dispatch({ type: "sessionDone" });
-          movedOn = true;
-          break;
-      }
+      const event = await submit.mutateAsync(payload);
+      dispatch({ type: "submitted", eventId: event.id, answer: state.answer });
+      saved = true;
     } catch (e) {
       setFeedback({ tone: "error", text: errorText(e) });
     } finally {
-      if (!movedOn) {
+      if (!saved) {
         actedOn.current = null;
       }
     }
   };
 
-  // Outside a text field every printable key belongs to the answer line: single-key commands there would fire while
-  // a pattern key such as `st` or `bu` is being typed.
+  const runUndo = async (): Promise<void> => {
+    const target = undoTarget(state);
+    if (!canUndo(state) || target === null) {
+      return;
+    }
+    setFeedback(null);
+    try {
+      await undo.mutateAsync(target);
+      dispatch({ type: "undone", eventId: target });
+      setFeedback({ tone: "info", text: t("label.undone") });
+    } catch (e) {
+      setFeedback({ tone: "error", text: errorText(e) });
+    }
+  };
+
+  const runReshape = async (op: WindowOp): Promise<void> => {
+    if (labelWindow === null) {
+      return;
+    }
+    try {
+      const next = await reshape.mutateAsync({ anchor: labelWindow.anchor, op });
+      dispatch({ type: "windowReshaped", anchor: next });
+    } catch (e) {
+      setFeedback({ tone: "error", text: errorText(e) });
+    }
+  };
+
+  const runRandom = async (): Promise<void> => {
+    try {
+      const next = await random.mutateAsync({ keymode, windowMs: null, ...randomRequest(state) });
+      if (next === null) {
+        setNotice({ tone: "info", text: t("label.notice.randomNone") });
+      } else {
+        dispatch({ type: "windowLoaded", window: next, origin: { kind: "random" } });
+      }
+    } catch (e) {
+      setNotice({ tone: "error", text: errorText(e) });
+    }
+  };
+
+  const runNowPlaying = async (): Promise<void> => {
+    try {
+      const found = await nowPlaying.mutateAsync({ keymode, ...nowPlayingRequest(state) });
+      if (found === null) {
+        setNotice({ tone: "info", text: t("label.notice.nowPlayingNone") });
+      } else {
+        dispatch({ type: "windowLoaded", window: found.window, origin: { kind: "nowPlaying", source: found.source } });
+      }
+    } catch (e) {
+      setNotice({ tone: "error", text: errorText(e) });
+    }
+  };
+
+  const onToolbar = (action: ToolbarAction): void => {
+    setNotice(null);
+    setFeedback(null);
+    switch (action) {
+      case "previous":
+        dispatch({ type: "moved", to: "previous" });
+        break;
+      case "next":
+        dispatch({ type: "moved", to: "next" });
+        break;
+      case "skip":
+        dispatch({ type: "skipped" });
+        break;
+      case "random":
+        void runRandom();
+        break;
+      case "nowPlaying":
+        void runNowPlaying();
+        break;
+    }
+  };
+
+  const clearAnswer = (): void => {
+    setFeedback(null);
+    dispatch({ type: "answerCleared" });
+  };
+
   const onWindowKey = useEffectEvent((e: KeyboardEvent) => {
     if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) {
       return;
     }
-    // Not printable, so they never reach the answer line and work wherever the focus is, as in game.
+    // Work wherever the focus is, as in game.
     const speedStep = OSU_SPEED_KEYS[e.key];
     if (speedStep !== undefined) {
       e.preventDefault();
@@ -424,28 +417,23 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
     if (isTextField(e.target)) {
       return;
     }
-    const onButton = e.target instanceof Element && e.target.closest("button") !== null;
-    if (onButton && (e.key === " " || e.key === "Enter")) {
+    if (e.key === "Escape") {
+      clearAnswer();
+      return;
+    }
+    if (e.target instanceof Element && e.target.closest(OWN_KEY_CONTROLS) !== null) {
       return;
     }
     if (e.key === "Enter") {
       e.preventDefault();
       if (!e.repeat) {
-        void runLine(draft);
+        void save();
       }
-      return;
-    }
-    if (e.key === " " && draft.trim() === "") {
+    } else if (e.key === " ") {
       e.preventDefault();
       if (!e.repeat) {
         player.toggle();
       }
-      return;
-    }
-    if (e.key.length === 1 && labelWindow !== null) {
-      e.preventDefault();
-      setDraft((d) => d + e.key);
-      focusAnswer();
     }
   });
   useEffect(() => {
@@ -458,77 +446,34 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
     };
   }, []);
 
-  const onAnswerKey = (e: ReactKeyboardEvent<HTMLInputElement>): void => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      setDraft("");
+  // Clicks must not park focus on a button, or the next Enter would press it again instead of saving. Form fields keep
+  // their focus so sliders still drag; a click elsewhere also leaves a text field, so Enter saves after a search.
+  const keepFocus = (e: MouseEvent): void => {
+    if (!(e.target instanceof Element) || e.target.closest("input, textarea, select") !== null) {
       return;
     }
-    // Implicit form submission fires on every auto-repeated Enter.
-    if (e.key === "Enter" && e.repeat) {
-      e.preventDefault();
-      return;
-    }
-    if (e.key === " " && draft.trim() === "") {
-      e.preventDefault();
-      if (!e.repeat) {
-        player.toggle();
-      }
-    }
-  };
-
-  const onSubmit = (e: SyntheticEvent): void => {
     e.preventDefault();
-    void runLine(draft);
-  };
-
-  // Clicking a button, the playfield or bare space must not take focus from the answer line, or the next Enter would
-  // press that button again. Form controls keep their focus so sliders still drag.
-  const keepAnswerFocus = (e: MouseEvent): void => {
-    if (e.target instanceof Element && e.target.closest("input, textarea, select") === null) {
-      e.preventDefault();
+    if (e.target.closest("[role='dialog']") === null && isTextField(document.activeElement)) {
+      releaseFocus();
     }
   };
 
-  const onRun = (command: string): void => {
-    if (command === CLEAR_COMMAND) {
-      setDraft("");
-      focusAnswer();
-      return;
-    }
-    void runLine(command);
+  const waiting = busy || sampling ? "label.toolbar.busy" : null;
+  const planFinished = state.done && entry === null ? "label.toolbar.planFinished" : null;
+  const blocked: ToolbarState = {
+    previous: waiting ?? (state.cursor === 0 ? "label.toolbar.firstWindow" : null),
+    next: waiting ?? planFinished,
+    random: waiting,
+    nowPlaying: waiting,
+    skip: waiting ?? planFinished ?? (entry?.status.kind === "saved" ? "label.toolbar.savedNoSkip" : null),
   };
-
-  // Window flags, like the REPL's lone m/?/tl/tr: the draft keeps its own inline toggles.
-  const onFlag = (toggle: FlagToggle): void => {
-    const side = thumbSide(toggle);
-    if (side === null || inline.thumb === null) {
-      dispatch({ type: "flagsToggled", toggle });
-      return;
-    }
-    // An inline tl/tr overrides the window's side on save, so the button only means something once it is gone.
-    setDraft(withoutThumb(draft));
-    dispatch({ type: "thumbSet", side: effectiveFlags.thumbPref === side ? null : side });
-  };
-
-  const onChip = (pattern: PatternDefDto): void => {
-    setDraft((d) => togglePattern(d, pattern));
-  };
-
-  const footer = <SessionFooter counts={state.counts} goldTotal={stats.data?.total ?? null} seed={state.seed} />;
-
-  if (state.done) {
-    return (
-      <div className="mx-auto flex max-w-xl flex-col gap-4 p-6">
-        <h1 className="text-2xl font-semibold">{t("label.title")}</h1>
-        <p className="text-lg">{quit ? t("label.done.quit") : t("label.done.exhausted")}</p>
-        {footer}
-        <Button className="self-start" onClick={onRestart}>
-          {t("label.done.newSession")}
-        </Button>
-      </div>
-    );
-  }
+  const answerMode: AnswerMode =
+    entry === null
+      ? { kind: "none" }
+      : entry.status.kind === "saved"
+        ? { kind: "saved", canUndo: canUndo(state) }
+        : { kind: "edit", skipped: entry.status.kind === "skipped", canSave: canSave(state) };
+  const shownAnswer = entry?.status.kind === "saved" ? entry.status.answer : state.answer;
 
   const rangeText = anchor === null ? "" : `${formatClock(anchor.t0Ms)}–${formatClock(anchor.t1Ms)}`;
   const durationText =
@@ -558,181 +503,186 @@ function LabelSession({ keymode, seed, createAudioContext, params, defaultOsuSpe
 
   return (
     <div
-      onMouseDown={keepAnswerFocus}
-      className="grid h-[calc(100dvh-4rem)] min-h-[32rem] grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)] grid-rows-[minmax(0,1fr)_auto] gap-x-6 gap-y-3 p-4"
+      onMouseDown={keepFocus}
+      className={cn(
+        "flex h-[calc(100dvh-4rem)] min-h-[32rem] flex-col gap-3 p-4",
+        panel.dragging && "cursor-col-resize select-none",
+      )}
     >
-      <section aria-label={t("label.title")} className="flex min-h-0 flex-col gap-3">
-        {labelWindow === null || chart.data === undefined ? (
-          <div className="text-muted-foreground flex flex-1 items-center justify-center text-sm">
-            {sample.isError ? (
-              <div role="alert" className="flex flex-col items-center gap-2">
-                <p className="text-destructive">{errorText(sample.error)}</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setSampleAttempt((n) => n + 1);
-                  }}
-                >
-                  {t("common.retry")}
-                </Button>
-              </div>
-            ) : chart.isError ? (
-              <p role="alert" className="text-destructive">
-                {errorText(chart.error)}
-              </p>
-            ) : (
-              <p>{labelWindow === null ? t("label.sampling") : t("label.loadingChart")}</p>
-            )}
-          </div>
-        ) : (
-          <>
-            <Transport
-              playing={playback.playing}
-              loading={playback.loading}
-              onToggle={() => {
-                player.toggle();
-              }}
-              range={rangeText}
-              duration={durationText}
-              offsetMs={offsetMs}
-              onOffset={(value) => {
-                setOffsetMs(value);
-                writeOffsetMs(value);
-              }}
-              scroll={effectiveScroll}
-              onScroll={updateScroll}
-              zoom={zoom}
-              onZoom={(value) => {
-                setZoom(value);
-                writeZoom(value);
-              }}
-              onSettle={focusAnswer}
-            />
-            <SkinPicker
-              options={skinOptions(skinList.data, keymode)}
-              folder={skinFolder}
-              ready={skinList.data !== undefined}
-              reloading={skinReloading}
-              onChange={(folder) => {
-                setSkinChoice({ folder });
-                writeSkinChoice({ folder });
-                focusAnswer();
-              }}
-              onReload={() => {
-                void reloadSkin();
-              }}
-            />
-            {skinNotices.map((notice) => (
-              <p key={notice} role="status" className="text-muted-foreground bg-muted/60 self-start rounded-md px-2.5 py-1 text-xs">
-                {notice}
-              </p>
-            ))}
-            {audioNotice !== null && (
-              <p role="status" className="text-muted-foreground bg-muted/60 self-start rounded-md px-2.5 py-1 text-xs">
-                {audioNotice}
-              </p>
-            )}
-            <div data-testid="playfield" className="flex min-h-0 flex-1 justify-center">
-              <Playfield
-                window={chart.data}
-                clock={playback.clock}
-                scroll={scrollFromPrefs(effectiveScroll)}
-                zoom={zoom}
-                {...skinProps}
-                className="h-full w-full"
-              />
-            </div>
-          </>
-        )}
-      </section>
-
-      <aside className="flex min-h-0 flex-col gap-4 overflow-y-auto pr-1">
-        {labelWindow !== null && <ChartHeader window={labelWindow} round={state.round} />}
-
-        <form onSubmit={onSubmit} className="flex flex-col gap-1.5">
-          <label htmlFor="label-answer" className="text-sm font-medium">
-            {t("label.answer.label")}
-          </label>
-          <div className="flex gap-1.5">
-            <input
-              id="label-answer"
-              ref={inputRef}
-              value={draft}
-              autoComplete="off"
-              spellCheck={false}
-              placeholder={t("label.answer.placeholder")}
-              disabled={labelWindow === null}
-              onChange={(e) => {
-                setDraft(e.target.value);
-              }}
-              onKeyDown={onAnswerKey}
-              className="border-input bg-background focus-visible:ring-ring/50 h-9 min-w-0 flex-1 rounded-md border px-2.5 font-mono text-sm outline-none focus-visible:ring-3"
-            />
-            <Button type="submit" size="lg" disabled={labelWindow === null || busy} aria-keyshortcuts="Enter">
-              {t("label.answer.submit")}
-            </Button>
-          </div>
-          {feedback !== null && (
+      <div className="flex min-h-0 flex-1 gap-2">
+        <section aria-label={t("label.title")} className="flex min-w-0 flex-1 flex-col gap-3">
+          <SessionToolbar blocked={blocked} onAction={onToolbar} />
+          {notice !== null && (
             <p
-              role={feedback.tone === "error" ? "alert" : "status"}
-              className={feedback.tone === "error" ? "text-destructive text-sm" : "text-muted-foreground text-sm"}
+              role={notice.tone === "error" ? "alert" : "status"}
+              className={cn(
+                "self-start rounded-md px-2.5 py-1 text-xs",
+                notice.tone === "error" ? "bg-destructive/10 text-destructive" : "bg-muted/60 text-muted-foreground",
+              )}
             >
-              {feedback.text}
+              {notice.text}
             </p>
           )}
-        </form>
-
-        <section aria-label={t("label.patterns")} className="flex flex-col gap-2">
-          <h3 className="text-sm font-medium">{t("label.patterns")}</h3>
-          {taxonomy.isError ? (
-            <p role="alert" className="text-destructive text-sm">
-              {errorText(taxonomy.error)}
-            </p>
-          ) : taxonomy.data === undefined ? (
-            <p className="text-muted-foreground text-sm">{t("common.loading")}</p>
+          {state.done && entry === null ? (
+            <div role="status" className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+              <p className="text-lg">{t("label.done.exhausted")}</p>
+              <p className="text-muted-foreground max-w-sm text-sm">{t("label.done.hint")}</p>
+              <Button variant="outline" onClick={onRestart}>
+                {t("label.done.newSession")}
+              </Button>
+            </div>
+          ) : labelWindow === null || chart.data === undefined ? (
+            <div className="text-muted-foreground flex flex-1 items-center justify-center text-sm">
+              {sample.isError ? (
+                <div role="alert" className="flex flex-col items-center gap-2">
+                  <p className="text-destructive">{errorText(sample.error)}</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSampleAttempt((n) => n + 1);
+                    }}
+                  >
+                    {t("common.retry")}
+                  </Button>
+                </div>
+              ) : chart.isError ? (
+                <p role="alert" className="text-destructive">
+                  {errorText(chart.error)}
+                </p>
+              ) : (
+                <p>{labelWindow === null ? t("label.sampling") : t("label.loadingChart")}</p>
+              )}
+            </div>
           ) : (
-            <PatternGrid
-              taxonomy={taxonomy.data}
-              examples={examples.isError ? NO_EXAMPLES : examples.data}
-              isActive={(pattern) => isPatternActive(draft, pattern)}
-              onToggle={onChip}
-            />
+            <>
+              <Transport
+                playing={playback.playing}
+                loading={playback.loading}
+                onToggle={() => {
+                  player.toggle();
+                }}
+                range={rangeText}
+                duration={durationText}
+                offsetMs={offsetMs}
+                onOffset={(value) => {
+                  setOffsetMs(value);
+                  writeOffsetMs(value);
+                }}
+                scroll={effectiveScroll}
+                onScroll={updateScroll}
+                zoom={zoom}
+                onZoom={(value) => {
+                  setZoom(value);
+                  writeZoom(value);
+                }}
+                onSettle={releaseFocus}
+                onReshape={(op) => {
+                  void runReshape(op);
+                }}
+                reshapeDisabled={busy || entry?.status.kind === "saved"}
+              />
+              <SkinPicker
+                options={skinOptions(skinList.data, keymode)}
+                folder={skinFolder}
+                ready={skinList.data !== undefined}
+                reloading={skinReloading}
+                onChange={(folder) => {
+                  setSkinChoice({ folder });
+                  writeSkinChoice({ folder });
+                  releaseFocus();
+                }}
+                onReload={() => {
+                  void reloadSkin();
+                }}
+              />
+              {skinNotices.map((text) => (
+                <p key={text} role="status" className="text-muted-foreground bg-muted/60 self-start rounded-md px-2.5 py-1 text-xs">
+                  {text}
+                </p>
+              ))}
+              {audioNotice !== null && (
+                <p role="status" className="text-muted-foreground bg-muted/60 self-start rounded-md px-2.5 py-1 text-xs">
+                  {audioNotice}
+                </p>
+              )}
+              <div data-testid="playfield" className="flex min-h-0 flex-1 justify-center">
+                <Playfield
+                  window={chart.data}
+                  clock={playback.clock}
+                  scroll={scrollFromPrefs(effectiveScroll)}
+                  zoom={zoom}
+                  {...skinProps}
+                  className="h-full w-full"
+                />
+              </div>
+            </>
           )}
         </section>
 
-        <section className="flex flex-col gap-2">
-          <h3 className="text-sm font-medium">{t("label.flags.title")}</h3>
-          <FlagToggles flags={effectiveFlags} onToggle={onFlag} />
-        </section>
+        <PanelResizer panel={panel} />
 
-        <ActionBar
-          label={t("label.answer.label")}
-          actions={ANSWER_ACTIONS}
-          disabled={labelWindow === null || busy}
-          onRun={onRun}
-        />
+        <aside
+          data-testid="pattern-panel"
+          style={{
+            width: panel.width,
+            scrollPaddingBottom: answerBarPx === null ? undefined : answerBarPx + ANSWER_BAR_CLEARANCE_PX,
+          }}
+          className="flex min-h-0 shrink-0 flex-col gap-4 overflow-y-auto pr-2 pl-1 [scrollbar-gutter:stable]"
+        >
+          {entry !== null && <ChartHeader window={entry.window} origin={entry.origin} />}
 
-        <section className="flex flex-col gap-2">
-          <h3 className="text-sm font-medium">{t("label.reshape.title")}</h3>
-          <ActionBar
-            label={t("label.reshape.title")}
-            actions={WINDOW_ACTIONS}
-            disabled={labelWindow === null || busy}
-            onRun={onRun}
+          <section aria-label={t("label.patterns")} className="flex flex-col gap-2 pb-4">
+            <h3 className="sr-only">{t("label.patterns")}</h3>
+            {taxonomy.isError ? (
+              <p role="alert" className="text-destructive text-sm">
+                {errorText(taxonomy.error)}
+              </p>
+            ) : taxonomy.data === undefined ? (
+              <p className="text-muted-foreground text-sm">{t("common.loading")}</p>
+            ) : (
+              <PatternGrid
+                taxonomy={taxonomy.data}
+                examples={examples.isError ? NO_EXAMPLES : examples.data}
+                isActive={(pattern) => shownAnswer.patterns.includes(pattern.id)}
+                onToggle={(pattern) => {
+                  dispatch({ type: "patternToggled", id: pattern.id });
+                }}
+              />
+            )}
+          </section>
+
+          <AnswerBar
+            taxonomy={taxonomy.data ?? NO_TAXONOMY}
+            answer={shownAnswer}
+            mode={answerMode}
+            busy={busy}
+            feedback={feedback}
+            onPick={(pattern) => {
+              dispatch({ type: "patternAdded", id: pattern.id });
+            }}
+            onRemove={(id) => {
+              dispatch({ type: "patternRemoved", id });
+            }}
+            onNoPattern={() => {
+              dispatch({ type: "noPatternToggled" });
+            }}
+            onFlag={(toggle) => {
+              dispatch({ type: "flagsToggled", toggle });
+            }}
+            onSave={() => {
+              void save();
+            }}
+            onClear={clearAnswer}
+            onUndo={() => {
+              void runUndo();
+            }}
+            onBlockSize={setAnswerBarPx}
           />
-        </section>
+        </aside>
+      </div>
 
-        {showHelp && (
-          <ul className="text-muted-foreground flex list-disc flex-col gap-1 pl-4 text-xs">
-            {(["labels", "noPattern", "flags", "commands", "hotkeys"] as const).map((key) => (
-              <li key={key}>{t(`label.help.${key}`)}</li>
-            ))}
-          </ul>
-        )}
-      </aside>
-
-      <div className="col-span-2">{footer}</div>
+      <SessionFooter counts={state.counts} goldTotal={stats.data?.total ?? null} seed={state.seed} />
     </div>
   );
 }

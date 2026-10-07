@@ -2,7 +2,7 @@
 //! from the online score ID, the individual score format is the same as the replay format").
 
 use crate::codec::version::{OnlineIdWidth, online_id_width};
-use crate::codec::{OsuString, Reader, Writer};
+use crate::codec::{FileKind, OsuString, Reader, Writer};
 use crate::error::CodecError;
 
 /// Mod bits that change the layout or the judging model (`osr_wiki.md`, "Mods").
@@ -114,6 +114,16 @@ pub fn read_score_header(r: &mut Reader<'_>) -> Result<ScoreHeader, CodecError> 
     })
 }
 
+/// The player name from a header prefix: the life bar after it can run to kilobytes, so a
+/// caller that only needs the name reads a few hundred bytes.
+pub fn read_player(bytes: &[u8]) -> Result<OsuString, CodecError> {
+    let mut r = Reader::new(bytes, FileKind::Osr);
+    r.u8()?;
+    r.i32()?;
+    r.osu_string()?;
+    r.osu_string()
+}
+
 pub fn write_score_header(w: &mut Writer, h: &ScoreHeader) {
     w.u8(h.mode);
     w.i32(h.version);
@@ -185,6 +195,38 @@ mod tests {
         assert_eq!(header.counts.total(), 21);
         assert!(header.is_score_v2());
         assert!(!header.has_target_practice());
+    }
+
+    #[test]
+    fn read_player_needs_only_the_leading_fields() {
+        let header = ScoreHeader {
+            mode: 3,
+            version: 20_260_924,
+            beatmap_md5: OsuString::present(*b"0123456789abcdef0123456789abcdef"),
+            player: OsuString::present(*b"TWulfZ"),
+            replay_md5: OsuString::Absent,
+            counts: JudgementCounts::default(),
+            score: 0,
+            max_combo: 0,
+            perfect: 0,
+            mods: 0,
+            life_bar: OsuString::present(vec![b'x'; 10_000]),
+            timestamp_ticks: 0,
+        };
+        let mut w = Writer::new();
+        write_score_header(&mut w, &header);
+        let bytes = w.into_bytes();
+        // mode, version, md5 (0x0b, len, 32 bytes), player (0x0b, len, 6 bytes).
+        let player_end = 1 + 4 + 34 + 8;
+        assert_eq!(
+            read_player(&bytes[..player_end]),
+            Ok(OsuString::present(*b"TWulfZ"))
+        );
+        assert_eq!(read_player(&bytes), Ok(OsuString::present(*b"TWulfZ")));
+        assert!(matches!(
+            read_player(&bytes[..player_end - 1]),
+            Err(CodecError::Truncated { .. })
+        ));
     }
 
     #[test]

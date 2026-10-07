@@ -4,6 +4,7 @@ import {
   LABEL_PREFS,
   readSkinChoice,
   readOffsetMs,
+  readPanelWidthPx,
   readScrollPrefs,
   readZoom,
   scrollFromPrefs,
@@ -11,6 +12,7 @@ import {
   writeFit,
   writeOffsetMs,
   writeOsuSpeed,
+  writePanelWidthPx,
   writePxPerMs,
   writeScrollKind,
   writeSkinChoice,
@@ -172,5 +174,36 @@ describe("skin choice", () => {
     expect(() => {
       writeSkinChoice({ folder: "A" });
     }).not.toThrow();
+  });
+});
+
+describe("pattern panel width", () => {
+  it("falls back to the default and round-trips a stored width", () => {
+    expect(readPanelWidthPx(416)).toBe(416);
+    writePanelWidthPx(640);
+    expect(localStorage.getItem(LABEL_PREFS.panelWidthKey)).toBe("640");
+    expect(readPanelWidthPx(416)).toBe(640);
+  });
+
+  it("ignores garbage and non-positive widths", () => {
+    for (const raw of ["wide", "-20", "0", "Infinity"]) {
+      localStorage.setItem(LABEL_PREFS.panelWidthKey, raw);
+      expect(readPanelWidthPx(416), raw).toBe(416);
+    }
+  });
+
+  it("works on defaults when the storage throws", () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+    });
+    expect(() => {
+      writePanelWidthPx(500);
+    }).not.toThrow();
+    expect(readPanelWidthPx(416)).toBe(416);
   });
 });

@@ -1,12 +1,26 @@
 import { useTranslation } from "react-i18next";
 import { Badge } from "@/shared/ui/badge";
+import type { WindowOrigin } from "../session";
 import type { LabelWindow } from "../types";
 
-export function ChartHeader({ window, round }: { window: LabelWindow; round: number }) {
+function originKey(origin: WindowOrigin): string {
+  switch (origin.kind) {
+    case "plan":
+      return "label.round";
+    case "random":
+      return "label.origin.random";
+    case "nowPlaying":
+      return origin.source === "osuWindow" ? "label.origin.osuWindow" : "label.origin.lastReplay";
+  }
+}
+
+export function ChartHeader({ window, origin }: { window: LabelWindow; origin: WindowOrigin }) {
   const { t } = useTranslation();
   return (
     <header className="flex flex-col gap-1.5">
-      <p className="text-muted-foreground text-xs tracking-wide uppercase">{t("label.round", { round: round + 1 })}</p>
+      <p className="text-muted-foreground text-xs tracking-wide uppercase">
+        {t(originKey(origin), { round: origin.kind === "plan" ? origin.round + 1 : 0 })}
+      </p>
       <h2 className="text-lg leading-tight font-semibold break-words">{window.title}</h2>
       <p className="text-muted-foreground text-sm">{window.artist}</p>
       <div className="flex flex-wrap items-center gap-1.5">

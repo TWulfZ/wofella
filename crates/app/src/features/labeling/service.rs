@@ -4,16 +4,19 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 
 use serde::Serialize;
 use wolluf_core::{
-    ChartMd5, ColMask, Keymode, PatternId, ProfileId, SegmentAnchor, TimeUs, UnixUs,
+    ChartMd5, ColMask, FileTime, Keymode, PatternId, ProfileId, SegmentAnchor, TimeUs, UnixUs,
 };
 use wolluf_engine::examples;
 use wolluf_engine::labels::source as label_source;
 use wolluf_engine::profile::{KeymodeProfile, Registry};
 use wolluf_engine::taxonomy;
 use wolluf_engine::window::chart_window;
+use wolluf_source_osu::probe::{OsuProcessProbe, ProbeParams, parse_osu_title, system_probe};
+use wolluf_source_osu::replay_dir::{self, replay_player};
 use wolluf_store::repo::labels::{
     GoldAnswer, GoldLabel, NewGoldLabel, NewUndo, ThumbPref, append_gold_label, append_undo,
     gold_labels,
@@ -26,12 +29,15 @@ use wolluf_store::StoreError;
 
 use super::dto::{
     AnchorDto, CountDto, LabelEventDto, LabelExportDto, LabelStatsDto, LabelSubmitDto,
-    LabelWindowDto, PatternDefDto, PatternExampleDto, SampleRequestDto, ThumbPrefDto, WindowOpDto,
+    LabelWindowDto, NowPlayingDto, NowPlayingRequestDto, NowPlayingSourceDto, PatternDefDto,
+    PatternExampleDto, RandomRequestDto, SampleRequestDto, ThumbPrefDto, WindowAtRequestDto,
+    WindowOpDto,
 };
 use super::keys;
+use super::now_playing::{NowPlayingParams, title_matches};
 use super::sampler::{self, Assignment, ChartFacts, LevelFilter, LevelLabel, Pool, SamplerParams};
 use super::window::{self, Reshape};
-use crate::context::{AppContext, blocking_join_error};
+use crate::context::{AppContext, blocking_join_error, catalog_install};
 use crate::errors::AppError;
 use crate::features::library::dto::{ChartWindowDto, LibraryChartDto};
 use crate::jobs::to_system_time;
@@ -43,10 +49,52 @@ const FLAG_MIXED: &str = "mixed";
 const FLAG_UNSURE: &str = "unsure";
 /// Examples are not library charts; zeros keep the window DTO without naming one.
 const SYNTHETIC_MD5: ChartMd5 = ChartMd5([0; 16]);
+/// Fixed, so the window depends only on the chart and the session's shown windows.
+const NOW_PLAYING_SEED: u64 = 0;
 
 pub struct LabelingService<'a> {
     ctx: &'a AppContext,
     params: SamplerParams,
+    now_playing: NowPlayingParams,
+    probe: Arc<dyn OsuProcessProbe>,
+}
+
+/// The keymode's parsed charts with their strata. Strata come from every chart, never a
+/// filtered subset, or their names would shift with the filter.
+struct Catalog {
+    charts: Vec<LibraryChartDto>,
+    played: BTreeSet<ChartMd5>,
+    facts: Vec<ChartFacts>,
+    assigned: BTreeMap<ChartMd5, Assignment>,
+}
+
+impl Catalog {
+    fn window(
+        &self,
+        md5: ChartMd5,
+        t0: TimeUs,
+        t1: TimeUs,
+        keymode: Keymode,
+    ) -> Result<LabelWindowDto, AppError> {
+        let key = md5.to_string();
+        let chart = self
+            .charts
+            .iter()
+            .find(|c| c.md5 == key)
+            .ok_or_else(|| AppError::internal(format!("picked chart {key} is not listed")))?;
+        let anchor = SegmentAnchor::new(md5, t0, t1, ColMask::full(keymode), keymode)
+            .map_err(|e| AppError::internal(format!("picked anchor: {e}")))?;
+        let assigned = self.assigned.get(&md5);
+        Ok(LabelWindowDto {
+            anchor: anchor_dto(&anchor)?,
+            title: chart.title.clone(),
+            artist: chart.artist.clone(),
+            version: chart.version.clone(),
+            level: assigned.and_then(|a| a.label.clone()),
+            stratum: assigned.map_or_else(|| UNKNOWN_STRATUM.to_owned(), |a| a.stratum.to_string()),
+            played: self.played.contains(&md5),
+        })
+    }
 }
 
 /// One line of the gold-set export: anchors and pattern ids only, never map content or player
@@ -68,9 +116,15 @@ struct ExportRow {
 
 impl<'a> LabelingService<'a> {
     pub fn new(ctx: &'a AppContext) -> Self {
+        Self::with_probe(ctx, Arc::from(system_probe(ProbeParams::default())))
+    }
+
+    pub fn with_probe(ctx: &'a AppContext, probe: Arc<dyn OsuProcessProbe>) -> Self {
         Self {
             ctx,
             params: SamplerParams::default(),
+            now_playing: NowPlayingParams::default(),
+            probe,
         }
     }
 
@@ -106,45 +160,19 @@ impl<'a> LabelingService<'a> {
 
     /// The window for round `req.round`, or `None` when no chart has a free window left.
     pub async fn sample(&self, req: SampleRequestDto) -> Result<Option<LabelWindowDto>, AppError> {
-        let profile = labelled_profile(req.keymode)?;
-        let keymode = profile.keymode;
-        let seed: u64 = req
-            .seed
-            .parse()
-            .map_err(|_| AppError::invalid_input().with_arg("seed", req.seed.clone()))?;
-        let window = match req.window_ms {
-            None => self.params.window,
-            Some(0) => return Err(AppError::invalid_input().with_arg("windowMs", "0")),
-            Some(ms) => TimeUs(i64::from(ms) * US_PER_MS),
-        };
-        let mut exclude = req
-            .exclude
-            .iter()
-            .map(|a| parse_md5(&a.md5).and_then(|md5| parse_anchor(md5, a, keymode)))
-            .collect::<Result<Vec<_>, _>>()?;
-        if let Some(me) = self.self_profile().await? {
-            exclude.extend(self.labels(me).await?.into_iter().map(|l| l.anchor));
-        }
-
-        let charts = self.ctx.library().overview(keymode).await?;
-        let played = self.played().await?;
-        let facts = chart_facts(&charts, &played);
-        let assigned = sampler::assign(&facts, &self.params);
+        let keymode = labelled_profile(req.keymode)?.keymode;
+        let seed = parse_seed(&req.seed)?;
+        let window = self.window_len(req.window_ms)?;
+        let exclude = self.exclude(keymode, &req.exclude).await?;
+        let catalog = self.catalog(keymode).await?;
         let filter = LevelFilter {
             scale: req.scale,
             level_min: req.level_min,
             level_max: req.level_max,
         };
-        let pool = Pool::new(seed, &facts, &assigned, &filter);
+        let pool = Pool::new(seed, &catalog.facts, &catalog.assigned, &filter);
         let ctx = self.ctx;
-        let rows_of = move |md5| async move {
-            match ctx.library().row_times(md5).await {
-                Ok(rows) => Ok(Some(rows.times)),
-                // Re-indexed away between the overview and now.
-                Err(e) if e.code == ErrorCode::NotFound => Ok(None),
-                Err(e) => Err(e),
-            }
-        };
+        let rows_of = move |md5| async move { rows_or_none(ctx, md5).await };
         let Some(pick) = sampler::sample(
             seed,
             req.round,
@@ -158,22 +186,119 @@ impl<'a> LabelingService<'a> {
         else {
             return Ok(None);
         };
-        let key = pick.md5.to_string();
-        let chart = charts
+        catalog
+            .window(pick.md5, pick.t0, pick.t1, keymode)
+            .map(Some)
+    }
+
+    /// A free window inside `req.md5`. `NOT_FOUND` for a chart the keymode's catalog has not
+    /// parsed, `CONFLICT` when every window of it overlaps `exclude` or a stored label.
+    pub async fn window_at(&self, req: WindowAtRequestDto) -> Result<LabelWindowDto, AppError> {
+        let keymode = labelled_profile(req.keymode)?.keymode;
+        let md5 = parse_md5(&req.md5)?;
+        let seed = parse_seed(&req.seed)?;
+        let window = self.window_len(req.window_ms)?;
+        let exclude = self.exclude(keymode, &req.exclude).await?;
+        let catalog = self.catalog(keymode).await?;
+        self.window_in(&catalog, keymode, md5, seed, window, &exclude)
+            .await?
+            .ok_or_else(|| AppError::conflict().with_arg("md5", req.md5.clone()))
+    }
+
+    /// A free window of any eligible chart, deterministic for seed, round and `exclude`; `None`
+    /// once no chart has one left.
+    pub async fn random(&self, req: RandomRequestDto) -> Result<Option<LabelWindowDto>, AppError> {
+        let keymode = labelled_profile(req.keymode)?.keymode;
+        let seed = parse_seed(&req.seed)?;
+        let window = self.window_len(req.window_ms)?;
+        let exclude = self.exclude(keymode, &req.exclude).await?;
+        let catalog = self.catalog(keymode).await?;
+        let order = sampler::random_order(seed, req.round, catalog.facts.iter().map(|c| c.md5));
+        for md5 in order {
+            let Some(rows) = rows_or_none(self.ctx, md5).await? else {
+                continue;
+            };
+            let starts = sampler::window_starts(md5, &rows, window, &exclude, self.params.min_rows);
+            if let Some(t0) = sampler::random_start(seed, req.round, md5, &starts) {
+                return catalog
+                    .window(md5, t0, TimeUs(t0.0 + window.0), keymode)
+                    .map(Some);
+            }
+        }
+        Ok(None)
+    }
+
+    /// A free window of the chart osu! stable is playing (its window title), else of the newest
+    /// self replay in `Data/r`, else `None`; `req.exclude` keeps it off windows the session
+    /// already showed. Probes once per call: shells call it on a button press, never on a timer
+    /// (D9).
+    pub async fn now_playing(
+        &self,
+        req: NowPlayingRequestDto,
+    ) -> Result<Option<NowPlayingDto>, AppError> {
+        let keymode = labelled_profile(req.keymode)?.keymode;
+        let catalog = self.catalog(keymode).await?;
+        let probe = self.probe.clone();
+        let title = tokio::task::spawn_blocking(move || probe.window_title())
+            .await
+            .map_err(blocking_join_error)?;
+        let names = self.ctx.players().self_alias_names().await?;
+        let root = self.replay_root().await?;
+        let newest_self = |among: BTreeSet<ChartMd5>| {
+            newest_self_replay(
+                root.clone(),
+                names.clone(),
+                among,
+                self.now_playing.max_replay_headers,
+            )
+        };
+
+        let named: Vec<ChartMd5> = title
+            .as_deref()
+            .and_then(parse_osu_title)
+            .map(|t| title_matches(&t.artist_title_version, &catalog.charts))
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|c| c.md5.parse().ok())
+            .collect();
+        let from_title = match named.as_slice() {
+            [] => None,
+            [one] => Some(*one),
+            // The same metadata on several charts: the one the user played last, else none.
+            many => newest_self(many.iter().copied().collect()).await?,
+        };
+        let exclude = self.exclude(keymode, &req.exclude).await?;
+        let free_window = |md5| {
+            self.window_in(
+                &catalog,
+                keymode,
+                md5,
+                NOW_PLAYING_SEED,
+                self.params.window,
+                &exclude,
+            )
+        };
+        if let Some(md5) = from_title
+            && let Some(window) = free_window(md5).await?
+        {
+            return Ok(Some(NowPlayingDto {
+                window,
+                source: NowPlayingSourceDto::OsuWindow,
+            }));
+        }
+        // A title chart with no free window left cannot stand in for itself as the last replay.
+        let fallback = catalog
+            .facts
             .iter()
-            .find(|c| c.md5 == key)
-            .ok_or_else(|| AppError::internal(format!("sampled chart {key} is not listed")))?;
-        let anchor =
-            SegmentAnchor::new(pick.md5, pick.t0, pick.t1, ColMask::full(keymode), keymode)
-                .map_err(|e| AppError::internal(format!("sampled anchor: {e}")))?;
-        Ok(Some(LabelWindowDto {
-            anchor: anchor_dto(&anchor)?,
-            title: chart.title.clone(),
-            artist: chart.artist.clone(),
-            version: chart.version.clone(),
-            level: assigned.get(&pick.md5).and_then(|a| a.label.clone()),
-            stratum: pick.stratum.to_string(),
-            played: played.contains(&pick.md5),
+            .map(|c| c.md5)
+            .filter(|md5| Some(*md5) != from_title)
+            .collect();
+        let Some(md5) = newest_self(fallback).await? else {
+            return Ok(None);
+        };
+        Ok(free_window(md5).await?.map(|window| NowPlayingDto {
+            window,
+            source: NowPlayingSourceDto::LastReplay,
         }))
     }
 
@@ -437,6 +562,79 @@ impl<'a> LabelingService<'a> {
         .map_err(blocking_join_error)?
     }
 
+    fn window_len(&self, window_ms: Option<u32>) -> Result<TimeUs, AppError> {
+        match window_ms {
+            None => Ok(self.params.window),
+            Some(0) => Err(AppError::invalid_input().with_arg("windowMs", "0")),
+            Some(ms) => Ok(TimeUs(i64::from(ms) * US_PER_MS)),
+        }
+    }
+
+    /// `shown` plus the self profile's stored labels, which are always avoided.
+    async fn exclude(
+        &self,
+        keymode: Keymode,
+        shown: &[AnchorDto],
+    ) -> Result<Vec<SegmentAnchor>, AppError> {
+        let mut out = shown
+            .iter()
+            .map(|a| parse_md5(&a.md5).and_then(|md5| parse_anchor(md5, a, keymode)))
+            .collect::<Result<Vec<_>, _>>()?;
+        if let Some(me) = self.self_profile().await? {
+            out.extend(self.labels(me).await?.into_iter().map(|l| l.anchor));
+        }
+        Ok(out)
+    }
+
+    async fn catalog(&self, keymode: Keymode) -> Result<Catalog, AppError> {
+        let charts = self.ctx.library().overview(keymode).await?;
+        let played = self.played().await?;
+        let facts = chart_facts(&charts, &played);
+        let assigned = sampler::assign(&facts, &self.params);
+        Ok(Catalog {
+            charts,
+            played,
+            facts,
+            assigned,
+        })
+    }
+
+    /// A free window of `md5` picked as the sampler picks starts (round 0); `None` when every
+    /// window overlaps `exclude`.
+    async fn window_in(
+        &self,
+        catalog: &Catalog,
+        keymode: Keymode,
+        md5: ChartMd5,
+        seed: u64,
+        window: TimeUs,
+        exclude: &[SegmentAnchor],
+    ) -> Result<Option<LabelWindowDto>, AppError> {
+        let not_found = || AppError::not_found().with_arg("md5", md5.to_string());
+        if !catalog.facts.iter().any(|c| c.md5 == md5) {
+            return Err(not_found());
+        }
+        let rows = rows_or_none(self.ctx, md5).await?.ok_or_else(not_found)?;
+        let starts = sampler::window_starts(md5, &rows, window, exclude, self.params.min_rows);
+        sampler::pick_start(seed, 0, md5, &starts)
+            .map(|t0| catalog.window(md5, t0, TimeUs(t0.0 + window.0), keymode))
+            .transpose()
+    }
+
+    /// The install whose osu!.db built the catalog: its `Data/r` holds the replays of the
+    /// charts listed. `None` without a catalog.
+    async fn replay_root(&self) -> Result<Option<PathBuf>, AppError> {
+        let (user, cache) = (self.ctx.user_db().clone(), self.ctx.cache_db().clone());
+        match tokio::task::spawn_blocking(move || catalog_install(&user, &cache))
+            .await
+            .map_err(blocking_join_error)?
+        {
+            Ok(install) => Ok(install.map(|i| i.root_path)),
+            Err(e) if e.code == ErrorCode::NotFound => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
     async fn self_profile(&self) -> Result<Option<ProfileId>, AppError> {
         self.ctx.players().self_profile_id().await
     }
@@ -492,6 +690,53 @@ fn labelled_profile(keymode: u8) -> Result<&'static KeymodeProfile, AppError> {
         .and_then(|k| Registry::builtin().profile(k))
         .filter(|p| !p.taxonomy.is_empty())
         .ok_or_else(|| AppError::invalid_input().with_arg("keymode", keymode.to_string()))
+}
+
+fn parse_seed(seed: &str) -> Result<u64, AppError> {
+    seed.parse()
+        .map_err(|_| AppError::invalid_input().with_arg("seed", seed))
+}
+
+/// A chart's row times; `None` once it was re-indexed away after the overview was read.
+async fn rows_or_none(ctx: &AppContext, md5: ChartMd5) -> Result<Option<Vec<TimeUs>>, AppError> {
+    match ctx.library().row_times(md5).await {
+        Ok(rows) => Ok(Some(rows.times)),
+        Err(e) if e.code == ErrorCode::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+/// The chart of the newest `.osr` in `<root>/Data/r` among `among` whose player is one of
+/// `names` (ADR 0005: another player's replay never stands for the user). Read live, so a
+/// replay saved since the last sync counts; at most `max_headers` headers are read.
+async fn newest_self_replay(
+    root: Option<PathBuf>,
+    names: Vec<Vec<u8>>,
+    among: BTreeSet<ChartMd5>,
+    max_headers: usize,
+) -> Result<Option<ChartMd5>, AppError> {
+    let Some(root) = root.filter(|_| !names.is_empty()) else {
+        return Ok(None);
+    };
+    tokio::task::spawn_blocking(move || {
+        let mut replays: Vec<(FileTime, ChartMd5, PathBuf)> = replay_dir::index(&root)?
+            .into_iter()
+            .filter(|((md5, _), _)| among.contains(md5))
+            .filter_map(|((md5, filetime), files)| Some((filetime, md5, files.osr?)))
+            .collect();
+        replays.sort_unstable_by(|a, b| b.cmp(a));
+        for (_, md5, path) in replays.into_iter().take(max_headers) {
+            match replay_player(&path) {
+                Ok(player) if names.contains(&player) => return Ok(Some(md5)),
+                Ok(_) => {}
+                // osu! may still be writing it; an older replay answers instead.
+                Err(e) => tracing::debug!(error = %e, path = %path.display(), "replay header"),
+            }
+        }
+        Ok(None)
+    })
+    .await
+    .map_err(blocking_join_error)?
 }
 
 fn next_id(now: UnixUs, last: Option<ulid::Ulid>) -> ulid::Ulid {

@@ -158,7 +158,6 @@ function render(audio: Audio, strict: boolean, params: LabelScreenParams = LABEL
     labelSample: (args) => windows[(args["req"] as SampleRequestDto).round] ?? null,
     chartWindow: (args) => chartWindow(String(args["md5"]), Number(args["fromMs"]), Number(args["toMs"])),
     chartAudio: () => ({ mime: "audio/mpeg", base64: "SUQz" }),
-    labelResolvePatterns: () => [],
     labelSubmit: () => ({ id: "E" }),
     labelUndo: () => null,
     skinList: () => ({ skins: [], current: null, maniaSpeed: null, maniaSpeedBpmScale: null }),
@@ -202,14 +201,13 @@ describe("LabelScreen section audio", () => {
       expect(audio.live).toBe(0);
       fireEvent.keyDown(document.body, { key: " " });
 
-      const box = screen.getByRole("textbox", { name: "Answer" });
-      await userEvent.type(box, "n{Enter}");
+      await userEvent.click(screen.getByRole("button", { name: "Shift window later" }));
       await waitFor(() => {
         expect(audio.sources.some((s) => s.live && s.starts[0]?.offset === 2)).toBe(true);
       });
       expect(audio.live).toBe(2);
 
-      await userEvent.type(box, "s{Enter}");
+      await userEvent.click(screen.getByRole("button", { name: "Skip" }));
       await screen.findByRole("heading", { name: "Beta" });
       fireEvent.keyDown(document.body, { key: " " });
       await waitFor(() => {

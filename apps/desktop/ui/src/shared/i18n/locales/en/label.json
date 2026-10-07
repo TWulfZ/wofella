@@ -46,7 +46,8 @@
       "noResults": "No pattern matches “{{query}}”",
       "noResultsHint": "Search by name, key or description.",
       "clearSearch": "Clear search",
-      "preview": "Example of {{name}}"
+      "preview": "Example of {{name}}",
+      "alwaysCollapsed": "Always collapsed"
     },
     "axis": {
       "regular_jack": "Jack",
@@ -67,41 +68,35 @@
     },
     "answer": {
       "label": "Answer",
-      "placeholder": "Pattern keys, e.g. js m · Enter saves",
       "submit": "Save",
-      "noPattern": "No pattern",
-      "skip": "Skip",
+      "clear": "Clear",
       "undo": "Undo",
-      "help": "Help",
-      "clear": "Clear"
+      "noPattern": "No pattern",
+      "noPatternChip": "No clear pattern",
+      "saved": "Saved",
+      "skipped": "Skipped",
+      "selected": "Selected patterns",
+      "empty": "Pick patterns on the cards or with +.",
+      "remove": "Remove {{name}}",
+      "add": "Add pattern",
+      "find": "Find a pattern",
+      "findPlaceholder": "Type to filter · Enter adds",
+      "options": "Taxonomy patterns",
+      "needsPattern": "Pick a pattern or No pattern to save.",
+      "undoNotNewest": "Only the newest saved label can be undone."
     },
     "reshape": {
       "title": "Window",
-      "widen": "Widen",
-      "narrow": "Narrow",
-      "prev": "Previous",
-      "next": "Next"
-    },
-    "answerError": {
-      "empty": "Type an answer first, or h for help.",
-      "twoThumbSides": "Choose one thumb side.",
-      "commandInLine": "“{{word}}” is a command; send it on its own.",
-      "noPatternWithPatterns": "x means no clear pattern; send it without patterns.",
-      "noPatternGiven": "No pattern given."
+      "widen": "Widen window",
+      "narrow": "Narrow window",
+      "earlier": "Shift window earlier",
+      "later": "Shift window later"
     },
     "error": {
       "unknown_pattern": "Unknown pattern “{{pattern}}”.",
       "window_too_short": "The window cannot be shorter than {{minMs}} ms."
     },
-    "nothingToUndo": "Nothing to undo in this session.",
     "undone": "Last label undone.",
-    "help": {
-      "labels": "Type pattern keys or full ids, separated by spaces or commas, then Enter saves the window and moves on. Clicking a chip adds or removes its key.",
-      "noPattern": "x answers “no clear pattern” and is stored, unlike a skip.",
-      "flags": "m and ? toggle mixed and unsure, tl/tr mark the thumb side (the same side again clears it); alone or inside a label line.",
-      "commands": "Alone on the line: s skip, u undo the last label, w+/w- widen or narrow by 1 s, n/p shift by half a window, q end the session.",
-      "hotkeys": "Typing anywhere goes into the answer box. Space plays or pauses while the box is empty, Enter saves, Esc clears it. F3 and F4 lower or raise the osu! speed."
-    },
     "footer": {
       "labelled": "Labelled: {{count}}",
       "skipped": "Skipped: {{count}}",
@@ -111,8 +106,33 @@
     },
     "done": {
       "exhausted": "No window left to label.",
-      "quit": "Session ended.",
-      "newSession": "New session"
+      "newSession": "New session",
+      "hint": "Previous still reaches this session's windows; Random and Now playing can open more."
+    },
+    "origin": {
+      "random": "Random pick",
+      "osuWindow": "From osu!",
+      "lastReplay": "Last played"
+    },
+    "toolbar": {
+      "label": "Windows",
+      "previous": "Previous",
+      "next": "Next",
+      "random": "Random",
+      "nowPlaying": "Now playing",
+      "skip": "Skip",
+      "firstWindow": "This is the first window of the session.",
+      "busy": "Wait for the current step to finish.",
+      "savedNoSkip": "A saved window cannot be skipped; undo it first.",
+      "planFinished": "The plan has no window left; Random and Now playing still open one."
+    },
+    "notice": {
+      "randomNone": "No chart has a free window left for a random pick.",
+      "nowPlayingNone": "osu! is not playing a chart and none of your replays was found."
+    },
+    "panel": {
+      "resize": "Resize the pattern panel",
+      "widthValue": "{{px}} px"
     }
   }
 }

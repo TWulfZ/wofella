@@ -3,16 +3,20 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::io;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 use wolluf_core::{ChartMd5, FileTime};
 
 use crate::codec::replay_name::{ReplayFileKind, ReplayFileName};
+use crate::codec::score_header::read_player;
 use crate::error::SourceError;
 
 const DATA_DIR: &str = "Data";
 const REPLAY_DIR: &str = "r";
+/// Mode, version, the md5 string and a player name fit many times over; the life bar that
+/// follows can be kilobytes long and is never read.
+const PLAYER_PREFIX_BYTES: u64 = 4_096;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ReplayFiles {
@@ -49,4 +53,15 @@ pub fn index(root: &Path) -> Result<BTreeMap<(ChartMd5, FileTime), ReplayFiles>,
         }
     }
     Ok(out)
+}
+
+/// The player name in a `.osr` header, read from the file's first bytes only. An absent name is
+/// empty, as sync stores it.
+pub fn replay_player(path: &Path) -> Result<Vec<u8>, SourceError> {
+    let file = fs::File::open(path).map_err(|e| SourceError::io(path, &e))?;
+    let mut prefix = Vec::new();
+    file.take(PLAYER_PREFIX_BYTES)
+        .read_to_end(&mut prefix)
+        .map_err(|e| SourceError::io(path, &e))?;
+    Ok(read_player(&prefix)?.bytes_or_empty().to_vec())
 }

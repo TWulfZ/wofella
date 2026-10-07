@@ -13,6 +13,9 @@ use wolluf_engine::labels::{LevelFamily, level_family};
 
 use super::window;
 
+const SAMPLER_DOMAIN: &[u8] = b"wolluf.label.sampler.v1";
+const RANDOM_DOMAIN: &[u8] = b"wolluf.label.random.v1";
+
 /// D17: sampling thresholds, not inline numbers.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SamplerParams {
@@ -317,10 +320,50 @@ pub fn plan(
 
 /// One of `starts`, chosen by seed, round and chart.
 pub fn pick_start(seed: u64, round: u32, md5: ChartMd5, starts: &[TimeUs]) -> Option<TimeUs> {
+    start_in(SAMPLER_DOMAIN, seed, round, md5, starts)
+}
+
+/// Every chart once, in an order set by seed and round alone: picks outside the stratified
+/// plan, so they neither follow nor consume its rounds.
+pub fn random_order(
+    seed: u64,
+    round: u32,
+    charts: impl IntoIterator<Item = ChartMd5>,
+) -> Vec<ChartMd5> {
+    let mut keyed: Vec<(u64, ChartMd5)> = charts
+        .into_iter()
+        .map(|md5| {
+            let key = mix_in(
+                RANDOM_DOMAIN,
+                seed,
+                b"chart",
+                &[&round.to_le_bytes(), &md5.0],
+            );
+            (key, md5)
+        })
+        .collect();
+    keyed.sort_unstable();
+    keyed.dedup();
+    keyed.into_iter().map(|(_, md5)| md5).collect()
+}
+
+/// Hashed in its own domain, so a random pick's start never mirrors the plan's for the same
+/// seed, round and chart.
+pub fn random_start(seed: u64, round: u32, md5: ChartMd5, starts: &[TimeUs]) -> Option<TimeUs> {
+    start_in(RANDOM_DOMAIN, seed, round, md5, starts)
+}
+
+fn start_in(
+    domain: &[u8],
+    seed: u64,
+    round: u32,
+    md5: ChartMd5,
+    starts: &[TimeUs],
+) -> Option<TimeUs> {
     if starts.is_empty() {
         return None;
     }
-    let at = mix(seed, b"start", &[&round.to_le_bytes(), &md5.0]) % starts.len() as u64;
+    let at = mix_in(domain, seed, b"start", &[&round.to_le_bytes(), &md5.0]) % starts.len() as u64;
     starts.get(usize::try_from(at).unwrap_or(0)).copied()
 }
 
@@ -387,10 +430,14 @@ pub fn window_starts(
     out
 }
 
-/// Deterministic choice bits: blake3 over a domain tag, the seed and length-prefixed parts.
 fn mix(seed: u64, tag: &[u8], parts: &[&[u8]]) -> u64 {
+    mix_in(SAMPLER_DOMAIN, seed, tag, parts)
+}
+
+/// Deterministic choice bits: blake3 over a domain tag, the seed and length-prefixed parts.
+fn mix_in(domain: &[u8], seed: u64, tag: &[u8], parts: &[&[u8]]) -> u64 {
     let mut h = blake3::Hasher::new();
-    h.update(b"wolluf.label.sampler.v1");
+    h.update(domain);
     h.update(tag);
     h.update(&seed.to_le_bytes());
     for p in parts {

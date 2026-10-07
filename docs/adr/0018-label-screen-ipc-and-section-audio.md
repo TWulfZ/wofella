@@ -43,3 +43,11 @@ Constraints that already hold:
 - New command `label_pattern_examples(keymode) -> PatternExampleDto[]`, appended to the `label_*` group. Each item is a pattern id plus a `ChartWindowDto` of a synthetic chart built in `wolluf_engine::examples`, with a zero md5 and no audio. The UI draws it as a static preview on the pattern cards.
 - The examples are synthetic on purpose. Real library snippets or engine segments would show the labeller what the engine thinks of real charts, which breaks the blind rule above.
 - An engine test pins each example to its own pattern: the segment at the middle of its display span must have the example's id as primary, or as a secondary tag for the tag-only ids. A rule change that stops recognising an example fails CI rather than showing a misleading preview.
+
+## Amendment 2026-10-06: structured answers and session navigation
+- **Answers are structured.** The screen builds `LabelSubmitDto` from taxonomy ids chosen as chips (grid cards or a "+" picker); there is no free-text answer field and no type-to-answer. The text grammar stays in the CLI (`wolluf label`), which resolves tokens through `LabelingService::resolve_patterns`; the desktop command `label_resolve_patterns` is removed. Free text let typos and stray commands reach the answer path; a closed list keeps every stored label a valid taxonomy set.
+- **Navigation commands** appended to the `label_*` group:
+  - `label_random(seed, round, exclude)`: a window of any eligible chart, ordered by its own hash domain (`wolluf.label.random.v1`), so it never consumes a stratified round of `label_sample`.
+  - `label_now_playing(keymode, exclude)`: the chart osu! stable is playing, read from its window title (`osu!  - Artist - Title [Difficulty]`) through `tasklist /v` on a button press only, matched against the catalog; otherwise the newest replay in `Data/r` whose player is a self alias (ADR 0005); otherwise nothing. No memory reading and no tosu (ADR 0008 keeps tosu optional for F5). Titles outside the console code page do not match and fall back to the replay.
+  - `label_window_at(md5, seed, exclude)`: a window inside a given chart, kept for opening played charts from the session-labelling list.
+- Every window the session shows joins `exclude`, so Previous/Next history, Skip, Random and Now playing never bring back a shown or skipped window.

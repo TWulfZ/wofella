@@ -3,8 +3,11 @@ use std::collections::BTreeSet;
 use wolluf_core::ErrorCode;
 
 use super::*;
-use crate::features::labeling::dto::{AnchorDto, LabelSubmitDto, SampleRequestDto, WindowOpDto};
-use crate::features::library::testkit::{Map, osu_text, synced};
+use crate::features::labeling::dto::{
+    AnchorDto, LabelSubmitDto, NowPlayingRequestDto, NowPlayingSourceDto, RandomRequestDto,
+    SampleRequestDto, WindowAtRequestDto, WindowOpDto,
+};
+use crate::features::library::testkit::{Map, install, osu_text, synced};
 use crate::features::plays::testkit::Fixture;
 
 const REGULAR_DAN: &str = "1 7K Dan Course - Regular Dan Phase";
@@ -119,8 +122,17 @@ async fn taxonomy_lists_the_keymode_patterns() {
 #[test]
 fn service_futures_are_send() {
     fn is_send<T: Send>(_: T) {}
-    fn check(ctx: &crate::context::AppContext, req: SampleRequestDto) {
+    fn check(
+        ctx: &crate::context::AppContext,
+        req: SampleRequestDto,
+        at: WindowAtRequestDto,
+        random: RandomRequestDto,
+        playing: NowPlayingRequestDto,
+    ) {
         is_send(async move { ctx.labeling().sample(req).await });
+        is_send(async move { ctx.labeling().window_at(at).await });
+        is_send(async move { ctx.labeling().random(random).await });
+        is_send(async move { ctx.labeling().now_playing(playing).await });
     }
     let _ = check;
 }
@@ -814,4 +826,461 @@ fn chart_facts_drop_name_hints() {
     let facts = chart_facts(&[chart], &BTreeSet::new());
     let scales: Vec<&str> = facts[0].labels.iter().map(|l| l.scale.as_str()).collect();
     assert_eq!(scales, ["jinjin_dan"]);
+}
+
+fn at(md5: &str, seed: &str, exclude: Vec<AnchorDto>) -> WindowAtRequestDto {
+    WindowAtRequestDto {
+        keymode: 7,
+        md5: md5.to_owned(),
+        seed: seed.to_owned(),
+        window_ms: None,
+        exclude,
+    }
+}
+
+fn random(seed: &str, round: u32, exclude: Vec<AnchorDto>) -> RandomRequestDto {
+    RandomRequestDto {
+        keymode: 7,
+        seed: seed.to_owned(),
+        round,
+        window_ms: None,
+        exclude,
+    }
+}
+
+/// Rows run from 0 to 19.875 s, so a window must end by 19.876 s.
+fn inside_long_map(a: &AnchorDto) -> bool {
+    0 <= a.t0_ms && a.t1_ms <= 19_876
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn window_at_picks_a_free_window_inside_the_given_chart() {
+    let (f, maps) = library().await;
+    let svc = f.ctx.labeling();
+    let three = &maps[0];
+    let w = svc.window_at(at(&three.md5, "5", vec![])).await.unwrap();
+    assert_eq!(
+        svc.window_at(at(&three.md5, "5", vec![])).await.unwrap(),
+        w,
+        "deterministic for the seed"
+    );
+    assert_eq!(w.anchor.md5, three.md5);
+    assert_eq!(w.anchor.t1_ms - w.anchor.t0_ms, 4_000);
+    assert_eq!(w.anchor.cols, ALL_COLS);
+    assert!(inside_long_map(&w.anchor), "{w:?}");
+    assert_eq!(
+        (w.title.as_str(), w.version.as_str()),
+        (three.title.as_str(), three.version.as_str())
+    );
+    assert_eq!(w.level.as_deref(), Some("jinjin_dan_regular:3rd"));
+    assert!(w.stratum.starts_with("dan_03/nps_"), "{w:?}");
+
+    svc.submit(submit(&w.anchor, &["regular.stream.single"]))
+        .await
+        .unwrap();
+    let mut seen = Vec::new();
+    for seed in 0..3 {
+        let o = svc
+            .window_at(at(&three.md5, &seed.to_string(), seen.clone()))
+            .await
+            .unwrap();
+        assert_eq!(o.anchor.md5, three.md5);
+        assert!(!overlaps(&o.anchor, &w.anchor), "labelled: {o:?}");
+        assert!(!seen.iter().any(|s| overlaps(s, &o.anchor)), "{o:?}");
+        seen.push(o.anchor);
+    }
+    let short = svc
+        .window_at(WindowAtRequestDto {
+            window_ms: Some(2_000),
+            ..at(&three.md5, "5", vec![])
+        })
+        .await
+        .unwrap();
+    assert_eq!(short.anchor.t1_ms - short.anchor.t0_ms, 2_000);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn window_at_rejects_unknown_unparsed_and_full_charts() {
+    let maps = vec![long_map("here"), long_map("gone").missing()];
+    let (f, _) = synced(&maps, &[]).await;
+    let svc = f.ctx.labeling();
+    let here = &maps[0].md5;
+    let cases = [
+        (at("nope", "1", vec![]), ErrorCode::InvalidInput),
+        (at(&"0".repeat(32), "1", vec![]), ErrorCode::NotFound),
+        (at(&maps[1].md5, "1", vec![]), ErrorCode::NotFound),
+        (at(here, "-1", vec![]), ErrorCode::InvalidInput),
+        (
+            WindowAtRequestDto {
+                keymode: 4,
+                ..at(here, "1", vec![])
+            },
+            ErrorCode::InvalidInput,
+        ),
+        (
+            WindowAtRequestDto {
+                window_ms: Some(0),
+                ..at(here, "1", vec![])
+            },
+            ErrorCode::InvalidInput,
+        ),
+    ];
+    for (req, code) in cases {
+        let err = svc.window_at(req.clone()).await.unwrap_err();
+        assert_eq!(err.code, code, "{req:?}");
+    }
+    let whole = |exclude| WindowAtRequestDto {
+        window_ms: Some(19_000),
+        ..at(here, "1", exclude)
+    };
+    let first = svc.window_at(whole(vec![])).await.unwrap();
+    let full = svc.window_at(whole(vec![first.anchor])).await.unwrap_err();
+    assert_eq!(full.code, ErrorCode::Conflict);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn random_takes_any_chart_deterministically() {
+    let (f, maps) = library().await;
+    let svc = f.ctx.labeling();
+    let first = svc.random(random("9", 0, vec![])).await.unwrap().unwrap();
+    assert_eq!(
+        svc.random(random("9", 0, vec![])).await.unwrap(),
+        Some(first.clone())
+    );
+    assert!(maps.iter().any(|m| m.md5 == first.anchor.md5));
+    assert_eq!(first.anchor.t1_ms - first.anchor.t0_ms, 4_000);
+    assert!(first.stratum.contains("/nps_"), "{first:?}");
+
+    let mut seen: Vec<AnchorDto> = Vec::new();
+    let mut charts = BTreeSet::new();
+    for round in 0..6 {
+        let w = svc
+            .random(random("9", round, seen.clone()))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(inside_long_map(&w.anchor), "{w:?}");
+        assert!(!seen.iter().any(|s| overlaps(s, &w.anchor)), "{w:?}");
+        charts.insert(w.anchor.md5.clone());
+        seen.push(w.anchor);
+    }
+    assert!(charts.len() >= 2, "rounds move between charts: {charts:?}");
+
+    assert_eq!(
+        svc.random(random("x", 0, vec![])).await.unwrap_err().code,
+        ErrorCode::InvalidInput
+    );
+    assert_eq!(
+        svc.random(RandomRequestDto {
+            keymode: 4,
+            ..random("1", 0, vec![])
+        })
+        .await
+        .unwrap_err()
+        .code,
+        ErrorCode::InvalidInput
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn random_is_none_once_every_window_is_taken() {
+    let (f, _) = synced(&[long_map("solo")], &[]).await;
+    let svc = f.ctx.labeling();
+    let whole = |round, exclude| RandomRequestDto {
+        window_ms: Some(19_000),
+        ..random("4", round, exclude)
+    };
+    let first = svc.random(whole(0, vec![])).await.unwrap().unwrap();
+    assert_eq!(
+        svc.random(whole(1, vec![first.anchor.clone()]))
+            .await
+            .unwrap(),
+        None
+    );
+    svc.submit(submit(&first.anchor, &["regular.stream.single"]))
+        .await
+        .unwrap();
+    assert_eq!(
+        svc.random(whole(0, vec![])).await.unwrap(),
+        None,
+        "labelled windows are avoided without being passed in"
+    );
+}
+
+fn playing(title: &str) -> std::sync::Arc<wolluf_source_osu::testkit::FakeProbe> {
+    use wolluf_source_osu::probe::ProbeResult;
+    std::sync::Arc::new(
+        wolluf_source_osu::testkit::FakeProbe::new(ProbeResult::Running { pids: vec![1] })
+            .with_title(title),
+    )
+}
+
+fn np(exclude: Vec<AnchorDto>) -> NowPlayingRequestDto {
+    NowPlayingRequestDto {
+        keymode: 7,
+        exclude,
+    }
+}
+
+fn now_playing<'a>(f: &'a Fixture, title: &str) -> LabelingService<'a> {
+    LabelingService::with_probe(&f.ctx, playing(title))
+}
+
+/// A `Data/r` replay of `md5` by `player`; `nth` orders replays in time.
+fn replay(
+    inst: wolluf_source_osu::testkit::FakeInstall,
+    md5: &str,
+    player: &str,
+    nth: i64,
+) -> wolluf_source_osu::testkit::FakeInstall {
+    let osr = wolluf_source_osu::testkit::OsrBuilder::new(
+        wolluf_source_osu::testkit::ScoreBuilder::mania(md5, player, nth),
+    );
+    let name = osr.file_name().unwrap();
+    inst.replay(&name, osr.build())
+}
+
+/// The osu!.db artist the library testkit gives a chart.
+fn artist(map: &Map) -> String {
+    format!("artist-{}", map.md5)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn now_playing_resolves_the_osu_window_title() {
+    let (f, maps) = library().await;
+    let eight = &maps[1];
+    let artist = artist(eight);
+    for title in [
+        format!("osu!  - {artist} - eight [8th Dan]"),
+        format!("osu! - {artist}  -  eight [8th Dan]"),
+        format!("osu!  - {} - Eight [8th dan]", artist.to_uppercase()),
+    ] {
+        let got = now_playing(&f, &title)
+            .now_playing(np(vec![]))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(got.source, NowPlayingSourceDto::OsuWindow, "{title}");
+        assert_eq!(got.window.anchor.md5, eight.md5, "{title}");
+        assert_eq!(got.window.anchor.t1_ms - got.window.anchor.t0_ms, 4_000);
+        assert_eq!(got.window.version, "8th Dan");
+    }
+    for title in [
+        "osu!".to_owned(),
+        format!("osu!  - {artist} - nothing [8th Dan]"),
+        String::new(),
+    ] {
+        assert_eq!(
+            now_playing(&f, &title)
+                .now_playing(np(vec![]))
+                .await
+                .unwrap(),
+            None,
+            "{title:?}"
+        );
+    }
+    let title = format!("osu!  - {artist} - eight [8th Dan]");
+    assert_eq!(
+        now_playing(&f, &title)
+            .now_playing(NowPlayingRequestDto {
+                keymode: 4,
+                ..np(vec![])
+            })
+            .await
+            .unwrap_err()
+            .code,
+        ErrorCode::InvalidInput
+    );
+}
+
+/// Two charts with the same artist, title and difficulty name, as duplicated sets have.
+fn twins() -> (wolluf_source_osu::testkit::FakeInstall, [String; 2]) {
+    use wolluf_source_osu::codec::OsuString;
+    use wolluf_source_osu::testkit::{BeatmapBuilder, FakeInstall, OsuDbBuilder};
+
+    let mut db = OsuDbBuilder::new();
+    let mut inst = FakeInstall::new().cfg("fixture", "Username = TWulfZ\r\n");
+    let mut md5s = Vec::new();
+    for (i, which) in ["twin a", "twin b"].into_iter().enumerate() {
+        let map = long_map(which);
+        let mut b = BeatmapBuilder::mania(&map.md5, 7)
+            .folder(&map.folder)
+            .osu_file(&map.file)
+            .title("twin")
+            .ids(1, 100 + i as i32)
+            .build();
+        b.artist = OsuString::present(*b"Twin Artist");
+        b.difficulty = OsuString::present(*b"Normal");
+        db = db.beatmap(b);
+        inst = inst.song(map.rel_path(), map.bytes.clone().unwrap());
+        md5s.push(map.md5);
+    }
+    let md5s = [md5s[0].clone(), md5s[1].clone()];
+    (inst.osu_db(db.encode()), md5s)
+}
+
+const TWIN_TITLE: &str = "osu!  - Twin Artist - twin [Normal]";
+
+#[tokio::test(flavor = "multi_thread")]
+async fn now_playing_breaks_title_ties_by_the_newest_self_replay() {
+    let (inst, [a, b]) = twins();
+    let inst = replay(replay(inst, &b, "TWulfZ", 1), &a, "Kovacs", 2);
+    let f = Fixture::new(&inst).await;
+    f.sync().await;
+    let got = now_playing(&f, TWIN_TITLE)
+        .now_playing(np(vec![]))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (got.window.anchor.md5.as_str(), got.source),
+        (b.as_str(), NowPlayingSourceDto::OsuWindow)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn now_playing_never_uses_another_players_replay() {
+    let (inst, [a, b]) = twins();
+    let inst = replay(replay(inst, &a, "Kovacs", 1), &b, "Kovacs", 2);
+    let f = Fixture::new(&inst).await;
+    f.sync().await;
+    for title in [TWIN_TITLE, "osu!"] {
+        assert_eq!(
+            now_playing(&f, title)
+                .now_playing(np(vec![]))
+                .await
+                .unwrap(),
+            None,
+            "an ambiguous title and someone else's replays: {title}"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn now_playing_falls_back_to_the_newest_self_replay_of_the_keymode() {
+    let mut maps = maps();
+    let four = Map::new("four", 4, osu_text(4, "four", &[(0, 0), (1, 125)], &[]));
+    maps.push(four.clone());
+    let (three, eight, plain) = (&maps[0].md5, &maps[1].md5, &maps[2].md5);
+    let unknown = "f".repeat(32);
+    let mut inst = install(&maps, &[]).cfg("fixture", "Username = TWulfZ\r\n");
+    for (md5, player, nth) in [
+        (three.as_str(), "TWulfZ", 1),
+        (eight.as_str(), "TWulfZ", 3),
+        (plain.as_str(), "Kovacs", 4),
+        (four.md5.as_str(), "TWulfZ", 5),
+        (unknown.as_str(), "TWulfZ", 6),
+    ] {
+        inst = replay(inst, md5, player, nth);
+    }
+    let f = Fixture::new(&inst).await;
+    f.sync().await;
+    let got = now_playing(&f, "osu!")
+        .now_playing(np(vec![]))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (got.window.anchor.md5.as_str(), got.source),
+        (eight.as_str(), NowPlayingSourceDto::LastReplay)
+    );
+
+    // Read live from Data/r: a replay saved after the last sync counts.
+    let newer = wolluf_source_osu::testkit::OsrBuilder::new(
+        wolluf_source_osu::testkit::ScoreBuilder::mania(plain, "TWulfZ", 7),
+    );
+    let name = newer.file_name().unwrap();
+    f.write(
+        std::path::Path::new("Data/r").join(name.format()),
+        &newer.build(),
+    );
+    let got = now_playing(&f, "osu!")
+        .now_playing(np(vec![]))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(got.window.anchor.md5, *plain);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn now_playing_moves_past_the_windows_already_shown() {
+    let (f, maps) = library().await;
+    let eight = &maps[1];
+    let title = format!("osu!  - {} - eight [8th Dan]", artist(eight));
+    let svc = now_playing(&f, &title);
+    let first = svc.now_playing(np(vec![])).await.unwrap().unwrap();
+    // Skip keeps the window in the session's shown list, so the next press must not repeat it.
+    let second = svc
+        .now_playing(np(vec![first.window.anchor.clone()]))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(second.source, NowPlayingSourceDto::OsuWindow);
+    assert_eq!(second.window.anchor.md5, eight.md5);
+    assert!(
+        !overlaps(&first.window.anchor, &second.window.anchor),
+        "{first:?} {second:?}"
+    );
+    assert_eq!(
+        svc.now_playing(np(vec![first.window.anchor.clone()]))
+            .await
+            .unwrap()
+            .unwrap(),
+        second,
+        "deterministic for the shown windows"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn now_playing_falls_back_to_the_last_replay_once_the_title_chart_is_full() {
+    let maps = maps();
+    let (three, eight) = (&maps[0].md5, &maps[1].md5);
+    let mut inst = install(&maps, &[]).cfg("fixture", "Username = TWulfZ\r\n");
+    // The title chart is also the newest replay: it cannot stand in for itself.
+    for (md5, nth) in [(three.as_str(), 1), (eight.as_str(), 2)] {
+        inst = replay(inst, md5, "TWulfZ", nth);
+    }
+    let f = Fixture::new(&inst).await;
+    f.sync().await;
+    let title = format!("osu!  - {} - eight [8th Dan]", artist(&maps[1]));
+    let whole_eight = anchor(eight, 0, 19_876);
+    let got = now_playing(&f, &title)
+        .now_playing(np(vec![whole_eight]))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (got.window.anchor.md5.as_str(), got.source),
+        (three.as_str(), NowPlayingSourceDto::LastReplay)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn now_playing_ignores_replays_without_a_self_identity() {
+    let maps = maps();
+    let mut inst = install(&maps, &[]);
+    for (nth, map) in (1..).zip(&maps) {
+        inst = replay(inst, &map.md5, "TWulfZ", nth);
+    }
+    let f = Fixture::new(&inst).await;
+    assert_eq!(f.ctx.players().self_profile_id().await.unwrap(), None);
+    assert_eq!(
+        now_playing(&f, "osu!")
+            .now_playing(np(vec![]))
+            .await
+            .unwrap(),
+        None,
+        "before the first sync there is no self profile"
+    );
+    // Sync creates the self profile, but without a cfg login no alias joins it.
+    f.sync().await;
+    assert_eq!(f.ctx.players().self_alias_ids().await.unwrap(), []);
+    assert_eq!(
+        now_playing(&f, "osu!")
+            .now_playing(np(vec![]))
+            .await
+            .unwrap(),
+        None,
+        "ADR 0005: another name's replays never stand for the user"
+    );
 }

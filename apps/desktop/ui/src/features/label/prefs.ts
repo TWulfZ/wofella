@@ -24,6 +24,8 @@ export const LABEL_PREFS = {
   pxPerMsKey: "wolluf.label.pxPerMs",
   fitKey: "wolluf.label.fit",
   zoomKey: "wolluf.label.zoom",
+  /** Pixels, clamped on use: the screen it was stored on may have been wider. */
+  panelWidthKey: "wolluf.label.panelWidthPx",
   /** JSON so a skin folder literally named like a sentinel cannot be mistaken for "None". */
   skinKey: "wolluf.label.skin",
   /** Before scroll modes it held a px/ms number or "fit". */
@@ -150,4 +152,13 @@ export function readZoom(): number {
 
 export function writeZoom(zoom: number): void {
   write(LABEL_PREFS.zoomKey, String(zoom));
+}
+
+export function readPanelWidthPx(fallback: number): number {
+  const n = parseNumber(read(LABEL_PREFS.panelWidthKey));
+  return n === null || n <= 0 ? fallback : n;
+}
+
+export function writePanelWidthPx(widthPx: number): void {
+  write(LABEL_PREFS.panelWidthKey, String(Math.round(widthPx)));
 }

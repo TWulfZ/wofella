@@ -46,7 +46,8 @@
       "noResults": "Ningún patrón coincide con «{{query}}»",
       "noResultsHint": "Busca por nombre, tecla o descripción.",
       "clearSearch": "Borrar búsqueda",
-      "preview": "Ejemplo de {{name}}"
+      "preview": "Ejemplo de {{name}}",
+      "alwaysCollapsed": "Siempre contraído"
     },
     "axis": {
       "regular_jack": "Jack",
@@ -67,41 +68,35 @@
     },
     "answer": {
       "label": "Respuesta",
-      "placeholder": "Teclas de patrón, p. ej. js m · Enter guarda",
       "submit": "Guardar",
-      "noPattern": "Sin patrón",
-      "skip": "Saltar",
+      "clear": "Limpiar",
       "undo": "Deshacer",
-      "help": "Ayuda",
-      "clear": "Limpiar"
+      "noPattern": "Sin patrón",
+      "noPatternChip": "Sin patrón claro",
+      "saved": "Guardada",
+      "skipped": "Saltada",
+      "selected": "Patrones elegidos",
+      "empty": "Elige patrones en las tarjetas o con +.",
+      "remove": "Quitar {{name}}",
+      "add": "Añadir patrón",
+      "find": "Buscar un patrón",
+      "findPlaceholder": "Escribe para filtrar · Enter añade",
+      "options": "Patrones de la taxonomía",
+      "needsPattern": "Elige un patrón o Sin patrón para guardar.",
+      "undoNotNewest": "Solo se puede deshacer la etiqueta guardada más reciente."
     },
     "reshape": {
       "title": "Ventana",
-      "widen": "Ampliar",
-      "narrow": "Acortar",
-      "prev": "Anterior",
-      "next": "Siguiente"
-    },
-    "answerError": {
-      "empty": "Escribe una respuesta primero, o h para ver la ayuda.",
-      "twoThumbSides": "Elige un solo lado para el pulgar.",
-      "commandInLine": "“{{word}}” es un comando; envíalo solo.",
-      "noPatternWithPatterns": "x significa que no hay un patrón claro; envíala sin patrones.",
-      "noPatternGiven": "No indicaste ningún patrón."
+      "widen": "Ensanchar ventana",
+      "narrow": "Estrechar ventana",
+      "earlier": "Mover la ventana antes",
+      "later": "Mover la ventana después"
     },
     "error": {
       "unknown_pattern": "Patrón desconocido: “{{pattern}}”.",
       "window_too_short": "La ventana no puede durar menos de {{minMs}} ms."
     },
-    "nothingToUndo": "No hay nada que deshacer en esta sesión.",
     "undone": "Se deshizo la última etiqueta.",
-    "help": {
-      "labels": "Escribe las teclas de patrón o los ids completos, separados por espacios o comas, y Enter guarda la ventana y pasa a la siguiente. Al hacer clic en un chip se agrega o se quita su tecla.",
-      "noPattern": "x responde “sin patrón claro” y se guarda, a diferencia de saltar.",
-      "flags": "m y ? alternan mixto y dudoso, tl/tr marcan el lado del pulgar (el mismo lado otra vez lo quita); solos o dentro de una línea de etiquetas.",
-      "commands": "Solos en la línea: s salta, u deshace la última etiqueta, w+/w- amplían o acortan 1 s, n/p desplazan media ventana, q termina la sesión.",
-      "hotkeys": "Lo que escribas en cualquier parte va al cuadro de respuesta. Espacio reproduce o pausa mientras el cuadro está vacío, Enter guarda y Esc lo limpia. F3 y F4 bajan o suben la velocidad osu!."
-    },
     "footer": {
       "labelled": "Etiquetadas: {{count}}",
       "skipped": "Saltadas: {{count}}",
@@ -111,8 +106,33 @@
     },
     "done": {
       "exhausted": "No quedan ventanas por etiquetar.",
-      "quit": "Sesión terminada.",
-      "newSession": "Nueva sesión"
+      "newSession": "Nueva sesión",
+      "hint": "Anterior sigue llegando a las ventanas de esta sesión; Al azar y Sonando ahora pueden abrir más."
+    },
+    "origin": {
+      "random": "Elección al azar",
+      "osuWindow": "Desde osu!",
+      "lastReplay": "Última jugada"
+    },
+    "toolbar": {
+      "label": "Ventanas",
+      "previous": "Anterior",
+      "next": "Siguiente",
+      "random": "Al azar",
+      "nowPlaying": "Sonando ahora",
+      "skip": "Saltar",
+      "firstWindow": "Es la primera ventana de la sesión.",
+      "busy": "Espera a que termine el paso en curso.",
+      "savedNoSkip": "Una ventana guardada no se puede saltar; deshazla primero.",
+      "planFinished": "El plan no tiene más ventanas; Al azar y Sonando ahora todavía abren una."
+    },
+    "notice": {
+      "randomNone": "Ningún chart tiene una ventana libre para elegir al azar.",
+      "nowPlayingNone": "osu! no está reproduciendo un chart y no se encontró ninguna repetición tuya."
+    },
+    "panel": {
+      "resize": "Redimensionar el panel de patrones",
+      "widthValue": "{{px}} px"
     }
   }
 }

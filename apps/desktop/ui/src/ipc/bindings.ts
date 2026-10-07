@@ -41,8 +41,6 @@ export const commands = {
 	stratum: string,
 	played: boolean,
 } | null, IpcError>(__TAURI_INVOKE("label_sample", { req })),
-	/**  Short keys or full ids to full pattern ids, in input order without repeats. */
-	labelResolvePatterns: (keymode: number, tokens: string[]) => typedError<string[], IpcError>(__TAURI_INVOKE("label_resolve_patterns", { keymode, tokens })),
 	labelReshape: (anchor: AnchorDto, op: WindowOpDto) => typedError<AnchorDto, IpcError>(__TAURI_INVOKE("label_reshape", { anchor, op })),
 	labelSubmit: (req: LabelSubmitDto) => typedError<LabelEventDto, IpcError>(__TAURI_INVOKE("label_submit", { req })),
 	labelUndo: (eventId: string) => typedError<null, IpcError>(__TAURI_INVOKE("label_undo", { eventId })),
@@ -55,6 +53,28 @@ export const commands = {
 	skinGet: (folder: string, keymode: number) => typedError<SkinDto, IpcError>(__TAURI_INVOKE("skin_get", { folder, keymode })),
 	/**  One synthetic preview per pattern of the keymode, in taxonomy order. */
 	labelPatternExamples: (keymode: number) => typedError<PatternExampleDto[], IpcError>(__TAURI_INVOKE("label_pattern_examples", { keymode })),
+	/**
+	 *  A free window inside the given chart; `NOT_FOUND` for a chart the catalog has not parsed,
+	 *  `CONFLICT` when none of its windows is free.
+	 */
+	labelWindowAt: (req: WindowAtRequestDto) => typedError<LabelWindowDto, IpcError>(__TAURI_INVOKE("label_window_at", { req })),
+	/**  Any eligible chart outside the stratified plan; `None` when no free window is left. */
+	labelRandom: (req: RandomRequestDto) => typedError<{
+	anchor: AnchorDto,
+	title: string,
+	artist: string,
+	version: string,
+	/**  `scale:level` of the label that placed the chart in its stratum. */
+	level: string | null,
+	/**  e.g. `dan_07/nps_2`; display only, never persisted. */
+	stratum: string,
+	played: boolean,
+} | null, IpcError>(__TAURI_INVOKE("label_random", { req })),
+	/**  The chart osu! is playing, else the user's last replay; probes once per call. */
+	labelNowPlaying: (req: NowPlayingRequestDto) => typedError<{
+	window: LabelWindowDto,
+	source: NowPlayingSourceDto,
+} | null, IpcError>(__TAURI_INVOKE("label_now_playing", { req })),
 };
 
 /** Events */
@@ -402,6 +422,23 @@ export type NoteDto = {
 	endMs: number | null,
 };
 
+export type NowPlayingDto = {
+	window: LabelWindowDto,
+	source: NowPlayingSourceDto,
+};
+
+export type NowPlayingRequestDto = {
+	keymode: number,
+	/**  Windows already shown this session, so a skipped one is not offered again. */
+	exclude: AnchorDto[],
+};
+
+export type NowPlayingSourceDto = 
+/**  osu! stable's window title named the chart. */
+"osuWindow" | 
+/**  The newest replay in `Data/r` played by the self profile. */
+"lastReplay";
+
 export type PatternDefDto = {
 	id: string,
 	axis: string,
@@ -428,6 +465,19 @@ export type ProfileEntryDto = {
 };
 
 export type ProfileKindDto = "self" | "other" | "all_players";
+
+/**
+ *  Any eligible chart of the keymode, outside the stratified plan: it neither follows nor
+ *  consumes the sampler's rounds.
+ */
+export type RandomRequestDto = {
+	keymode: number,
+	/**  A `u64` in decimal. */
+	seed: string,
+	round: number,
+	windowMs: number | null,
+	exclude: AnchorDto[],
+};
 
 /**  One labelling round. Label bounds are inclusive and match as in the library listing. */
 export type SampleRequestDto = {
@@ -567,6 +617,16 @@ export type TopChartDto = {
 	title: string | null,
 	version: string | null,
 	n: number,
+};
+
+/**  A window inside one chart the user picked, start chosen like the sampler's. */
+export type WindowAtRequestDto = {
+	keymode: number,
+	md5: string,
+	/**  A `u64` in decimal. */
+	seed: string,
+	windowMs: number | null,
+	exclude: AnchorDto[],
 };
 
 export type WindowOpDto = "widen" | "narrow" | "next" | "prev";

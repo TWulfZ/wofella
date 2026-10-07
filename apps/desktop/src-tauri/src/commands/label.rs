@@ -1,7 +1,8 @@
 use wolluf_app::errors::IpcError;
 use wolluf_app::features::labeling::dto::{
-    AnchorDto, LabelEventDto, LabelStatsDto, LabelSubmitDto, LabelWindowDto, PatternDefDto,
-    PatternExampleDto, SampleRequestDto, WindowOpDto,
+    AnchorDto, LabelEventDto, LabelStatsDto, LabelSubmitDto, LabelWindowDto, NowPlayingDto,
+    NowPlayingRequestDto, PatternDefDto, PatternExampleDto, RandomRequestDto, SampleRequestDto,
+    WindowAtRequestDto, WindowOpDto,
 };
 
 use super::Ctx;
@@ -36,20 +37,6 @@ pub async fn label_sample(
     ctx.labeling().sample(req).await.map_err(to_ipc)
 }
 
-/// Short keys or full ids to full pattern ids, in input order without repeats.
-#[tauri::command]
-#[specta::specta]
-#[tracing::instrument(skip_all)]
-pub async fn label_resolve_patterns(
-    ctx: Ctx<'_>,
-    keymode: u8,
-    tokens: Vec<String>,
-) -> Result<Vec<String>, IpcError> {
-    let ids = ctx.labeling().resolve_patterns(keymode, &tokens);
-    ids.map(|ids| ids.iter().map(ToString::to_string).collect())
-        .map_err(to_ipc)
-}
-
 #[tauri::command]
 #[specta::specta]
 #[tracing::instrument(skip_all)]
@@ -80,4 +67,38 @@ pub async fn label_undo(ctx: Ctx<'_>, event_id: String) -> Result<(), IpcError> 
 #[tracing::instrument(skip_all)]
 pub async fn label_stats(ctx: Ctx<'_>) -> Result<LabelStatsDto, IpcError> {
     ctx.labeling().stats().await.map_err(to_ipc)
+}
+
+/// A free window inside the given chart; `NOT_FOUND` for a chart the catalog has not parsed,
+/// `CONFLICT` when none of its windows is free.
+#[tauri::command]
+#[specta::specta]
+#[tracing::instrument(skip_all)]
+pub async fn label_window_at(
+    ctx: Ctx<'_>,
+    req: WindowAtRequestDto,
+) -> Result<LabelWindowDto, IpcError> {
+    ctx.labeling().window_at(req).await.map_err(to_ipc)
+}
+
+/// Any eligible chart outside the stratified plan; `None` when no free window is left.
+#[tauri::command]
+#[specta::specta]
+#[tracing::instrument(skip_all)]
+pub async fn label_random(
+    ctx: Ctx<'_>,
+    req: RandomRequestDto,
+) -> Result<Option<LabelWindowDto>, IpcError> {
+    ctx.labeling().random(req).await.map_err(to_ipc)
+}
+
+/// The chart osu! is playing, else the user's last replay; probes once per call.
+#[tauri::command]
+#[specta::specta]
+#[tracing::instrument(skip_all)]
+pub async fn label_now_playing(
+    ctx: Ctx<'_>,
+    req: NowPlayingRequestDto,
+) -> Result<Option<NowPlayingDto>, IpcError> {
+    ctx.labeling().now_playing(req).await.map_err(to_ipc)
 }

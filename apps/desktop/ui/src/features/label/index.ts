@@ -1,16 +1,23 @@
-export { type Answer, type AnswerError, type ParsedAnswer, parseAnswer, RESERVED_TOKENS } from "./answer";
 export {
+  type Answer,
+  canSave,
+  canUndo,
+  currentEntry,
+  EMPTY_ANSWER,
+  type EntryStatus,
   type FlagToggle,
-  type InlineFlags,
+  type HistoryEntry,
   initialSession,
+  isSampling,
+  randomRequest,
   sampleExclusion,
   type SessionAction,
   type SessionCounts,
-  type SessionFlags,
   type SessionState,
   sessionReducer,
-  submitFlags,
+  submitPayload,
   undoTarget,
+  type WindowOrigin,
 } from "./session";
 export type { Anchor, LabelWindow, ThumbSide, WindowOp } from "./types";
 export { LABEL_SCREEN_PARAMS, LabelScreen, type LabelScreenParams, type LabelScreenProps } from "./LabelScreen";

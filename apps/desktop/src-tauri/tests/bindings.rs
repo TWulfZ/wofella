@@ -59,19 +59,28 @@ mod bindings {
             "SkinDto",
             "labelTaxonomy",
             "labelSample",
-            "labelResolvePatterns",
             "labelReshape",
             "labelSubmit",
             "labelUndo",
             "labelPatternExamples",
             "PatternExampleDto",
             "labelStats",
+            "labelWindowAt",
+            "WindowAtRequestDto",
+            "labelRandom",
+            "RandomRequestDto",
+            "labelNowPlaying",
+            "NowPlayingRequestDto",
+            "NowPlayingDto",
+            "NowPlayingSourceDto",
             "AliasRowDto",
             "job-progress",
             "IpcError",
         ] {
             assert!(first.contains(name), "{name} missing from bindings");
         }
+        // The UI answers with taxonomy ids; only the CLI resolves typed keys.
+        assert!(!first.contains("labelResolvePatterns"));
     }
 
     /// `number` loses precision above 2^53, so a 64-bit DTO field must break the export.
