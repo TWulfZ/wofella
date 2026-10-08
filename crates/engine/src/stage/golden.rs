@@ -18,6 +18,7 @@ use super::chart_parse::{parse_chart, summarize};
 use super::difficulty::{Calc, MinaCalcParams, MsdStatus, UnratedReason};
 use crate::error::EngineError;
 use crate::labels::LabelInput;
+use crate::preview::{GoalParams, PlayCounts, PlayMods, goal_permyriad};
 use crate::rows_blob::{decode_rows, encode_rows};
 
 /// Ratios are pinned to 1e-6: finer bits would make the golden depend on float formatting.
@@ -189,6 +190,58 @@ fn difficulty_fixtures() -> Vec<(&'static str, Option<Chart>)> {
         ("k7_rice", Some(k7_rice)),
         ("k7_ln_heavy", Some(k7_ln_heavy)),
         ("k7_empty", empty),
+    ]
+}
+
+pub(super) fn play_ssr() -> String {
+    hex(&play_ssr_dump())
+}
+
+/// The goal model alone: SSRs are calculator floats (ADR 0022) and never enter the golden.
+fn play_ssr_dump() -> String {
+    let params = GoalParams::default();
+    let mut dump = String::new();
+    let _ = writeln!(dump, "params {}", hex_bytes(&params.params_hash()));
+    for (name, counts, od, bits) in play_ssr_fixtures() {
+        let goal = goal_permyriad(counts, od, PlayMods::from_bits(bits), &params);
+        let _ = writeln!(dump, "goal {name} {goal:?}");
+    }
+    dump
+}
+
+const HR: i32 = 16;
+const EZ: i32 = 2;
+const DT_NC: i32 = 64 | 512;
+const HT: i32 = 256;
+
+/// `[max, 300, 200, 100, 50, miss]` across OD, every window mod and the edge cases.
+fn play_ssr_fixtures() -> Vec<(&'static str, PlayCounts, f32, i32)> {
+    let counts = |a: [u16; 6]| PlayCounts {
+        max: a[0],
+        n300: a[1],
+        n200: a[2],
+        n100: a[3],
+        n50: a[4],
+        miss: a[5],
+    };
+    // Below the cap, so OD and every window mod show in the output.
+    let mid = counts([500, 400, 150, 60, 20, 15]);
+    vec![
+        ("empty", PlayCounts::default(), 8.0, 0),
+        ("all_max", counts([1000, 0, 0, 0, 0, 0]), 8.0, 0),
+        ("all_miss", counts([0, 0, 0, 0, 0, 50]), 8.0, 0),
+        ("tight", counts([1500, 400, 50, 15, 5, 10]), 8.0, 0),
+        ("mid_od8", mid, 8.0, 0),
+        ("mid_od0", mid, 0.0, 0),
+        ("mid_od8_3", mid, 8.3, 0),
+        ("mid_od10", mid, 10.0, 0),
+        ("mid_hr", mid, 8.0, HR),
+        ("mid_ez", mid, 8.0, EZ),
+        ("mid_dt_nc", mid, 8.0, DT_NC),
+        ("mid_ht", mid, 8.0, HT),
+        ("near_cap", counts([1000, 600, 100, 30, 10, 10]), 8.0, 0),
+        ("rough", counts([300, 300, 200, 100, 50, 40]), 7.0, 0),
+        ("max_and_50s", counts([900, 0, 0, 0, 100, 0]), 8.0, 0),
     ]
 }
 
@@ -558,6 +611,23 @@ const LABEL_FIXTURES: &[(&str, &str, &str, Option<i32>)] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn play_ssr_golden_pins_goals_and_params() {
+        let dump = play_ssr_dump();
+        let params = hex_bytes(&GoalParams::default().params_hash());
+        assert!(dump.starts_with(&format!("params {params}\n")), "{dump}");
+        for expected in [
+            "goal empty None\n",
+            "goal all_max Some(9650)\n",
+            "goal all_miss Some(0)\n",
+            "goal mid_dt_nc Some(",
+            "goal max_and_50s Some(",
+        ] {
+            assert!(dump.contains(expected), "missing {expected:?} in\n{dump}");
+        }
+        assert_eq!(dump.lines().count(), 1 + play_ssr_fixtures().len());
+    }
 
     #[test]
     fn fixtures_exercise_errors_diagnostics_and_edge_charts() {

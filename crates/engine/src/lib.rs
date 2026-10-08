@@ -3,6 +3,7 @@
 pub mod error;
 pub mod examples;
 pub mod labels;
+pub mod preview;
 pub mod profile;
 pub mod render;
 pub mod rows_blob;

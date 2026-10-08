@@ -17,3 +17,7 @@ golden = "beb89ca8f1576de128f8b113289e9dd242954e05165c7c9c6eed0e5f01821919"
 [stages."patterns"]
 version = 5
 golden = "c15a66444b81b34d3aef1dac597e1dfaff57afa5a6dc797db57f91f9421a70dd"
+
+[stages."play_ssr"]
+version = 1
+golden = "f9c51cd180948f176b110e4d2d9bc5b167920c8713ec5ad0f4004b48e8d96f73"

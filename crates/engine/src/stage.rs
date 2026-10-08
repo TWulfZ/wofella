@@ -7,6 +7,7 @@ pub mod difficulty;
 #[cfg(any(test, feature = "test-support"))]
 mod golden;
 pub mod patterns;
+pub mod play_ssr;
 
 use wolluf_core::StageId;
 
@@ -33,6 +34,10 @@ pub const REGISTERED: &[StageInfo] = &[
     StageInfo {
         id: patterns::STAGE,
         version: patterns::VERSION,
+    },
+    StageInfo {
+        id: play_ssr::STAGE,
+        version: play_ssr::VERSION,
     },
 ];
 
@@ -78,6 +83,11 @@ pub fn goldens() -> Vec<StageGolden> {
             version: patterns::VERSION,
             golden: golden::patterns(),
         },
+        StageGolden {
+            id: play_ssr::STAGE,
+            version: play_ssr::VERSION,
+            golden: golden::play_ssr(),
+        },
     ]
 }
 
@@ -97,7 +107,8 @@ mod tests {
                 ("chart_label", 4),
                 ("chart_parse", 1),
                 ("difficulty", 1),
-                ("patterns", 5)
+                ("patterns", 5),
+                ("play_ssr", 1)
             ]
         );
     }
@@ -128,5 +139,6 @@ mod tests {
         assert_ne!(first[0].golden, first[1].golden);
         assert_ne!(first[1].golden, first[2].golden);
         assert_ne!(first[2].golden, first[3].golden);
+        assert_ne!(first[3].golden, first[4].golden);
     }
 }

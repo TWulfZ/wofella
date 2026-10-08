@@ -23,6 +23,7 @@ serde.workspace = true
 postcard.workspace = true
 zstd.workspace = true
 blake3.workspace = true
+libm.workspace = true
 
 [dev-dependencies]
 wolluf-chart = { workspace = true, features = ["test-support"] }
