@@ -1,3 +1,4 @@
+export { type ActiveEntry, useActiveEntry } from "./activeEntry";
 export { IdentityWizard } from "./components/IdentityWizard";
 export { KeymodeSwitcher } from "./components/KeymodeSwitcher";
 export { MergeCompareToggle } from "./components/MergeCompareToggle";

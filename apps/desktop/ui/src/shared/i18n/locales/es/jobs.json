@@ -12,13 +12,15 @@
       "sync_plays": "Sincronizar jugadas",
       "refresh_identity": "Actualizar identidad",
       "index_library": "Indexar biblioteca",
+      "compute_play_ssr": "Calcular ratings de jugadas",
       "unknown": "Tarea"
     },
     "stage": {
       "catalog": "Leyendo mapas",
       "ingest": "Leyendo puntuaciones",
       "archive": "Archivando replays",
-      "index": "Indexando mapas"
+      "index": "Indexando mapas",
+      "play_ssr": "Calculando ratings"
     },
     "status": {
       "queued": "En cola",

@@ -15,19 +15,6 @@
       "ln_inverse": "LN inverso",
       "ln_release": "LN release"
     },
-    "skill": {
-      "title": "Habilidad",
-      "subtitle": "Dónde estás en cada patrón, sesión tras sesión",
-      "previewLabel": "Vista previa de la habilidad: un radar por eje y una tendencia por sesiones, no son tus datos",
-      "rice": "Rice",
-      "ln": "LN",
-      "trend": "Tendencia por sesiones",
-      "features": {
-        "axes": "Una estimación de habilidad por eje (jack, tech, velocidad y stream; general, tech, inverso y release en LN) con su grado de certeza, calculada a partir de tus propios replays.",
-        "sessions": "Informes de sesión: qué mejoró, qué empeoró y qué practicar después.",
-        "self": "Solo cuentan los nombres que marcaste como tuyos; otros jugadores de este PC nunca tocan tu perfil."
-      }
-    },
     "recommendations": {
       "title": "Recomendaciones",
       "subtitle": "El mapa, la sección y la velocidad justos para lo que necesitas entrenar",

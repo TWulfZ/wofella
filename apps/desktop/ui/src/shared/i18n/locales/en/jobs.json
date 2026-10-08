@@ -12,13 +12,15 @@
       "sync_plays": "Sync plays",
       "refresh_identity": "Refresh identity",
       "index_library": "Index library",
+      "compute_play_ssr": "Rate plays",
       "unknown": "Job"
     },
     "stage": {
       "catalog": "Reading charts",
       "ingest": "Reading scores",
       "archive": "Archiving replays",
-      "index": "Indexing charts"
+      "index": "Indexing charts",
+      "play_ssr": "Rating plays"
     },
     "status": {
       "queued": "Queued",

@@ -65,7 +65,7 @@ IPC (camelCase): `preview_skill(entry: EntryRefDto, keymode: u8, merge: Option<M
 - [x] T4 — Store `play_ssr`. Route: delegated (store owner, parallel with T2). Tier: medium. Commit: `feat(store): cache per-play SSRs for the preview`
 - [x] T5 — App: `ComputePlaySsr` job (follow-up of IndexLibrary and SyncPlays), `preview_skill` service. Route: delegated (app owner). Tier: high (identity scope). Commit: `feat(app): compute play SSRs and serve the skill preview`
 - [x] T6 — Shells: `preview_skill` command, CLI `wolluf preview skill`. Route: delegated. Tier: medium. Commit: `feat(app): compute play SSRs and serve the skill preview` (same commit: the shells only compile with the service)
-- [ ] T7 — UI Skill page. Route: delegated (ui owner). Tier: medium. Commit: —
+- [x] T7 — UI Skill page. Route: delegated (ui owner). Tier: medium. Commit: `feat(ui): show the uncalibrated skill preview`
 - [ ] T8 — Method fixes from the pilot: ScoreV2 rice plays counted with V2 windows (LN head/tail judgements), 7K Overall = mean of the skillsets MinaCalc measures (Technical excluded, params per keymode), dan input = Etterna aggregate of completed (non-NoFail) plays' chart Overall MSD at the played rate, `computing` only while a job is pending or queued, family tags without a parsable rate kept in the key, multiplier markers in params, identity coverage. ADR 0024 amended. Route: delegated (engine + app owner). Tier: high (identity, stage keys). Commit: —
 
 ## Progress
@@ -78,5 +78,7 @@ IPC (camelCase): `preview_skill(entry: EntryRefDto, keymode: u8, merge: Option<M
 
 - 2026-10-08 T5/T6 redo: leftovers reconciled (one summary DTO, stage `play_ssr`, `is_active`, no dangling re-exports; SyncPlays → IndexLibrary → ComputePlaySsr). RED (1 engine, 12 app) → GREEN; engine+app+cli+desktop 571 passed before bindings; parent: `cargo xtask bindings` (+92/−3), `nextest -p wolluf-desktop` 29/29, `tsc --noEmit` clean. Verifier (high): no scope leak (self excludes a stronger second alias, All players includes it), user.db read-only, DTOs match. Pilot (fresh data dir, release): sync 5,292 plays, one job run 5,257 plays, 2,674 counted, 0 failures; rerun computes 0. 4K self ≈22.86, dan "10th low"; 7K self ≈20.82 with Technical 0.18. Findings that reopen the method (T8): 1,298 7K plays excluded as ScoreV2; 7K Technical drags Overall ≈3 down; the SSR-aggregate dan reads 2–3 dans below the pilot's completed REFORM courses (γ in Jack/Speed/Tech) because SSR punishes low accuracy while a dan clear is survival. Verifier lows carried into T8: `computing` forever when rows can never come (item error, cancelled job); tags stripped from the family without a parsable rate; `MULTIPLIER` const outside params; i18n `jobs.kind.compute_play_ssr` + `jobs.stage.play_ssr` (T7); identity coverage for separate/unticked/not_me.
 
+- 2026-10-08 T7: RED (28 of 29 new tests on stubs) → GREEN; `pnpm tsc`, lint, vitest 76 files / 1076 tests. N-axis radar from the DTO (7K Technical dimmed when `k7_tech_not_measured`), dan chip, evidence, trend, top plays, warnings with Label CTA, computing/no_plays, one section per scope; job i18n keys added. Parent spot check: `tsc --noEmit` ok.
+
 ## Next step
-T8 method fixes, then T7 UI.
+T8 method fixes (running), then close.

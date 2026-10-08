@@ -15,19 +15,6 @@
       "ln_inverse": "LN inverse",
       "ln_release": "LN release"
     },
-    "skill": {
-      "title": "Skill",
-      "subtitle": "Where you stand on every pattern, session after session",
-      "previewLabel": "Preview of the skill view: a radar per axis and a trend over sessions, not your data",
-      "rice": "Rice",
-      "ln": "LN",
-      "trend": "Trend over sessions",
-      "features": {
-        "axes": "A skill estimate for each axis (jack, tech, speed and stream; general, tech, inverse and release for LN) with how sure it is, rebuilt from your own replays.",
-        "sessions": "Session reports: what improved, what got worse and what to practise next.",
-        "self": "Only the names you marked as yours count; other players on this PC never touch your profile."
-      }
-    },
     "recommendations": {
       "title": "Recommendations",
       "subtitle": "The right chart, section and rate for what you need to train",

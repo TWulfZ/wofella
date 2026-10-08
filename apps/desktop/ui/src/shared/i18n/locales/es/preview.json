@@ -1,0 +1,115 @@
+{
+  "preview": {
+    "title": "Habilidad",
+    "subtitle": "Dónde te dejan hoy tus jugadas, skillset por skillset",
+    "badge": "Beta · sin calibrar · MinaCalc {{version}}",
+    "approx": "≈ {{value}}",
+    "overall": "Overall",
+    "method": {
+      "trigger": "Cómo se calcula",
+      "title": "De dónde salen estos números",
+      "difficulty": "La dificultad de cada mapa viene de MinaCalc, el calculador de dificultad de Etterna, por skillset y por rate.",
+      "goal": "Tu precisión en cada jugada se estima a partir de sus juicios. wofella todavía no vuelve a juzgar tus replays.",
+      "rating": "El rating funciona como el de Etterna: en cada mapa solo cuentan tus 2 mejores rates, y cada skillset los combina como lo hace el rating de jugador de Etterna. Overall es la media de los skillsets.",
+      "differ": "Puede diferir de Etterna o Companella: osu! juzga los golpes de otra forma, aquí la precisión es una estimación y nada está calibrado todavía con jugadores reales.",
+      "calibrate": "Etiquetar patrones ayuda a calibrar lo que viene.",
+      "labelLink": "Etiquetar patrones"
+    },
+    "dan": {
+      "label": "Dan estimado",
+      "value": "≈ {{label}} · {{third}}",
+      "third": {
+        "low": "bajo",
+        "mid": "medio",
+        "high": "alto"
+      },
+      "explain": "Sitúa la dificultad de los mapas que completaste en los cursos de dan de 4K. Puede desviarse alrededor de un dan arriba o abajo."
+    },
+    "radar": {
+      "label": "Radar de skillsets: {{values}}",
+      "value": "{{name}} {{value}}",
+      "unmeasured": "{{name}} sin medir",
+      "notMeasured": "sin medir"
+    },
+    "skillsets": {
+      "title": "Skillsets",
+      "notMeasured": "Sin medir"
+    },
+    "skillset": {
+      "overall": "Overall",
+      "stream": "Stream",
+      "jumpstream": "Jumpstream",
+      "handstream": "Handstream",
+      "stamina": "Stamina",
+      "jackspeed": "JackSpeed",
+      "chordjack": "Chordjack",
+      "technical": "Technical"
+    },
+    "trend": {
+      "title": "Overall por mes",
+      "label": "Overall por mes, de {{from}} ({{fromValue}}) a {{to}} ({{toValue}})",
+      "single": "Overall por mes: solo {{month}} por ahora ({{value}})",
+      "empty": "Todavía no hay historial mensual."
+    },
+    "evidence": {
+      "title": "Jugadas que cuentan",
+      "counted_one": "Cuenta {{count}} jugada",
+      "counted_other": "Cuentan {{count}} jugadas",
+      "tier": {
+        "low": "Pocas jugadas: el rating todavía puede moverse mucho.",
+        "medium": "Algunas jugadas: el rating se moverá a medida que juegues más.",
+        "ok": "Jugadas suficientes para una estimación estable."
+      },
+      "tierName": {
+        "low": "Evidencia baja",
+        "medium": "Evidencia media",
+        "ok": "Evidencia buena"
+      },
+      "excluded": "Fuera del cálculo",
+      "noneExcluded": "No se dejó fuera ninguna jugada.",
+      "reason": {
+        "incomplete": "Sin completar",
+        "score_v2": "Jugadas con ScoreV2",
+        "unsupported_mods": "Mods Random, co-op o de conversión de teclas",
+        "ln_heavy": "Mapas con muchas notas largas",
+        "calc_rejected": "Mapas que MinaCalc no pudo calcular",
+        "no_chart": "Mapa ausente de tu biblioteca",
+        "pending": "Aún sin calcular"
+      }
+    },
+    "topPlays": {
+      "title": "Mejores jugadas",
+      "chart": "Mapa",
+      "rate": "Rate",
+      "rateValue": "{{rate}}x",
+      "goal": "Precisión (est.)",
+      "ssr": "SSR Overall",
+      "skillset": "Skillset principal",
+      "date": "Jugada",
+      "noDate": "Desconocida",
+      "empty": "Todavía no cuenta ninguna jugada."
+    },
+    "warnings": {
+      "title": "Sobre estos números",
+      "code": {
+        "uncalibrated": "Sin calibrar: estos ratings todavía no se han contrastado con jugadores reales.",
+        "goal_estimated": "La precisión se estima a partir de los juicios, no se lee de tus replays.",
+        "k7_less_validated": "Los ratings de 7K están menos validados que los de 4K: MinaCalc se creó y ajustó para 4K.",
+        "ln_not_measured": "Las notas largas no se miden: la habilidad en LN no forma parte de estos números.",
+        "k7_tech_not_measured": "Technical no se mide en 7K, así que queda fuera de Overall."
+      },
+      "unknown": "Se aplica otro límite ({{code}}).",
+      "cta": "Ayuda a calibrar: etiqueta patrones"
+    },
+    "state": {
+      "computing": "Calculando ratings de tus jugadas…",
+      "computingHint": "Esto se ejecuta tras cada sincronización. La página se actualiza cuando termina.",
+      "noPlaysTitle": "Todavía no hay jugadas de {{keymode}}K con rating",
+      "noPlaysBody": "Juega y completa algunos mapas de {{keymode}}K en osu! stable y luego sincroniza desde Inicio. Aparecen aquí cuando tienen rating."
+    },
+    "scope": {
+      "noName": "(sin nombre)",
+      "unnamed": "Nombres {{n}} de {{total}}"
+    }
+  }
+}
