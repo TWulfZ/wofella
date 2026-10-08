@@ -106,7 +106,7 @@ mod tests {
             [
                 ("chart_label", 4),
                 ("chart_parse", 1),
-                ("difficulty", 1),
+                ("difficulty", 2),
                 ("patterns", 5),
                 ("play_ssr", 1)
             ]

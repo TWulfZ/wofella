@@ -17,7 +17,7 @@ pub use wolluf_difficulty::minacalc::{
 pub use wolluf_difficulty::{CALC_VERSION, Calc, CalcError, SKILLSET_IDS};
 
 pub const STAGE: StageId = StageId::from_static("difficulty");
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 const CONFIG_TAG: &[u8] = b"wolluf.difficulty.config.v1";
 
@@ -89,7 +89,7 @@ mod tests {
     #[test]
     fn stage_id_and_version_are_stable() {
         assert_eq!(STAGE.as_str(), "difficulty");
-        assert_eq!(VERSION, 1);
+        assert_eq!(VERSION, 2);
     }
 
     #[test]
@@ -136,11 +136,11 @@ mod tests {
         // Frozen: a change re-keys every stored MSD row.
         assert_eq!(
             vkey(upstream, Keymode::K7, &params).unwrap().to_string(),
-            "2508745344c0939b01cedc637cf653d28709dfa2561fd40e2915336bb6b2be9c"
+            "42def7ca6a8ee5fbf2666f7a65f1de932fd581cf071b18b3f5d2a56fedf12673"
         );
         assert_eq!(
             vkey(upstream, Keymode::K4, &params).unwrap().to_string(),
-            "37e2514d1165597030d04753e001090efe61246a1b6c784ed8cb3611fb6314b0"
+            "fa30c8b5bace09f0876175f52c4a87b19beeb0423e438e0bbcaeb928d819c7ac"
         );
     }
 

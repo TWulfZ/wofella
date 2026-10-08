@@ -12,6 +12,10 @@ const MILLI_PER_UNIT: f32 = 1_000.0;
 const CENTI_PER_UNIT: f32 = 100.0;
 const PERMILLE: u64 = 1_000;
 
+/// Indices into `SKILLSET_IDS` of the skillsets MinaCalc finds by search (`Calc::Chisel`);
+/// overall and stamina are derived from them.
+const SEARCHED_SKILLSETS: [usize; 6] = [1, 2, 3, 5, 6, 7];
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MinaCalcParams {
     /// Ascending music rates, in thousandths.
@@ -102,7 +106,8 @@ pub struct MsdAtRate {
     pub centi: [i32; 8],
 }
 
-/// `rows` follows the params' rate grid when `Rated` and is empty otherwise.
+/// When `Rated`, `rows` holds the grid rates the calc rated validly (at least one), in grid
+/// order; otherwise it is empty.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MsdTable {
     pub status: MsdStatus,
@@ -124,15 +129,23 @@ pub fn msd_table(calc: &mut Calc, chart: &Chart, params: &MinaCalcParams) -> Msd
         return unrated(UnratedReason::LnHeavy);
     }
     let keycount = chart.keymode().columns();
-    let mut rows = Vec::with_capacity(params.rate_grid_milli.len());
-    for &rate_milli in &params.rate_grid_milli {
-        match calc.msd(&note_rows, rate(rate_milli), keycount) {
-            Ok(skillsets) => rows.push(MsdAtRate {
+    // A chart can overflow at fast rates only, so one failed rate leaves the others standing.
+    let rows: Vec<MsdAtRate> = params
+        .rate_grid_milli
+        .iter()
+        .filter_map(|&rate_milli| {
+            let skillsets = calc
+                .msd(&note_rows, rate(rate_milli), keycount)
+                .and_then(checked)
+                .ok()?;
+            Some(MsdAtRate {
                 rate_milli,
                 centi: centi(skillsets),
-            }),
-            Err(_) => return unrated(UnratedReason::CalcRejected),
-        }
+            })
+        })
+        .collect();
+    if rows.is_empty() {
+        return unrated(UnratedReason::CalcRejected);
     }
     MsdTable {
         status: MsdStatus::Rated,
@@ -149,7 +162,20 @@ pub fn ssr_centi(
     goal: f32,
     keycount: u8,
 ) -> Result<[i32; 8], CalcError> {
-    calc.ssr(rows, rate(rate_milli), goal, keycount).map(centi)
+    calc.ssr(rows, rate(rate_milli), goal, keycount)
+        .and_then(checked)
+        .map(centi)
+}
+
+/// The search starts at 0.1 (vendored MinaCalc.cpp:83) and returns exactly 0 once it passes
+/// `max_rating` (MinaCalc.cpp:689, :700), so a searched 0 is an overflow, not a rating.
+fn checked(skillsets: Skillsets) -> Result<Skillsets, CalcError> {
+    let values = skillsets.0;
+    let overflowed = SEARCHED_SKILLSETS.iter().any(|&i| values[i] == 0.0);
+    if overflowed || !values.iter().all(|v| v.is_finite()) {
+        return Err(CalcError::Native);
+    }
+    Ok(skillsets)
 }
 
 fn rate(rate_milli: u16) -> f32 {

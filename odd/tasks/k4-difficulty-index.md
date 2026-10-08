@@ -24,7 +24,7 @@ The skill and recommendation preview reads per-chart skillsets from cache.db. 4K
 Engine:
 - `pub enum CalcId { MinaCalc }` with `as_str() = "minacalc"`.
 - `KeymodeProfile { keymode, default_layout, label_sources, taxonomy: Option<&'static [PatternDef]>, calculators: &'static [CalcId] }`.
-- `stage::difficulty`: `STAGE = "difficulty"`, `VERSION = 1`, `vkey(chart_parse_vkey, keymode, &MinaCalcParams) -> Result<VersionKey, EngineError>` (like `patterns::vkey`; amended 2026-10-08), `run(calc, chart, params) -> MsdTable`.
+- `stage::difficulty`: `STAGE = "difficulty"`, `VERSION = 2` (v2: partial rate grids, amended 2026-10-08), `vkey(chart_parse_vkey, keymode, &MinaCalcParams) -> Result<VersionKey, EngineError>` (like `patterns::vkey`; amended 2026-10-08), `run(calc, chart, params) -> MsdTable`.
 
 Store (cache.db):
 ```sql
@@ -37,7 +37,7 @@ CREATE TABLE chart_msd_status (
   md5 TEXT NOT NULL, vkey BLOB NOT NULL CHECK (length(vkey) = 32), status TEXT NOT NULL CHECK (status IN ('rated','ln_heavy','calc_rejected')),
   hold_share_permille INTEGER NOT NULL, PRIMARY KEY (md5, vkey)) STRICT, WITHOUT ROWID;
 ```
-(vkey as a 32-byte BLOB like every other derived table, amended 2026-10-08; columns in centi-MSD; `status` row exists for every processed chart, rate rows only when `rated`).
+(vkey as a 32-byte BLOB like every other derived table, amended 2026-10-08; columns in centi-MSD; `status` row exists for every processed chart, rate rows only when `rated`; a rated chart keeps only the rates MinaCalc rates validly — an exact 0 in a searched skillset is MinaCalc's overflow sentinel, `MinaCalc.cpp:83,689,700` — so the grid may have gaps).
 
 App/IPC DTOs (camelCase):
 - `KeymodeDto { keymode: u8, hasPatterns: bool, calculators: Vec<String>, defaultLayout: String, hasThumb: bool }`; command `meta_keymodes() -> Vec<KeymodeDto>`.
@@ -58,8 +58,8 @@ App/IPC DTOs (camelCase):
 - [x] T3 — Store: `chart_msd` tables, repo, cache v6. Route: delegated (store owner, parallel with T2). Tier: medium. Commit: `feat(store): cache MinaCalc skillsets per chart and rate`
 - [x] T4 — App: index runs the difficulty stage, skips segmentation without a taxonomy, played charts first; meta keymodes; chart MSD query; library list MSD. Route: delegated (app owner). Tier: medium. Commit: `feat(app): rate indexed charts with MinaCalc and expose keymodes`
 - [x] T5 — Shells: `meta_keymodes`, `chart_msd` commands; CLI MSD column and `chart info` table; bindings. Route: delegated (desktop, cli owners). Tier: medium (additive IPC). Commit: `feat: serve keymodes and chart MSD over IPC and the CLI`
-- [ ] T6 — UI: keymode switcher from `meta_keymodes`, settings keymode from the URL, thumb flags hidden without a thumb, MSD block in chart details. Route: delegated (ui owner). Tier: medium. Commit: —
-- [ ] T7 — Investigate the 461 `calc_rejected` charts (4K 37, 7K 424) and MSD dips on tiny charts; fix or document. Route: delegated (research). Tier: medium. Commit: —
+- [x] T6 — UI: keymode switcher from `meta_keymodes`, settings keymode from the URL, thumb flags hidden without a thumb, MSD block in chart details; Label disabled with an empty state on a keymode without patterns. Route: delegated (ui owner). Tier: medium. Commit: `feat(ui): switch keymodes and show chart MSD`
+- [x] T7 — Investigate the 461 `calc_rejected` charts (4K 37, 7K 424) and MSD dips on tiny charts; fix or document. Route: delegated (research). Tier: medium. Commit: `fix(difficulty): keep validly rated rates and drop MinaCalc overflows`
 
 ## Progress
 - 2026-10-08 T2: RED (E0425 `DEFAULT_K4`; 9 profile errors; 28 unresolved stage names; 5 app tests pinning "4K disabled") → GREEN. Frozen keys: difficulty K7 `25087453…`, K4 `37e2514d…`; lock diff +4/−0 (`difficulty` v1 only); 7K patterns key test untouched and green.
@@ -70,5 +70,8 @@ App/IPC DTOs (camelCase):
 - 2026-10-08 T4: RED (24 compile errors on the new API) → GREEN, `cargo nextest run -p wolluf-app` 255 passed, 6 skipped. Corpus `corpus_library_index` (release, osu! closed): 4K 2,777 catalog / 2,777 status (2,351 rated, 389 LN-heavy, 37 rejected); 7K 18,565 / 18,339 (14,467 rated, 3,448 LN-heavy, 424 rejected; 226 missing = md5 drift, never parsed). First index 266.0 s for 21,116 charts, second 838 ms. Deviations accepted: `Calc::new()` failure is an unmemoized item failure; a catalog/file keymode mismatch memoizes as ParseFailed with no status row.
 - 2026-10-08 T5: RED ("Command meta_keymodes not found"; 5 CLI tests) → GREEN. `cargo nextest run -p wolluf-desktop` 28/28 after `cargo xtask bindings` (+50 lines); `wolluf-cli` 86/86; `pnpm tsc --noEmit` clean (parent). `meta_keymodes` returns `Result` like every command (UI `call()` unwraps Results).
 
+- 2026-10-08 T6: RED (2 missing modules, 5 failing assertions; then 4 failing Label-guard tests) → GREEN; `pnpm tsc`, lint, vitest (74 files, 1040 tests, then the 4 label route files 33/33) pass. Parent spot check: `tsc --noEmit` ok.
+- 2026-10-08 T7: causes of the 461 rejections (copy of the pilot data dir): empty .osu 74, one row 41, a note at 100000 s 2, ≥50 rows per 0.5 s 19 (MinaCalc `UlbuAcolytes.h:199`), Stamina NaN after a skillset overflowed MinaCalc's ceiling of 100 (4/7-scaled to 57.14 on 7K) 325. Also 213 rated 7K charts carried an exact-0 skillset (understated Overall). Fix: invalid rates dropped, chart rejected only when none is valid, `ssr_centi` errors on overflow; difficulty VERSION 2 (lock: one line). RED (5 failing) → GREEN, difficulty+engine+app 440 passed. Tiny-chart rate dips are MinaCalc's 0.5 s interval binning (documented, not changed). 7K Technical is ≈0.18 on almost every chart: uninformative for 7K (shown with a warning in the preview). Parent spot check: `cargo nextest run -p wolluf-difficulty` ok.
+
 ## Next step
-T6 UI, T7 calc_rejected investigation.
+Corpus re-index under difficulty v2, then the full gate block and close.

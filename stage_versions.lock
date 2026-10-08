@@ -11,7 +11,7 @@ version = 1
 golden = "ba3334e1f848735b9f7cdbfd9837aaa4c5557fb0a8c128ad56da83a6988e1c59"
 
 [stages."difficulty"]
-version = 1
+version = 2
 golden = "beb89ca8f1576de128f8b113289e9dd242954e05165c7c9c6eed0e5f01821919"
 
 [stages."patterns"]

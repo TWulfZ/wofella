@@ -265,6 +265,137 @@ fn ssr_passes_calc_errors_through() {
     );
 }
 
+/// `width` random distinct columns per row on 7K, `rows_per_s` rows a second.
+fn chords_7k(rows_per_s: i64, seconds: i64, width: u32) -> Chart {
+    let step_us = 1_000_000 / rows_per_s;
+    let mut seed: u32 = 777;
+    let mut notes = Vec::new();
+    for i in 0..(seconds * rows_per_s) {
+        let mut mask = 0u32;
+        while mask.count_ones() < width {
+            seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            mask |= 1 << ((seed >> 16) % 7);
+        }
+        for col in 0..7u8 {
+            if mask & (1 << col) != 0 {
+                notes.push(tap_us(i * step_us, col));
+            }
+        }
+    }
+    build(Keymode::K7, notes)
+}
+
+/// 1200 BPM 16th jumps: v527's handstream search passes its ceiling from about 1.45x on.
+fn jumps_7k_overflowing_at_high_rates() -> Chart {
+    chords_7k(20, 30, 2)
+}
+
+/// Every searched skillset but jackspeed and technical overflows at every grid rate.
+fn full_chords_7k_overflowing_everywhere() -> Chart {
+    chords_7k(30, 30, 7)
+}
+
+fn searched(skillsets: [f32; 8]) -> Vec<f32> {
+    SEARCHED_SKILLSETS.iter().map(|&i| skillsets[i]).collect()
+}
+
+#[test]
+fn searched_skillsets_are_every_skillset_but_overall_and_stamina() {
+    let ids: Vec<&str> = SEARCHED_SKILLSETS
+        .iter()
+        .map(|&i| wolluf_minacalc::SKILLSET_IDS[i])
+        .collect();
+    assert_eq!(
+        ids,
+        [
+            "stream",
+            "jumpstream",
+            "handstream",
+            "jackspeed",
+            "chordjack",
+            "technical"
+        ]
+    );
+}
+
+#[test]
+fn a_result_with_a_zero_searched_skillset_or_a_non_finite_value_is_invalid() {
+    let ok = [30.0, 20.0, 21.0, 22.0, 25.0, 18.0, 19.0, 0.2];
+    assert_eq!(checked(Skillsets(ok)), Ok(Skillsets(ok)));
+    for &i in &SEARCHED_SKILLSETS {
+        let mut zero = ok;
+        zero[i] = 0.0;
+        assert_eq!(checked(Skillsets(zero)), Err(CalcError::Native), "{i}");
+    }
+    for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        for i in 0..8 {
+            let mut v = ok;
+            v[i] = bad;
+            assert_eq!(checked(Skillsets(v)), Err(CalcError::Native), "{i} {bad}");
+        }
+    }
+}
+
+#[test]
+fn chart_overflowing_at_high_rates_keeps_only_its_valid_rates() {
+    let chart = jumps_7k_overflowing_at_high_rates();
+    let params = MinaCalcParams::default();
+    let mut calc = calc();
+    // Precondition: the calc itself accepts the overflowing rate and hides it behind a 0.
+    let rows = note_rows(&chart).rows;
+    let raw_low = calc.msd(&rows, 0.7, 7).unwrap().0;
+    let raw_high = calc.msd(&rows, 1.5, 7).unwrap().0;
+    assert!(searched(raw_low).iter().all(|&v| v > 0.0), "{raw_low:?}");
+    assert!(searched(raw_high).contains(&0.0), "{raw_high:?}");
+
+    let table = msd_table(&mut calc, &chart, &params);
+    assert_eq!(table.status, MsdStatus::Rated);
+    let rates: Vec<u16> = table.rows.iter().map(|r| r.rate_milli).collect();
+    assert!(rates.windows(2).all(|w| w[0] < w[1]), "{rates:?}");
+    assert!(rates.iter().all(|r| params.rate_grid_milli.contains(r)));
+    assert!(rates.contains(&700) && rates.contains(&1000), "{rates:?}");
+    assert!(!rates.contains(&1500), "{rates:?}");
+    for row in &table.rows {
+        assert!(
+            SEARCHED_SKILLSETS.iter().all(|&i| row.centi[i] > 0),
+            "{row:?}"
+        );
+    }
+}
+
+#[test]
+fn chart_with_no_valid_rate_is_calc_rejected() {
+    let chart = full_chords_7k_overflowing_everywhere();
+    let mut calc = calc();
+    // Precondition: the calc accepts it with zeroed skillsets rather than rejecting it.
+    let raw = calc.msd(&note_rows(&chart).rows, 1.0, 7).unwrap().0;
+    assert!(searched(raw).contains(&0.0), "{raw:?}");
+
+    let table = msd_table(&mut calc, &chart, &MinaCalcParams::default());
+    assert_eq!(
+        table.status,
+        MsdStatus::Unrated(UnratedReason::CalcRejected)
+    );
+    assert!(table.rows.is_empty());
+}
+
+#[test]
+fn ssr_of_an_overflowing_chart_is_an_error() {
+    let rows = note_rows(&full_chords_7k_overflowing_everywhere()).rows;
+    let mut calc = calc();
+    assert!(calc.ssr(&rows, 1.0, 0.93, 7).is_ok());
+    assert_eq!(
+        ssr_centi(&mut calc, &rows, 1000, 0.93, 7),
+        Err(CalcError::Native)
+    );
+    let jumps = note_rows(&jumps_7k_overflowing_at_high_rates()).rows;
+    assert!(ssr_centi(&mut calc, &jumps, 700, 0.93, 7).is_ok());
+    assert_eq!(
+        ssr_centi(&mut calc, &jumps, 1500, 0.93, 7),
+        Err(CalcError::Native)
+    );
+}
+
 /// Map-length charts (about 1.5–3.5 min): on charts under a minute v527 itself is not monotone
 /// in rate (adjacent-rate drops up to 1.18 MSD on 80–400 rows, none from 600 rows on).
 fn arb_dense_4k() -> impl Strategy<Value = Chart> {

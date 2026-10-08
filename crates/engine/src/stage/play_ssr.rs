@@ -102,11 +102,11 @@ mod tests {
         let k7 = difficulty::vkey(upstream, Keymode::K7, &mc).unwrap();
         assert_eq!(
             vkey(k4, &params, &ex).unwrap().to_string(),
-            "cec08f910dd8bbbbbd2eced3bb9b005671c801254851f179e8573503ff2bdecb"
+            "856ecc9ea2d33672ab49a114349f871db097af2b0703bd96d0f4ea8e924e8f7b"
         );
         assert_eq!(
             vkey(k7, &params, &ex).unwrap().to_string(),
-            "594268d32eab92f421da8ca59b1fee9720931d5b6bb72bcf55cbd0053d196462"
+            "e6bd1fe2b52227375571e6fd7c93339b50da3b16e5a3524426649f9ce8d2f5c4"
         );
     }
 }
