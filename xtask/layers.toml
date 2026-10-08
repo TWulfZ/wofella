@@ -120,9 +120,14 @@ banned_apis = [
 layer = "adapter"
 allowed = ["wolluf-core", "wolluf-engine"]
 
+# ADR 0025: vendored Signalsmith Stretch behind a C ABI; the second crate allowed `unsafe` (FFI).
+[crates.wolluf-signalsmith]
+layer = "domain"
+allowed = []
+
 [crates.wolluf-audio]
 layer = "adapter"
-allowed = ["wolluf-core", "wolluf-engine"]
+allowed = ["wolluf-core", "wolluf-engine", "wolluf-signalsmith"]
 
 # ---- app ----
 

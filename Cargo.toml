@@ -6,6 +6,9 @@ members = [
     "crates/patterns",
     "crates/minacalc",
     "crates/difficulty",
+    "crates/drills",
+    "crates/signalsmith",
+    "crates/audio",
     "crates/engine",
     "crates/source-osu",
     "crates/store",
@@ -32,6 +35,9 @@ wolluf-chart = { path = "crates/chart" }
 wolluf-patterns = { path = "crates/patterns" }
 wolluf-minacalc = { path = "crates/minacalc" }
 wolluf-difficulty = { path = "crates/difficulty" }
+wolluf-drills = { path = "crates/drills" }
+wolluf-signalsmith = { path = "crates/signalsmith" }
+wolluf-audio = { path = "crates/audio" }
 wolluf-engine = { path = "crates/engine" }
 wolluf-source-osu = { path = "crates/source-osu" }
 wolluf-store = { path = "crates/store" }
@@ -45,6 +51,10 @@ libm = "0.2.16"
 
 # native calculator build (ADR 0022)
 cc = "1.5.1"
+
+# rate-copy audio (ADR 0025)
+symphonia = { version = "=0.6.1", default-features = false, features = ["mp3", "ogg", "vorbis", "wav", "pcm"] }
+vorbis_rs = { version = "=0.5.6", default-features = false }
 
 # codecs / hashing
 md-5 = "0.11.0"
