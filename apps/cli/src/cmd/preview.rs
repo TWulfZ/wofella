@@ -1,6 +1,7 @@
-//! `wolluf preview skill` over `PreviewService` (ADR 0024). The per-play SSR cache it reads is
-//! refreshed by `ComputePlaySsr`, which the app chains after every `IndexLibrary` and the preview
-//! starts itself when plays were never rated under the current key; the CLI waits for that run.
+//! `wolluf preview skill` and `wolluf preview recs` over `PreviewService` (ADR 0024). The per-play
+//! SSR cache they read is refreshed by `ComputePlaySsr`, which the app chains after every
+//! `IndexLibrary` and the preview starts itself when plays were never rated under the current
+//! key; the CLI waits for that run.
 
 use std::process::ExitCode;
 
@@ -10,11 +11,12 @@ use wolluf_app::features::players::dto::{self as players_dto, profile_id};
 use wolluf_app::features::players::identity::EntryRef;
 use wolluf_app::features::players::scope::MergeMode;
 use wolluf_app::features::preview::dto::{
-    EXCLUSION_PENDING, PreviewStateDto, SkillPreviewDto, TopPlayDto,
+    EXCLUSION_PENDING, PreviewStateDto, RecsModeDto, RecsPreviewDto, RecsStateDto, SkillPreviewDto,
+    TopPlayDto,
 };
 use wolluf_core::UnixUs;
 
-use crate::cli::{MergeArg, PreviewCmd, PreviewSkillArgs, ScopeArg};
+use crate::cli::{MergeArg, PreviewCmd, PreviewRecsArgs, PreviewSkillArgs, RecsModeArg, ScopeArg};
 use crate::cmd::library::msd;
 use crate::cmd::players::rfc3339_ms;
 use crate::exit;
@@ -38,6 +40,14 @@ pub(crate) async fn run(ctx: &AppContext, cmd: PreviewCmd, json: bool) -> anyhow
             } else {
                 let blocks: Vec<String> = previews.iter().map(skill_text).collect();
                 render::text(&blocks.join("\n"))?;
+            }
+        }
+        PreviewCmd::Recs(args) => {
+            let r = recs(ctx, args).await?;
+            if json {
+                render::json(&r)?;
+            } else {
+                render::text(&recs_text(&r))?;
             }
         }
     }
@@ -83,6 +93,120 @@ const fn merge(m: MergeArg) -> MergeMode {
         MergeArg::Merged => MergeMode::Merged,
         MergeArg::Separate => MergeMode::Separate,
     }
+}
+
+/// `--any-rate` replaces the stored setting for this call; without it the setting decides.
+async fn recs(ctx: &AppContext, args: PreviewRecsArgs) -> Result<RecsPreviewDto, AppError> {
+    let keymode = players_dto::keymode(u32::from(args.keys))?;
+    let entry = entry(ctx, args.scope).await?;
+    let merge = args.merge.map(merge);
+    let mode = recs_mode(args.mode);
+    let any_rate = args.any_rate.then_some(true);
+    let preview = ctx.preview();
+    let read = || preview.recs(entry, keymode, mode, args.skillset.clone(), merge, any_rate);
+    let r = read().await?;
+    if r.state != RecsStateDto::Computing {
+        return Ok(r);
+    }
+    // Closing the context would cancel the SSR job the list started; a Ctrl-C stops waiting.
+    tokio::select! {
+        biased;
+        () = follow::ctrl_c() => return Ok(r),
+        () = ctx.jobs().wait_idle() => {}
+    }
+    read().await
+}
+
+const fn recs_mode(m: RecsModeArg) -> RecsModeDto {
+    match m {
+        RecsModeArg::Deficit => RecsModeDto::Deficit,
+        RecsModeArg::Push => RecsModeDto::Push,
+        RecsModeArg::Skillset => RecsModeDto::Skillset,
+    }
+}
+
+fn recs_text(r: &RecsPreviewDto) -> String {
+    let mut out = format!(
+        "Recommendations {}K · Beta · uncalibrated · MinaCalc {}\n",
+        r.keymode, r.calc_version
+    );
+    let mut pairs = vec![
+        ("scope", r.scope_hash.clone()),
+        ("method", r.method.clone()),
+        ("state", render::wire(&r.state)),
+    ];
+    match r.state {
+        RecsStateDto::Computing => pairs.push((
+            "note",
+            "SSRs are still being computed: run `wolluf library index`".to_owned(),
+        )),
+        RecsStateDto::NoRating => pairs.push((
+            "note",
+            "no rating in this keymode yet: play and `wolluf sync` first".to_owned(),
+        )),
+        RecsStateDto::Ready => {}
+    }
+    let rated = r.state != RecsStateDto::NoRating;
+    pairs.extend([
+        (
+            "focus",
+            render::opt(Some(r.focus.clone()).filter(|f| !f.is_empty())),
+        ),
+        ("rating", render::opt(rated.then(|| approx(r.rating_centi)))),
+        (
+            "band",
+            render::opt(
+                rated
+                    .then(|| format!("{} to {}", approx(r.band_centi[0]), approx(r.band_centi[1]))),
+            ),
+        ),
+        (
+            "rates",
+            if r.any_rate {
+                "every grid rate (off-base rates need a rate copy)"
+            } else {
+                "NM, HT, DT and rate copies in the library"
+            }
+            .to_owned(),
+        ),
+        ("warnings", words(r.warnings.iter().cloned())),
+    ]);
+    out.push_str(&render::key_values(&pairs));
+    if !rated {
+        return out;
+    }
+    let rows: Vec<Vec<String>> = r
+        .items
+        .iter()
+        .enumerate()
+        .map(|(n, i)| {
+            vec![
+                (n + 1).to_string(),
+                format!("{} [{}]", i.title, i.version),
+                rate(i.rate_milli),
+                approx(i.focus_centi),
+                approx(i.overall_centi),
+                if i.played { "yes" } else { "no" }.to_owned(),
+                words(i.reasons.iter().map(|reason| {
+                    if reason.args.is_empty() {
+                        reason.code.clone()
+                    } else {
+                        format!("{}({})", reason.code, reason.args.join(","))
+                    }
+                })),
+            ]
+        })
+        .collect();
+    out.push_str(&format!("\nPICKS ({})\n", rows.len()));
+    if !rows.is_empty() {
+        out.push_str(&render::table(
+            &[
+                "#", "CHART", "RATE", "FOCUS", "OVERALL", "PLAYED", "REASONS",
+            ],
+            &rows,
+        ));
+    }
+    out
 }
 
 /// The DTO's centi values carry no calibration, hence the `≈` on every rating (ADR 0024).
@@ -232,8 +356,8 @@ fn played_on(ms: f64) -> String {
 #[cfg(test)]
 mod tests {
     use wolluf_app::features::preview::dto::{
-        DanEstimateDto, DanThirdDto, EvidenceDto, EvidenceTierDto, ExclusionCountDto,
-        SkillsetRatingDto, TrendPointDto,
+        DanEstimateDto, DanThirdDto, EvidenceDto, EvidenceTierDto, ExclusionCountDto, ReasonDto,
+        RecItemDto, SkillsetRatingDto, TrendPointDto,
     };
 
     use super::*;
@@ -420,6 +544,128 @@ warnings  uncalibrated k7_less_validated
             "{text}"
         );
         assert!(!skill_text(&ready()).contains("note "));
+    }
+
+    fn rec(n: u8, rate_milli: u16, needs_rate_copy: bool, played: bool) -> RecItemDto {
+        let reason = |code: &str, args: &[&str]| ReasonDto {
+            code: code.to_owned(),
+            args: args.iter().map(|a| (*a).to_owned()).collect(),
+        };
+        let mut reasons = vec![
+            reason("deficit", &["jumpstream", "2413"]),
+            reason(if played { "played_before" } else { "unplayed" }, &[]),
+        ];
+        if needs_rate_copy {
+            reasons.push(reason("needs_rate_copy", &[&rate_milli.to_string()]));
+        }
+        RecItemDto {
+            md5: format!("{n:032x}"),
+            title: format!("Song {n}"),
+            artist: "wolluf".to_owned(),
+            version: "Hard".to_owned(),
+            creator: "wolluf".to_owned(),
+            set_id: Some(i32::from(n)),
+            beatmap_id: None,
+            rate_milli,
+            needs_rate_copy,
+            is_rate_copy: false,
+            focus_centi: 2_450 + i32::from(n),
+            overall_centi: 2_300,
+            skillsets_centi: vec![2_000; 7],
+            played,
+            reasons,
+        }
+    }
+
+    fn recs_ready() -> RecsPreviewDto {
+        RecsPreviewDto {
+            scope_hash: "ab".repeat(32),
+            keymode: 4,
+            method: "preview.band_recs@1".to_owned(),
+            calc_version: 527,
+            state: RecsStateDto::Ready,
+            any_rate: true,
+            focus: "jumpstream".to_owned(),
+            rating_centi: 2_413,
+            band_centi: [2_363, 2_563],
+            items: vec![rec(1, 1_200, true, false), rec(2, 1_000, false, true)],
+            warnings: vec!["uncalibrated".to_owned(), "goal_estimated".to_owned()],
+        }
+    }
+
+    #[test]
+    fn recs_text_shows_the_band_and_one_row_per_pick() {
+        let want = format!(
+            "\
+Recommendations 4K · Beta · uncalibrated · MinaCalc 527
+scope     {scope}
+method    preview.band_recs@1
+state     ready
+focus     jumpstream
+rating    ≈24.13
+band      ≈23.63 to ≈25.63
+rates     every grid rate (off-base rates need a rate copy)
+warnings  uncalibrated goal_estimated
+
+PICKS (2)
+#  CHART          RATE   FOCUS   OVERALL  PLAYED  REASONS
+1  Song 1 [Hard]  1.20x  ≈24.51  ≈23.00   no      deficit(jumpstream,2413) unplayed needs_rate_copy(1200)
+2  Song 2 [Hard]  1.00x  ≈24.52  ≈23.00   yes     deficit(jumpstream,2413) played_before
+",
+            scope = "ab".repeat(32)
+        );
+        assert_eq!(recs_text(&recs_ready()), want);
+    }
+
+    #[test]
+    fn recs_without_a_rating_say_what_to_do() {
+        let none = RecsPreviewDto {
+            state: RecsStateDto::NoRating,
+            any_rate: false,
+            focus: String::new(),
+            rating_centi: 0,
+            band_centi: [0, 0],
+            items: vec![],
+            ..recs_ready()
+        };
+        let want = format!(
+            "\
+Recommendations 4K · Beta · uncalibrated · MinaCalc 527
+scope     {scope}
+method    preview.band_recs@1
+state     no_rating
+note      no rating in this keymode yet: play and `wolluf sync` first
+focus     -
+rating    -
+band      -
+rates     NM, HT, DT and rate copies in the library
+warnings  uncalibrated goal_estimated
+",
+            scope = "ab".repeat(32)
+        );
+        assert_eq!(recs_text(&none), want);
+
+        let mut computing = recs_ready();
+        computing.state = RecsStateDto::Computing;
+        let text = recs_text(&computing);
+        assert!(
+            text.contains("note      SSRs are still being computed: run `wolluf library index`\n"),
+            "{text}"
+        );
+        let mut empty = recs_ready();
+        empty.items.clear();
+        assert!(
+            recs_text(&empty).ends_with("\nPICKS (0)\n"),
+            "{}",
+            recs_text(&empty)
+        );
+    }
+
+    #[test]
+    fn recs_modes_map_to_the_wire() {
+        assert_eq!(recs_mode(RecsModeArg::Deficit), RecsModeDto::Deficit);
+        assert_eq!(recs_mode(RecsModeArg::Push), RecsModeDto::Push);
+        assert_eq!(recs_mode(RecsModeArg::Skillset), RecsModeDto::Skillset);
     }
 
     #[test]

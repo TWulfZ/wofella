@@ -5,6 +5,7 @@
 pub mod dto;
 mod job;
 mod params;
+mod recs;
 mod service;
 #[cfg(test)]
 mod testkit;

@@ -165,6 +165,18 @@ pub(crate) async fn recompute(f: &Fixture) -> ComputePlaySsrSummaryDto {
     last_summary(f).await
 }
 
+/// `ComputePlaySsr` runs in the job history, finished or not.
+pub(crate) async fn ssr_runs(f: &Fixture) -> usize {
+    f.ctx
+        .jobs()
+        .list(None)
+        .await
+        .unwrap()
+        .iter()
+        .filter(|j| j.kind == JobKindDto::ComputePlaySsr)
+        .count()
+}
+
 pub(crate) async fn last_summary(f: &Fixture) -> ComputePlaySsrSummaryDto {
     let job = f
         .ctx

@@ -1,5 +1,6 @@
-//! `preview_skill` DTOs (ADR 0024, frozen in `odd/tasks/skill-preview.md`). camelCase on the wire,
-//! snake_case enum values, no 64-bit integers (the bindings export fails on them, spec 005).
+//! `preview_skill` and `preview_recs` DTOs (ADR 0024, frozen in `odd/tasks/skill-preview.md` and
+//! `odd/tasks/recs-preview.md`). camelCase on the wire, snake_case enum values, no 64-bit
+//! integers (the bindings export fails on them, spec 005).
 
 use serde::{Deserialize, Serialize};
 
@@ -112,5 +113,80 @@ pub struct SkillPreviewDto {
     pub evidence: EvidenceDto,
     pub top_plays: Vec<TopPlayDto>,
     pub trend: Vec<TrendPointDto>,
+    pub warnings: Vec<String>,
+}
+
+pub const METHOD_BAND_RECS: &str = "preview.band_recs@1";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum RecsModeDto {
+    /// The weakest skillset the keymode lets Deficit pick.
+    Deficit,
+    /// Overall, aimed above the player.
+    Push,
+    /// The skillset the caller names.
+    Skillset,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum RecsStateDto {
+    Ready,
+    /// `ComputePlaySsr` is queued or running; the list reads the rating as cached so far.
+    Computing,
+    /// The scope has no rating in this keymode yet, so there is no band.
+    NoRating,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ReasonDto {
+    /// `deficit`, `push`, `skillset`, `unplayed`, `played_before`, `needs_rate_copy` or
+    /// `rate_copy_in_library`: i18n keys.
+    pub code: String,
+    /// Skillsets as MinaCalc ids, MSD in centi, rates in milli.
+    pub args: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RecItemDto {
+    pub md5: String,
+    pub title: String,
+    pub artist: String,
+    pub version: String,
+    pub creator: String,
+    pub set_id: Option<i32>,
+    pub beatmap_id: Option<i32>,
+    /// The mod rate to play at; a rate copy is always picked at 1000.
+    pub rate_milli: u16,
+    pub needs_rate_copy: bool,
+    pub is_rate_copy: bool,
+    pub focus_centi: i32,
+    pub overall_centi: i32,
+    /// The seven skillsets after Overall, in `SkillPreviewDto.skillsets` order.
+    pub skillsets_centi: Vec<i32>,
+    pub played: bool,
+    pub reasons: Vec<ReasonDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RecsPreviewDto {
+    /// Empty when the entry resolves to no scope.
+    pub scope_hash: String,
+    pub keymode: u8,
+    pub method: String,
+    pub calc_version: i32,
+    pub state: RecsStateDto,
+    pub any_rate: bool,
+    /// A MinaCalc skillset id (`overall` for Push); empty for Deficit without a rating.
+    pub focus: String,
+    /// The scope's rating on `focus`; 0 without a rating.
+    pub rating_centi: i32,
+    /// Inclusive absolute MSD band; `[0, 0]` without a rating.
+    pub band_centi: [i32; 2],
+    pub items: Vec<RecItemDto>,
     pub warnings: Vec<String>,
 }

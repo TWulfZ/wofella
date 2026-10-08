@@ -142,6 +142,12 @@ impl Map {
         self
     }
 
+    /// Every `Map` starts in set 100, which one-pick-per-set consumers would fold together.
+    pub(crate) fn in_set(mut self, set_id: i32) -> Self {
+        self.set_id = set_id;
+        self
+    }
+
     pub(crate) fn rated(mut self, stars: f64) -> Self {
         self.stars = Some(stars);
         self

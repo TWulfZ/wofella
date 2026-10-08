@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use wolluf_core::VersionKey;
 use wolluf_core::{ChartMd5, Keymode, PlayId, UnixUs};
 use wolluf_engine::preview::{
-    PlayMods, RatedPlay, aggregate_with, player_rating, rate_pbs, top2_per_family,
+    PlayMods, PreviewParams, RatedPlay, aggregate_with, player_rating, rate_pbs, top2_per_family,
 };
 use wolluf_engine::stage::difficulty::{CALC_VERSION, SKILLSET_IDS};
 use wolluf_store::DbHandle;
@@ -21,7 +21,7 @@ use super::dto::{
     ExclusionCountDto, METHOD_ETTERNA_RATING, PreviewStateDto, SkillPreviewDto, SkillsetRatingDto,
     TopPlayDto, TrendPointDto, warning,
 };
-use super::job::{ComputePlaySsrJob, keys_for};
+use super::job::{ComputePlaySsrJob, KeymodeKeys, keys_for};
 use super::params::PreviewServiceParams;
 use crate::context::{AppContext, blocking_join_error};
 use crate::errors::AppError;
@@ -42,8 +42,8 @@ const MONTH_LEN: usize = 7;
 const RECENT_RUNS: u32 = 50;
 
 pub struct PreviewService<'a> {
-    ctx: &'a AppContext,
-    params: PreviewServiceParams,
+    pub(super) ctx: &'a AppContext,
+    pub(super) params: PreviewServiceParams,
 }
 
 impl<'a> PreviewService<'a> {
@@ -98,7 +98,7 @@ impl<'a> PreviewService<'a> {
 /// Whether some pending play was never tried under the current key: a `play_ssr` VERSION bump
 /// orphans every row, and only `IndexLibrary` chains the job. Plays the last run failed on stay
 /// pending instead, or every read would rerun a job that fails them again.
-fn unattempted(cache: &DbHandle, pending: &BTreeSet<PlayId>) -> Result<bool, AppError> {
+pub(super) fn unattempted(cache: &DbHandle, pending: &BTreeSet<PlayId>) -> Result<bool, AppError> {
     if pending.is_empty() {
         return Ok(false);
     }
@@ -118,7 +118,7 @@ fn unattempted(cache: &DbHandle, pending: &BTreeSet<PlayId>) -> Result<bool, App
     })?)
 }
 
-fn warnings(keymode: Keymode) -> Vec<String> {
+pub(super) fn warnings(keymode: Keymode) -> Vec<String> {
     let mut codes = vec![warning::UNCALIBRATED, warning::GOAL_ESTIMATED];
     if keymode == Keymode::K7 {
         codes.extend([
@@ -131,13 +131,110 @@ fn warnings(keymode: Keymode) -> Vec<String> {
 }
 
 /// A counted play with what the rating and the top-plays list need.
-struct Counted<'a> {
+pub(super) struct Counted<'a> {
     play: &'a Play,
     chart: &'a CatalogChart,
     row: PlaySsrRow,
     centi: [i32; 8],
     rate_milli: u16,
     family: String,
+}
+
+/// One scope's plays on the keymode's catalog charts and their cached SSR rows.
+pub(super) struct ScopeRead {
+    pub(super) catalog: BTreeMap<ChartMd5, CatalogChart>,
+    /// Oldest first: the trend rates growing prefixes and ties go to the earlier play.
+    pub(super) plays: Vec<Play>,
+    /// `None` without plays or when MinaCalc does not rate the keymode.
+    pub(super) keys: Option<KeymodeKeys>,
+    rows: BTreeMap<PlayId, PlaySsrRow>,
+    /// Plays without a row under the current key.
+    pub(super) pending: Vec<PlayId>,
+}
+
+pub(super) fn read_scope(
+    user: &DbHandle,
+    cache: &DbHandle,
+    engine: &PreviewParams,
+    scope: &ResolvedScope,
+) -> Result<ScopeRead, AppError> {
+    let keymode = scope.keymode.columns();
+    let catalog: BTreeMap<ChartMd5, CatalogChart> = cache
+        .read(|c| catalog_chart::list_by_keymode(c, keymode))?
+        .into_iter()
+        .map(|c| (c.md5, c))
+        .collect();
+    let mut plays: Vec<Play> = user
+        .read(|c| play::since(c, &scope.alias_ids, UnixUs(0)))?
+        .into_iter()
+        .filter(|p| catalog.contains_key(&p.chart_md5))
+        .collect();
+    let keys = keys_for(keymode, engine)?.filter(|_| !plays.is_empty());
+    let mut read = ScopeRead {
+        catalog,
+        plays: Vec::new(),
+        keys,
+        rows: BTreeMap::new(),
+        pending: Vec::new(),
+    };
+    let Some(keys) = keys else {
+        return Ok(read);
+    };
+    plays.sort_by_key(|p| (p.played_at, p.id));
+    let ids: Vec<PlayId> = plays.iter().map(|p| p.id).collect();
+    read.rows = cache
+        .read(|c| ssr_repo::get_many(c, keys.ssr, &ids))?
+        .into_iter()
+        .map(|r| (r.play_id, r))
+        .collect();
+    read.pending = plays
+        .iter()
+        .filter(|p| !read.rows.contains_key(&p.id))
+        .map(|p| p.id)
+        .collect();
+    read.plays = plays;
+    Ok(read)
+}
+
+impl ScopeRead {
+    /// Oldest first, like `plays`.
+    pub(super) fn counted(&self, engine: &PreviewParams) -> Vec<Counted<'_>> {
+        self.plays
+            .iter()
+            .filter_map(|p| {
+                let row = *self.rows.get(&p.id)?;
+                let centi = row.centi.filter(|_| row.status == PlaySsrStatus::Counted)?;
+                let chart = self.catalog.get(&p.chart_md5)?;
+                let chart_rate = engine
+                    .family
+                    .chart_rate_milli(&chart.version)
+                    .map_or(NATIVE_RATE_MILLI, u32::from);
+                let rate = u32::from(row.rate_milli) * chart_rate / NATIVE_RATE_MILLI;
+                Some(Counted {
+                    play: p,
+                    chart,
+                    row,
+                    centi,
+                    rate_milli: u16::try_from(rate).unwrap_or(u16::MAX),
+                    family: engine
+                        .family
+                        .family_key(folder_of(&chart.path), &chart.version),
+                })
+            })
+            .collect()
+    }
+}
+
+pub(super) fn rated<'a>(counted: &'a [Counted<'a>]) -> Vec<RatedPlay<'a>> {
+    counted
+        .iter()
+        .map(|c| RatedPlay {
+            family: &c.family,
+            rate_milli: c.rate_milli,
+            ssr_centi: c.centi,
+            played_at_ms: c.play.played_at.0.div_euclid(US_PER_MS),
+        })
+        .collect()
 }
 
 fn preview(
@@ -167,27 +264,10 @@ fn preview(
         trend: Vec::new(),
         warnings: warnings(keymode),
     };
-    let catalog: BTreeMap<ChartMd5, CatalogChart> = cache
-        .read(|c| catalog_chart::list_by_keymode(c, keymode.columns()))?
-        .into_iter()
-        .map(|c| (c.md5, c))
-        .collect();
-    let mut plays: Vec<Play> = user
-        .read(|c| play::since(c, &scope.alias_ids, UnixUs(0)))?
-        .into_iter()
-        .filter(|p| catalog.contains_key(&p.chart_md5))
-        .collect();
-    let Some(keys) = keys_for(keymode.columns(), engine)?.filter(|_| !plays.is_empty()) else {
+    let read = read_scope(user, cache, engine, scope)?;
+    let Some(keys) = read.keys else {
         return Ok((out, Vec::new()));
     };
-    // Oldest first: the trend rates growing prefixes and ties go to the earlier play.
-    plays.sort_by_key(|p| (p.played_at, p.id));
-    let ids: Vec<PlayId> = plays.iter().map(|p| p.id).collect();
-    let rows: BTreeMap<PlayId, PlaySsrRow> = cache
-        .read(|c| ssr_repo::get_many(c, keys.ssr, &ids))?
-        .into_iter()
-        .map(|r| (r.play_id, r))
-        .collect();
     // A row that never comes (an item failure, a cancelled job) must not hold the page in
     // `computing`: only a live job does, and missing rows are reported as pending.
     out.state = if job_pending {
@@ -195,19 +275,14 @@ fn preview(
     } else {
         PreviewStateDto::Ready
     };
-    let pending: Vec<PlayId> = plays
-        .iter()
-        .filter(|p| !rows.contains_key(&p.id))
-        .map(|p| p.id)
-        .collect();
     out.evidence.excluded = PlaySsrStatus::ALL
         .iter()
         .filter(|s| **s != PlaySsrStatus::Counted)
         .map(|&status| {
-            let n = rows.values().filter(|r| r.status == status).count();
+            let n = read.rows.values().filter(|r| r.status == status).count();
             (status.as_str(), n)
         })
-        .chain([(EXCLUSION_PENDING, pending.len())])
+        .chain([(EXCLUSION_PENDING, read.pending.len())])
         .filter(|(_, n)| *n > 0)
         .map(|(reason, n)| ExclusionCountDto {
             reason: reason.to_owned(),
@@ -215,41 +290,11 @@ fn preview(
         })
         .collect();
 
-    let counted: Vec<Counted<'_>> = plays
-        .iter()
-        .filter_map(|p| {
-            let row = *rows.get(&p.id)?;
-            let centi = row.centi.filter(|_| row.status == PlaySsrStatus::Counted)?;
-            let chart = catalog.get(&p.chart_md5)?;
-            let chart_rate = engine
-                .family
-                .chart_rate_milli(&chart.version)
-                .map_or(NATIVE_RATE_MILLI, u32::from);
-            let rate = u32::from(row.rate_milli) * chart_rate / NATIVE_RATE_MILLI;
-            Some(Counted {
-                play: p,
-                chart,
-                row,
-                centi,
-                rate_milli: u16::try_from(rate).unwrap_or(u16::MAX),
-                family: engine
-                    .family
-                    .family_key(folder_of(&chart.path), &chart.version),
-            })
-        })
-        .collect();
-    let rated: Vec<RatedPlay<'_>> = counted
-        .iter()
-        .map(|c| RatedPlay {
-            family: &c.family,
-            rate_milli: c.rate_milli,
-            ssr_centi: c.centi,
-            played_at_ms: c.play.played_at.0.div_euclid(US_PER_MS),
-        })
-        .collect();
+    let counted = read.counted(engine);
+    let rated = rated(&counted);
     let overall = engine.overall.skillsets(keymode);
     let Some(rating) = player_rating(&rated, &engine.rating, &overall) else {
-        return Ok((out, pending));
+        return Ok((out, read.pending));
     };
     let n_counted = u32::try_from(rating.counted.len()).unwrap_or(u32::MAX);
     out.overall_centi = Some(rating.overall_centi);
@@ -273,7 +318,7 @@ fn preview(
         .map(|&i| top_play(&counted[i]))
         .collect();
     out.trend = trend(&counted, &rated, &overall, params);
-    Ok((out, pending))
+    Ok((out, read.pending))
 }
 
 /// ADR 0024 (amended): the table maps a chart's Overall MSD and a dan course is passed by
@@ -431,7 +476,7 @@ mod tests {
     use crate::features::preview::dto::{EvidenceTierDto, PreviewStateDto, warning};
     use crate::features::preview::testkit::{
         DT, OTHER, RANDOM, SELF, counts, current_key, dense_4k, last_summary, month_ticks, play_id,
-        plays, recompute, row, score, synced,
+        plays, recompute, row, score, ssr_runs, synced,
     };
 
     async fn self_entry(f: &Fixture) -> EntryRef {
@@ -610,17 +655,6 @@ mod tests {
         assert_eq!(none.overall_centi, None);
         assert!(none.skillsets.is_empty() && none.top_plays.is_empty() && none.trend.is_empty());
         assert_eq!(none.evidence.counted, 0);
-    }
-
-    async fn ssr_runs(f: &Fixture) -> usize {
-        f.ctx
-            .jobs()
-            .list(None)
-            .await
-            .unwrap()
-            .iter()
-            .filter(|j| j.kind == JobKindDto::ComputePlaySsr)
-            .count()
     }
 
     /// A `play_ssr` VERSION bump orphans every row, and only `IndexLibrary` chains the job, so

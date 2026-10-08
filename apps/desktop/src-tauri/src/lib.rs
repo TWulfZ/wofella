@@ -88,6 +88,9 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::meta::meta_keymodes,
             commands::chart::chart_msd,
             commands::preview::preview_skill,
+            commands::preview::preview_recs,
+            commands::settings::settings_get_recs_any_rate,
+            commands::settings::settings_set_recs_any_rate,
         ])
 }
 

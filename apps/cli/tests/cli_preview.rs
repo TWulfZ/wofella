@@ -100,3 +100,61 @@ fn library_index_waits_for_the_chained_ssr_job() {
     // Closing the context cancels whatever the CLI did not wait for.
     assert!(ssr.iter().all(|j| j["status"] == "ok"), "{jobs}");
 }
+
+#[test]
+fn recs_any_rate_overrides_the_setting_for_one_call() {
+    let env = Env::new();
+    env.set_install(&env.install());
+    env.json(&["sync"]);
+
+    let r = env.json(&["preview", "recs", "--keys", "7", "--mode", "push"]);
+    assert_eq!(r["keymode"], 7, "{r}");
+    assert_eq!(r["method"], "preview.band_recs@1", "{r}");
+    assert_eq!(r["focus"], "overall", "{r}");
+    assert_eq!(r["anyRate"], false, "{r}");
+    assert_ne!(r["state"], "computing", "{r}");
+    for field in ["scopeHash", "ratingCenti", "bandCenti", "items", "warnings"] {
+        assert!(r.get(field).is_some(), "{field}: {r}");
+    }
+
+    let once = env.json(&["preview", "recs", "--keys", "7", "--any-rate"]);
+    assert_eq!(once["anyRate"], true, "{once}");
+    let after = env.json(&["preview", "recs", "--keys", "7"]);
+    assert_eq!(after["anyRate"], false, "the flag is not stored: {after}");
+}
+
+#[test]
+fn recs_text_starts_with_the_beta_banner() {
+    let env = Env::new();
+    env.set_install(&env.install());
+    env.json(&["sync"]);
+
+    let out = env
+        .wolluf()
+        .args(["preview", "recs", "--keys", "7", "--mode", "push"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        stdout.starts_with("Recommendations 7K · Beta · uncalibrated · MinaCalc "),
+        "{stdout}"
+    );
+    for key in [
+        "scope", "state", "focus", "rating", "band", "rates", "warnings",
+    ] {
+        assert!(
+            stdout.lines().any(|l| l.starts_with(&format!("{key} "))),
+            "{key}: {stdout}"
+        );
+    }
+}
+
+#[test]
+fn recs_skillset_mode_needs_a_skillset() {
+    let env = Env::new();
+    env.wolluf()
+        .args(["preview", "recs", "--mode", "skillset"])
+        .assert()
+        .code(2);
+}

@@ -82,7 +82,36 @@ impl<'a> SettingsService<'a> {
         .map_err(blocking_join_error)??;
         Ok(())
     }
+
+    /// "Enable rates" on the Recommended page (ADR 0024): every grid rate, not only NM/HT/DT
+    /// and the rate copies already in the library. Off by default.
+    pub async fn recs_any_rate(&self) -> Result<bool, AppError> {
+        let user = self.ctx.user_db().clone();
+        let stored =
+            tokio::task::spawn_blocking(move || user.read(|c| settings::get(c, RECS_ANY_RATE_KEY)))
+                .await
+                .map_err(blocking_join_error)??;
+        match stored {
+            None => Ok(false),
+            Some(serde_json::Value::Bool(on)) => Ok(on),
+            Some(other) => Err(AppError::internal(format!("{RECS_ANY_RATE_KEY} = {other}"))),
+        }
+    }
+
+    pub async fn set_recs_any_rate(&self, on: bool) -> Result<(), AppError> {
+        let user = self.ctx.user_db().clone();
+        tokio::task::spawn_blocking(move || {
+            user.write(move |tx| settings::set(tx, RECS_ANY_RATE_KEY, &serde_json::json!(on)))
+        })
+        .await
+        .map_err(blocking_join_error)??;
+        Ok(())
+    }
 }
+
+/// Persisted: never renamed. The preview is temporary (ADR 0024), so the key stays in the app
+/// rather than getting a typed accessor in the store.
+const RECS_ANY_RATE_KEY: &str = "preview.recs.any_rate";
 
 /// [`SettingsService::session_notify`] inside a caller's read, for code that must not hold the
 /// context (the session tracker).
@@ -155,6 +184,25 @@ mod tests {
         assert!(reopened.settings().session_notify().await.unwrap());
         reopened.settings().set_session_notify(false).await.unwrap();
         assert!(!reopened.settings().session_notify().await.unwrap());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn recs_any_rate_is_off_until_turned_on_and_persists() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = context(dir.path());
+        assert!(!ctx.settings().recs_any_rate().await.unwrap());
+        ctx.settings().set_recs_any_rate(true).await.unwrap();
+        assert!(ctx.settings().recs_any_rate().await.unwrap());
+        drop(ctx);
+        let reopened = context(dir.path());
+        assert!(reopened.settings().recs_any_rate().await.unwrap());
+        let stored = reopened
+            .user_db()
+            .read(|c| settings::get(c, "preview.recs.any_rate"))
+            .unwrap();
+        assert_eq!(stored, Some(serde_json::json!(true)));
+        reopened.settings().set_recs_any_rate(false).await.unwrap();
+        assert!(!reopened.settings().recs_any_rate().await.unwrap());
     }
 
     #[tokio::test(flavor = "multi_thread")]

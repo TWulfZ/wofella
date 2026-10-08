@@ -137,6 +137,39 @@ pub(crate) struct LibraryListArgs {
 pub(crate) enum PreviewCmd {
     /// Overall, skillsets, dan (4K), evidence, top plays and trend of one player scope.
     Skill(PreviewSkillArgs),
+    /// Charts × rate in a band around the scope's preview rating, with a reason per pick.
+    Recs(PreviewRecsArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct PreviewRecsArgs {
+    #[arg(long, value_name = "N", default_value_t = 4)]
+    pub(crate) keys: u8,
+    #[arg(long, value_enum, value_name = "MODE", default_value = "deficit")]
+    pub(crate) mode: RecsModeArg,
+    /// A MinaCalc skillset id (`stream`, `jumpstream`, …); required by `--mode skillset`.
+    #[arg(long, value_name = "ID", required_if_eq("mode", "skillset"))]
+    pub(crate) skillset: Option<String>,
+    /// `self`, `all` (every player) or `p:<profile id>`. Separate merge lists the first scope.
+    #[arg(long, value_name = "SCOPE", default_value = "self", value_parser = parse_scope)]
+    pub(crate) scope: ScopeArg,
+    /// Overrides the profile's stored merge mode.
+    #[arg(long, value_enum, value_name = "MODE")]
+    pub(crate) merge: Option<MergeArg>,
+    /// Every grid rate for this call only; the stored `preview.recs.any_rate` setting is neither
+    /// read nor changed. Without it the setting decides.
+    #[arg(long)]
+    pub(crate) any_rate: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum RecsModeArg {
+    /// The weakest skillset the keymode lets Deficit pick.
+    Deficit,
+    /// Overall, aimed above the player.
+    Push,
+    /// The skillset `--skillset` names.
+    Skillset,
 }
 
 #[derive(Debug, Args)]
@@ -645,6 +678,86 @@ mod tests {
             assert_eq!(err.exit_code(), i32::from(exit::USAGE), "{bad:?}");
         }
         assert!(Cli::try_parse_from(["wolluf", "preview", "skill", "--merge", "x"]).is_err());
+    }
+
+    #[test]
+    fn preview_recs_defaults_to_self_4k_deficit_with_stored_rates() {
+        let cli = Cli::try_parse_from(["wolluf", "preview", "recs"]).unwrap();
+        let Command::Preview(PreviewCmd::Recs(args)) = cli.command else {
+            panic!("{:?}", cli.command);
+        };
+        assert_eq!(
+            (
+                args.keys,
+                args.mode,
+                args.skillset,
+                args.scope,
+                args.merge,
+                args.any_rate
+            ),
+            (
+                4,
+                RecsModeArg::Deficit,
+                None,
+                ScopeArg::SelfProfile,
+                None,
+                false
+            )
+        );
+    }
+
+    #[test]
+    fn preview_recs_flags() {
+        let cli = Cli::try_parse_from([
+            "wolluf",
+            "preview",
+            "recs",
+            "--keys",
+            "7",
+            "--mode",
+            "skillset",
+            "--skillset",
+            "stream",
+            "--scope",
+            "all",
+            "--merge",
+            "separate",
+            "--any-rate",
+        ])
+        .unwrap();
+        let Command::Preview(PreviewCmd::Recs(args)) = cli.command else {
+            panic!("{:?}", cli.command);
+        };
+        assert_eq!(
+            (
+                args.keys,
+                args.mode,
+                args.skillset.as_deref(),
+                args.scope,
+                args.merge,
+                args.any_rate
+            ),
+            (
+                7,
+                RecsModeArg::Skillset,
+                Some("stream"),
+                ScopeArg::AllPlayers,
+                Some(MergeArg::Separate),
+                true
+            )
+        );
+        for mode in ["deficit", "push"] {
+            assert!(Cli::try_parse_from(["wolluf", "preview", "recs", "--mode", mode]).is_ok());
+        }
+        for bad in [
+            &["--mode", "x"][..],
+            &["--mode", "skillset"],
+            &["--scope", "me"],
+        ] {
+            let err =
+                Cli::try_parse_from(["wolluf", "preview", "recs"].iter().chain(bad)).unwrap_err();
+            assert_eq!(err.exit_code(), i32::from(exit::USAGE), "{bad:?}");
+        }
     }
 
     #[test]

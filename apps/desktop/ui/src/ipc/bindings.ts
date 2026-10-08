@@ -134,6 +134,14 @@ export const commands = {
 	 *  profile's own merge mode for this read only.
 	 */
 	previewSkill: (entry: EntryRefDto, keymode: number, merge: "merged" | "separate" | null) => typedError<SkillPreviewDto[], IpcError>(__TAURI_INVOKE("preview_skill", { entry, keymode, merge })),
+	/**
+	 *  Charts × rate around the first resolved scope's preview rating (ADR 0024); `skillset` is a
+	 *  MinaCalc id, read in `skillset` mode only.
+	 */
+	previewRecs: (entry: EntryRefDto, keymode: number, mode: RecsModeDto, skillset: string | null, merge: "merged" | "separate" | null) => typedError<RecsPreviewDto, IpcError>(__TAURI_INVOKE("preview_recs", { entry, keymode, mode, skillset, merge })),
+	/**  "Enable rates" on the Recommended page; off until the user turns it on. */
+	settingsGetRecsAnyRate: () => typedError<boolean, IpcError>(__TAURI_INVOKE("settings_get_recs_any_rate")),
+	settingsSetRecsAnyRate: (on: boolean) => typedError<null, IpcError>(__TAURI_INVOKE("settings_set_recs_any_rate", { on })),
 };
 
 /** Events */
@@ -762,6 +770,36 @@ export type RandomRequestDto = {
 	exclude: AnchorDto[],
 };
 
+export type ReasonDto = {
+	/**
+	 *  `deficit`, `push`, `skillset`, `unplayed`, `played_before`, `needs_rate_copy` or
+	 *  `rate_copy_in_library`: i18n keys.
+	 */
+	code: string,
+	/**  Skillsets as MinaCalc ids, MSD in centi, rates in milli. */
+	args: string[],
+};
+
+export type RecItemDto = {
+	md5: string,
+	title: string,
+	artist: string,
+	version: string,
+	creator: string,
+	setId: number | null,
+	beatmapId: number | null,
+	/**  The mod rate to play at; a rate copy is always picked at 1000. */
+	rateMilli: number,
+	needsRateCopy: boolean,
+	isRateCopy: boolean,
+	focusCenti: number,
+	overallCenti: number,
+	/**  The seven skillsets after Overall, in `SkillPreviewDto.skillsets` order. */
+	skillsetsCenti: number[],
+	played: boolean,
+	reasons: ReasonDto[],
+};
+
 export type RecentLabelDto = {
 	eventId: string,
 	md5: string,
@@ -772,6 +810,38 @@ export type RecentLabelDto = {
 	noPattern: boolean,
 	at: string,
 };
+
+export type RecsModeDto = 
+/**  The weakest skillset the keymode lets Deficit pick. */
+"deficit" | 
+/**  Overall, aimed above the player. */
+"push" | 
+/**  The skillset the caller names. */
+"skillset";
+
+export type RecsPreviewDto = {
+	/**  Empty when the entry resolves to no scope. */
+	scopeHash: string,
+	keymode: number,
+	method: string,
+	calcVersion: number,
+	state: RecsStateDto,
+	anyRate: boolean,
+	/**  A MinaCalc skillset id (`overall` for Push); empty for Deficit without a rating. */
+	focus: string,
+	/**  The scope's rating on `focus`; 0 without a rating. */
+	ratingCenti: number,
+	/**  Inclusive absolute MSD band; `[0, 0]` without a rating. */
+	bandCenti: [number, number],
+	items: RecItemDto[],
+	warnings: string[],
+};
+
+export type RecsStateDto = "ready" | 
+/**  `ComputePlaySsr` is queued or running; the list reads the rating as cached so far. */
+"computing" | 
+/**  The scope has no rating in this keymode yet, so there is no band. */
+"no_rating";
 
 /**
  *  `anchor` resized to `[t0Ms, t1Ms)`: the edge that moved from the anchor's is clamped to

@@ -613,6 +613,65 @@ mod commands_smoke {
         assert_eq!(err["code"], json!("INVALID_INPUT"), "{err}");
     }
 
+    /// List values belong to `PreviewService`'s tests; the shell proves the wiring, the frozen
+    /// wire shape (`odd/tasks/recs-preview.md`) and the "Enable rates" setting.
+    #[test]
+    fn preview_recs_command_answers() {
+        let h = synced();
+        let recs = |mode: &str, skillset: Value| {
+            h.invoke(
+                "preview_recs",
+                json!({
+                    "entry": { "kind": "profile", "id": 1 },
+                    "keymode": 7,
+                    "mode": mode,
+                    "skillset": skillset,
+                    "merge": null,
+                }),
+            )
+        };
+        let r = recs("push", Value::Null).unwrap();
+        assert_eq!(r["keymode"], json!(7), "{r}");
+        assert_eq!(r["method"], json!("preview.band_recs@1"), "{r}");
+        assert!(
+            ["ready", "computing", "no_rating"].contains(&r["state"].as_str().unwrap()),
+            "{r}"
+        );
+        assert_eq!(r["anyRate"], json!(false), "{r}");
+        assert_eq!(r["focus"], json!("overall"), "{r}");
+        for field in [
+            "scopeHash",
+            "calcVersion",
+            "ratingCenti",
+            "bandCenti",
+            "items",
+        ] {
+            assert!(r.get(field).is_some(), "{field}: {r}");
+        }
+        assert!(
+            r["warnings"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("uncalibrated"))
+        );
+        assert!(recs("deficit", Value::Null).is_ok());
+        assert!(recs("skillset", json!("stream")).is_ok());
+        let err = recs("skillset", json!("nope")).unwrap_err();
+        assert_eq!(err["code"], json!("INVALID_INPUT"), "{err}");
+
+        assert_eq!(
+            h.invoke("settings_get_recs_any_rate", json!({})).unwrap(),
+            json!(false)
+        );
+        h.invoke("settings_set_recs_any_rate", json!({ "on": true }))
+            .unwrap();
+        assert_eq!(
+            h.invoke("settings_get_recs_any_rate", json!({})).unwrap(),
+            json!(true)
+        );
+        assert_eq!(recs("push", Value::Null).unwrap()["anyRate"], json!(true));
+    }
+
     #[test]
     fn label_export_writes_under_the_data_dir() {
         let h = synced();
