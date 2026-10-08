@@ -1736,3 +1736,134 @@ async fn pattern_examples_honour_an_explicit_layout_over_the_preference() {
         assert_eq!(err.code, ErrorCode::InvalidInput, "{bad:?}");
     }
 }
+
+/// `T0` of the fixture clock in the export file stamp.
+const T0_STAMP: &str = "20260928T231356Z";
+
+#[tokio::test(flavor = "multi_thread")]
+async fn label_export_writes_a_stamped_file_under_exports() {
+    let (f, maps) = library().await;
+    let svc = f.ctx.labeling();
+    let md5 = &maps[0].md5;
+    svc.submit(submit(&anchor(md5, 0, 4_000), &["regular.stream.trill"]))
+        .await
+        .unwrap();
+    svc.submit(LabelSubmitDto {
+        selection: picked(ChartPickDto::NowPlaying, WindowPickDto::Moved),
+        ..submit(&anchor(md5, 4_000, 8_000), &["regular.stream.trill"])
+    })
+    .await
+    .unwrap();
+    store_v1_label(&f, md5, 8_000, 12_000).await;
+
+    let out = svc.export_to_data_dir(7).await.unwrap();
+
+    let expected = f
+        .dir
+        .path()
+        .join("data")
+        .join("exports")
+        .join(format!("gold-7k-{T0_STAMP}.jsonl"));
+    assert_eq!(std::path::PathBuf::from(&out.path), expected);
+    assert_eq!(out.rows, 3);
+    // The screen and `wolluf label export` share one exporter: same bytes, ADR 0021 fields included.
+    let cli = f.dir.path().join("cli").join("gold-7k.jsonl");
+    svc.export_to(cli.clone()).await.unwrap();
+    let text = std::fs::read_to_string(&expected).unwrap();
+    assert_eq!(text, std::fs::read_to_string(&cli).unwrap());
+    let selections: Vec<serde_json::Value> = text
+        .lines()
+        .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap()["selection"].clone())
+        .collect();
+    assert_eq!(
+        selections,
+        [
+            serde_json::json!({"pick": "sampled", "window": "sampled"}),
+            serde_json::json!({"pick": "now_playing", "window": "moved"}),
+            serde_json::json!({"pick": "unknown", "window": "unknown"}),
+        ]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn label_export_with_no_labels_still_writes_an_empty_file() {
+    let (f, _) = library().await;
+    let out = f.ctx.labeling().export_to_data_dir(7).await.unwrap();
+    assert_eq!(out.rows, 0);
+    assert_eq!(std::fs::read_to_string(&out.path).unwrap(), "");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn label_export_keeps_only_the_requested_keymode() {
+    use wolluf_core::{ColMask, Keymode, PatternId, SegmentAnchor, TimeUs};
+    use wolluf_store::repo::labels::{
+        ChartPick, GoldAnswer, NewGoldLabel, Selection, WindowPick, append_gold_label,
+    };
+
+    let (f, maps) = library().await;
+    let svc = f.ctx.labeling();
+    svc.submit(submit(
+        &anchor(&maps[0].md5, 0, 4_000),
+        &["regular.stream.trill"],
+    ))
+    .await
+    .unwrap();
+    let me = f.ctx.players().self_profile_id().await.unwrap().unwrap();
+    let md5: wolluf_core::ChartMd5 = maps[1].md5.parse().unwrap();
+    f.ctx
+        .user_db()
+        .write(move |tx| {
+            append_gold_label(
+                tx,
+                &NewGoldLabel {
+                    id: ulid::Ulid::from_parts(1, 1),
+                    ts: wolluf_core::UnixUs(0),
+                    profile_id: me,
+                    keymode: Keymode::K4,
+                    anchor: SegmentAnchor::new(
+                        md5,
+                        TimeUs::from_ms(0),
+                        TimeUs::from_ms(4_000),
+                        ColMask::full(Keymode::K4),
+                        Keymode::K4,
+                    )
+                    .unwrap(),
+                    answer: GoldAnswer::Patterns(vec![PatternId::from_static("four.k.only")]),
+                    mixed: false,
+                    unsure: false,
+                    thumb_pref: None,
+                    selection: Selection {
+                        pick: ChartPick::Sampled,
+                        window: WindowPick::Sampled,
+                    },
+                    app_version: "test".into(),
+                },
+            )
+        })
+        .unwrap();
+    assert_eq!(svc.export_jsonl().await.unwrap().lines().count(), 2);
+
+    let out = svc.export_to_data_dir(7).await.unwrap();
+    let text = std::fs::read_to_string(&out.path).unwrap();
+    assert_eq!(out.rows, 1);
+    assert!(
+        text.contains(&maps[0].md5) && !text.contains(&maps[1].md5),
+        "{text}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn label_export_refuses_a_keymode_without_taxonomy() {
+    let (f, _) = library().await;
+    let err = f.ctx.labeling().export_to_data_dir(5).await.unwrap_err();
+    assert_eq!(err.code, ErrorCode::InvalidInput);
+    assert!(!f.dir.path().join("data").join("exports").exists());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn label_export_dir_is_created_on_demand() {
+    let (f, _) = library().await;
+    let dir = f.ctx.labeling().exports_dir().await.unwrap();
+    assert_eq!(dir, f.dir.path().join("data").join("exports"));
+    assert!(dir.is_dir());
+}

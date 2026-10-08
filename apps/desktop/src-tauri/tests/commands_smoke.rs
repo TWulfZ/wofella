@@ -528,6 +528,20 @@ mod commands_smoke {
     }
 
     #[test]
+    fn label_export_writes_under_the_data_dir() {
+        let h = synced();
+        let out = h.invoke("label_export", json!({ "keymode": 7 })).unwrap();
+        assert_eq!(out["rows"], json!(0), "{out}");
+        let path = PathBuf::from(out["path"].as_str().unwrap());
+        assert_eq!(path.parent().unwrap(), h.dir.path().join("data/exports"));
+        assert!(path.is_file(), "{out}");
+        let err = h
+            .invoke("label_export", json!({ "keymode": 5 }))
+            .unwrap_err();
+        assert_eq!(err["code"], json!("INVALID_INPUT"), "{err}");
+    }
+
+    #[test]
     fn setup_status_ok() {
         let h = Harness::new();
         let status = h.invoke("setup_status", json!({})).unwrap();

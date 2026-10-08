@@ -119,6 +119,9 @@ export const commands = {
 	/**  Whether a finished map flashes the window; off until the user turns it on. */
 	settingsGetSessionNotify: () => typedError<boolean, IpcError>(__TAURI_INVOKE("settings_get_session_notify")),
 	settingsSetSessionNotify: (on: boolean) => typedError<null, IpcError>(__TAURI_INVOKE("settings_set_session_notify", { on })),
+	/**  Into `<data dir>/exports/`, which the opener scope already covers (no save dialog). */
+	labelExport: (keymode: number) => typedError<LabelExportDto, IpcError>(__TAURI_INVOKE("label_export", { keymode })),
+	appOpenExportsDir: () => typedError<null, IpcError>(__TAURI_INVOKE("app_open_exports_dir")),
 };
 
 /** Events */
@@ -454,6 +457,11 @@ export type KeymodeCountDto = {
 export type LabelEventDto = {
 	/**  The feedback event's ULID; undo takes it back. */
 	id: string,
+};
+
+export type LabelExportDto = {
+	path: string,
+	rows: number,
 };
 
 /**

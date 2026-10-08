@@ -110,6 +110,9 @@ mod bindings {
             "settingsSetSessionNotify",
             "session-play-added",
             "SessionPlayAddedDto",
+            "labelExport",
+            "LabelExportDto",
+            "appOpenExportsDir",
             "job-progress",
             "IpcError",
         ] {

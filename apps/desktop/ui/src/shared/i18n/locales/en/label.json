@@ -177,6 +177,11 @@
       "unknown_pattern": "Unknown pattern “{{pattern}}”."
     },
     "undone": "Last label undone.",
+    "export": {
+      "button": "Export labels",
+      "done_one": "Exported {{count}} label to {{file}}",
+      "done_other": "Exported {{count}} labels to {{file}}"
+    },
     "done": {
       "exhausted": "No window left to label.",
       "newSession": "New session",

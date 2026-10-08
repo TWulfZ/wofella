@@ -28,6 +28,7 @@ import { Button } from "@/shared/ui/button";
 import { AnswerBar, type AnswerFeedback, type AnswerMode } from "./components/AnswerBar";
 import { backgroundDataUrl, CHART_HEADER_PARAMS, ChartHeader } from "./components/ChartHeader";
 import { ChartTimeline } from "./components/ChartTimeline";
+import { ExportLabels } from "./components/ExportLabels";
 import { HeaderNav, type NavAction, type NavState } from "./components/HeaderNav";
 import { HOLD_BUTTON_PARAMS, type HoldButtonHandle } from "./components/HoldButton";
 import { PanelResizer, usePanelWidth } from "./components/PanelResizer";
@@ -68,6 +69,7 @@ import {
   labelStatsQuery,
   labelTaxonomyQuery,
   skinListQuery,
+  useLabelExport,
   useLabelMutations,
   useSkinFile,
 } from "./queries";
@@ -283,6 +285,7 @@ function LabelSession(props: LabelSessionProps) {
   const examples = useQuery({ ...labelPatternExamplesQuery(keymode, layoutId), enabled: layoutSettled });
   const stats = useQuery(labelStatsQuery());
   const { sample, random, nowPlaying, windowAt, move, resize, submit, undo } = useLabelMutations();
+  const exportLabels = useLabelExport(keymode);
   const entry = currentEntry(state);
   const labelWindow = entry?.window ?? null;
   const anchor: Anchor | null = labelWindow?.anchor ?? null;
@@ -713,6 +716,7 @@ function LabelSession(props: LabelSessionProps) {
             <Button variant="outline" onClick={onRestart}>
               {t("label.done.newSession")}
             </Button>
+            <ExportLabels exportLabels={exportLabels} />
           </div>
         ) : labelWindow === null || chart.data === undefined ? (
           <div className="text-muted-foreground flex flex-1 items-center justify-center text-sm">
@@ -814,44 +818,47 @@ function LabelSession(props: LabelSessionProps) {
               />
             }
             settings={
-              <PlaybackSettings
-                offsetMs={offsetMs}
-                onOffset={(value) => {
-                  setOffsetMs(value);
-                  writeOffsetMs(value);
-                }}
-                scroll={effectiveScroll}
-                onScroll={updateScroll}
-                zoom={zoom}
-                onZoom={(value) => {
-                  setZoom(value);
-                  writeZoom(value);
-                }}
-                rate={rate}
-                onRate={(value) => {
-                  const next = clampPlaybackRate(value);
-                  setRate(next);
-                  writePlaybackRate(next);
-                }}
-                effects={effects}
-                onEffects={updateEffects}
-                effectSupport={skinEffectSupport(skin)}
-                skinLoading={skinLoading}
-                skin={{
-                  options: skinOptions(skinList.data, keymode),
-                  folder: skinFolder,
-                  ready: skinList.data !== undefined,
-                  reloading: skinReloading,
-                  onChange: (folder) => {
-                    setSkinChoice({ folder });
-                    writeSkinChoice({ folder });
-                  },
-                  onReload: () => {
-                    void reloadSkin();
-                  },
-                }}
-                seed={state.seed}
-              />
+              <>
+                <PlaybackSettings
+                  offsetMs={offsetMs}
+                  onOffset={(value) => {
+                    setOffsetMs(value);
+                    writeOffsetMs(value);
+                  }}
+                  scroll={effectiveScroll}
+                  onScroll={updateScroll}
+                  zoom={zoom}
+                  onZoom={(value) => {
+                    setZoom(value);
+                    writeZoom(value);
+                  }}
+                  rate={rate}
+                  onRate={(value) => {
+                    const next = clampPlaybackRate(value);
+                    setRate(next);
+                    writePlaybackRate(next);
+                  }}
+                  effects={effects}
+                  onEffects={updateEffects}
+                  effectSupport={skinEffectSupport(skin)}
+                  skinLoading={skinLoading}
+                  skin={{
+                    options: skinOptions(skinList.data, keymode),
+                    folder: skinFolder,
+                    ready: skinList.data !== undefined,
+                    reloading: skinReloading,
+                    onChange: (folder) => {
+                      setSkinChoice({ folder });
+                      writeSkinChoice({ folder });
+                    },
+                    onReload: () => {
+                      void reloadSkin();
+                    },
+                  }}
+                  seed={state.seed}
+                />
+                <ExportLabels exportLabels={exportLabels} />
+              </>
             }
           >
             <div data-testid="playfield" className="flex size-full justify-center">

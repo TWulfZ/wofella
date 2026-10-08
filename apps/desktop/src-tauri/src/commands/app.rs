@@ -19,3 +19,16 @@ pub async fn app_open_logs_dir<R: Runtime>(
         .open_path(dir.to_string_lossy(), None::<&str>)
         .map_err(|e| to_ipc(AppError::internal(format!("open {}: {e}", dir.display()))))
 }
+
+#[tauri::command]
+#[specta::specta]
+#[tracing::instrument(skip_all)]
+pub async fn app_open_exports_dir<R: Runtime>(
+    app: AppHandle<R>,
+    ctx: Ctx<'_>,
+) -> Result<(), IpcError> {
+    let dir = ctx.labeling().exports_dir().await.map_err(to_ipc)?;
+    app.opener()
+        .open_path(dir.to_string_lossy(), None::<&str>)
+        .map_err(|e| to_ipc(AppError::internal(format!("open {}: {e}", dir.display()))))
+}

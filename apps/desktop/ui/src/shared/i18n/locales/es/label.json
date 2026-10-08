@@ -177,6 +177,11 @@
       "unknown_pattern": "Patrón desconocido: “{{pattern}}”."
     },
     "undone": "Se deshizo la última etiqueta.",
+    "export": {
+      "button": "Exportar etiquetas",
+      "done_one": "Exportada {{count}} etiqueta a {{file}}",
+      "done_other": "Exportadas {{count}} etiquetas a {{file}}"
+    },
     "done": {
       "exhausted": "No quedan ventanas por etiquetar.",
       "newSession": "Nueva sesión",

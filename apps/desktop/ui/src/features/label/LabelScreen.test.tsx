@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as PlayfieldModule from "@/features/playfield";
 import { Playfield, type PlayfieldEffects, skinEffectSupport } from "@/features/playfield";
 import type {
@@ -21,6 +21,7 @@ import type {
   SkinListDto,
 } from "@/ipc/bindings";
 import { type CommandHandlers, type MockCall, mockCommands, mockIpcError } from "@/ipc/mocks";
+import { i18n } from "@/shared/i18n";
 import { renderWithRouter } from "@/shared/testing/renderWithRouter";
 import { CHART_HEADER_PARAMS } from "./components/ChartHeader";
 import { writeOpenAxes } from "./components/patternGridPrefs";
@@ -2554,5 +2555,86 @@ describe("LabelScreen label origin", () => {
     await roundLoaded();
     expect(screen.queryByText("Session strip")).toBeNull();
     expect(slot).not.toHaveBeenCalled();
+  });
+});
+
+describe("LabelScreen export", () => {
+  const EXPORTED = { path: "C:\\Users\\me\\AppData\\Local\\wolluf\\data\\exports\\gold-7k-20260928T231356Z.jsonl", rows: 37 };
+
+  afterEach(async () => {
+    await i18n.changeLanguage("en");
+  });
+
+  async function exportButton(): Promise<HTMLElement> {
+    return within(await openSettings()).findByRole("button", { name: "Export labels" });
+  }
+
+  it("exports the gold set from the playback settings, opens the exports folder and names the file", async () => {
+    const calls = renderScreen(undefined, { labelExport: () => EXPORTED, appOpenExportsDir: () => null });
+    await roundLoaded();
+
+    await userEvent.click(await exportButton());
+
+    expect(await screen.findByText("Exported 37 labels to gold-7k-20260928T231356Z.jsonl")).toHaveAttribute(
+      "role",
+      "status",
+    );
+    expect(calls.filter((c) => c.cmd === "label_export" || c.cmd === "app_open_exports_dir")).toEqual([
+      { cmd: "label_export", args: { keymode: 7 } },
+      { cmd: "app_open_exports_dir", args: {} },
+    ]);
+
+    await i18n.changeLanguage("es");
+    expect(await screen.findByRole("button", { name: "Exportar etiquetas" })).toBeInTheDocument();
+    expect(screen.getByText("Exportadas 37 etiquetas a gold-7k-20260928T231356Z.jsonl")).toBeInTheDocument();
+  });
+
+  it("keeps the outcome when the settings close and open again", async () => {
+    renderScreen(undefined, { labelExport: () => EXPORTED, appOpenExportsDir: () => null });
+    await roundLoaded();
+    await userEvent.click(await exportButton());
+    await screen.findByText("Exported 37 labels to gold-7k-20260928T231356Z.jsonl");
+
+    await userEvent.click(screen.getByRole("button", { name: "Close playback settings" }));
+    expect(screen.queryByRole("dialog", { name: "Playback settings" })).not.toBeInTheDocument();
+
+    expect(
+      within(await openSettings()).getByText("Exported 37 labels to gold-7k-20260928T231356Z.jsonl"),
+    ).toBeInTheDocument();
+  });
+
+  it("is disabled while the export runs", async () => {
+    renderScreen(undefined, { labelExport: () => never(), appOpenExportsDir: () => null });
+    await roundLoaded();
+
+    await userEvent.click(await exportButton());
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Export labels" })).toBeDisabled();
+    });
+  });
+
+  it("shows a failed export as an error and does not open the folder", async () => {
+    const calls = renderScreen(undefined, {
+      labelExport: () => mockIpcError("INTERNAL"),
+      appOpenExportsDir: () => null,
+    });
+    await roundLoaded();
+
+    await userEvent.click(await exportButton());
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Unexpected internal error");
+    expect(argsOf(calls, "app_open_exports_dir")).toEqual([]);
+    expect(screen.getByRole("button", { name: "Export labels" })).toBeEnabled();
+  });
+
+  it("stays reachable once no window is left to label", async () => {
+    const calls = renderScreen([null], { labelExport: () => EXPORTED, appOpenExportsDir: () => null });
+    expect(await screen.findByText("No window left to label.")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Export labels" }));
+
+    expect(await screen.findByText("Exported 37 labels to gold-7k-20260928T231356Z.jsonl")).toBeInTheDocument();
+    expect(argsOf(calls, "label_export")).toEqual([{ keymode: 7 }]);
   });
 });

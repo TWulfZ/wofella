@@ -83,6 +83,8 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::session::label_progress,
             commands::settings::settings_get_session_notify,
             commands::settings::settings_set_session_notify,
+            commands::label::label_export,
+            commands::app::app_open_exports_dir::<tauri::Wry>,
         ])
 }
 

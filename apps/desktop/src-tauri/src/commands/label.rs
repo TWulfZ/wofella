@@ -1,9 +1,9 @@
 use wolluf_app::errors::IpcError;
 use wolluf_app::features::labeling::dto::{
-    AnchorDto, ChartTimelineDto, ChartTimelineRequestDto, LabelEventDto, LabelStatsDto,
-    LabelSubmitDto, LabelWindowDto, MoveWindowRequestDto, NowPlayingDto, NowPlayingRequestDto,
-    PatternDefDto, PatternExampleDto, RandomRequestDto, ResizeWindowRequestDto, SampleRequestDto,
-    WindowAtRequestDto,
+    AnchorDto, ChartTimelineDto, ChartTimelineRequestDto, LabelEventDto, LabelExportDto,
+    LabelStatsDto, LabelSubmitDto, LabelWindowDto, MoveWindowRequestDto, NowPlayingDto,
+    NowPlayingRequestDto, PatternDefDto, PatternExampleDto, RandomRequestDto,
+    ResizeWindowRequestDto, SampleRequestDto, WindowAtRequestDto,
 };
 
 use super::Ctx;
@@ -129,4 +129,15 @@ pub async fn label_resize_window(
     req: ResizeWindowRequestDto,
 ) -> Result<AnchorDto, IpcError> {
     ctx.labeling().resize_window(req).await.map_err(to_ipc)
+}
+
+/// Into `<data dir>/exports/`, which the opener scope already covers (no save dialog).
+#[tauri::command]
+#[specta::specta]
+#[tracing::instrument(skip_all)]
+pub async fn label_export(ctx: Ctx<'_>, keymode: u8) -> Result<LabelExportDto, IpcError> {
+    ctx.labeling()
+        .export_to_data_dir(keymode)
+        .await
+        .map_err(to_ipc)
 }
