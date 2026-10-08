@@ -15,7 +15,7 @@ The beta skill and recommendation preview (user request 2026-10-08) needs per-sk
 ## Constraints
 - Domain crate: no IO, no clock (CLAUDE.md hard rules). `wolluf-minacalc` has no workspace dependency.
 - D3 deviation per ADR 0022: calculator floats never enter a hash; outputs are centi-MSD `i32`.
-- Params in structs (D17): rate grid, LN hold-share cut, quantisation.
+- Params in structs (D17): rate grid, LN hold-share cut, quantisation. Hold share = LN objects ÷ all objects, in permille (the docs/research/03 definition); a chart at or above the cut is `Unrated(LnHeavy)`.
 - Licence: Etterna MIT, credited in NOTICE in the vendoring commit (ADR 0008).
 - TDD: strict. Runner: `cargo nextest run -p wolluf-minacalc -p wolluf-difficulty`.
 - Delivery: one PR for the whole branch (user decision 2026-10-08).
@@ -38,17 +38,21 @@ The beta skill and recommendation preview (user request 2026-10-08) needs per-sk
 ## Acceptance criteria
 - Native calc builds with cc only and reports 527 → `cargo nextest run -p wolluf-minacalc`.
 - A synthetic 4K stream chart yields 8 positive skillsets; invalid input returns `Err`, never crashes → minacalc tests incl. proptest.
-- Adapter drops tail-only rows, keeps times strictly increasing and masks ≤ `(1<<K)-1`; MSD does not decrease as rate rises → difficulty tests.
+- Adapter drops tail-only rows, keeps times strictly increasing and masks ≤ `(1<<K)-1`; MSD Overall does not decrease as rate rises on map-length charts (v527 penalises fast rolls on short charts, e.g. a 30 s 1-3-2-4 roll scores 15.36 at 1.2 and 11.06 at 1.3) → difficulty tests.
 - REFORM 2nd 4K dans come out strictly ordered → `#[ignore]` corpus test `corpus_minacalc_reform_order`.
 - Windows: `test (windows-2025)` CI job green (needs the branch pushed; the user chose one PR, so this is checked when it opens).
 
 ## Tasks
 - [x] T1 — ADR 0022, layers edge, workspace members, architecture wording. Acceptance: `cargo xtask check-layers` 0 violations. Route: inline. Tier: high (crate edge). Commit: `build: vendor-ready minacalc and difficulty crates (ADR 0022)`
-- [ ] T2 — `wolluf-minacalc`: vendored v527 + patch + shim + safe `Calc`. Acceptance: version 527, 4K synthetic positive, errors on bad input, proptest no crash, deterministic per platform. Route: delegated (writing ≥2 non-trivial files). Tier: high (licensing, unsafe). Commit: —
-- [ ] T3 — `wolluf-difficulty` adapter, params, `msd_table`, `ssr_centi`, corpus test. Acceptance as above. Route: delegated. Tier: medium. Commit: —
+- [x] T2 — `wolluf-minacalc`: vendored v527 + patch + shim + safe `Calc`. Acceptance: version 527, 4K synthetic positive, errors on bad input, proptest no crash, deterministic per platform. Route: delegated (writing ≥2 non-trivial files). Tier: high (licensing, unsafe). Commit: `feat(minacalc): vendor Etterna MinaCalc v527 behind a C ABI`
+- [x] T3 — `wolluf-difficulty` adapter, params, `msd_table`, `ssr_centi`, corpus test. Acceptance as above. Route: delegated. Tier: medium. Commit: `feat(difficulty): rate charts with MinaCalc skillsets per rate`
 
 ## Progress
 - 2026-10-08 T1: written; `cargo xtask check-layers`: 12 members, 0 violations.
 
+- 2026-10-08 T2: RED `E0432 unresolved imports wolluf_minacalc::{CALC_VERSION, Calc, …}` → GREEN. `cargo nextest run -p wolluf-minacalc`: 15/15. ASan/UBSan run found signed overflow in upstream `fastpow` (`PatternModHelpers.h:25`); fixed with `-fwrapv` on GCC/Clang, outputs bit-identical before and after. MSVC has no `-fwrapv` (formally UB there); aarch64 unsupported (`sse2neon.h` not vendored).
+- 2026-10-08 T3: RED (missing module) → GREEN. `cargo nextest run -p wolluf-difficulty`: 18 passed, 1 skipped. Corpus `corpus_minacalc_reform_order` (release, osu! closed): 6th 22.83 < 7th 23.57 < 8th 24.52 < 9th 26.05 < 10th 26.12 < β 27.55 < γ 30.45 < δ 32.30 < ε 34.88 (no EXTRA-ALPHA .osu in the pilot pack).
+- 2026-10-08 Verifier (high tier): FAIL on missing NOTICE entry; one scoped correction applied: NOTICE entry, `static_assert(NUM_Skillset == 8)` in the shim, corpus test panics when the env var is unset, centi comment and ADR wording (a centi can differ by 1 across platforms), unused difficulty deps removed. Re-run: `cargo nextest run -p wolluf-minacalc -p wolluf-difficulty`: 33 passed, 1 skipped; clippy workspace clean; check-layers 0 violations; deny ok. Accepted, not changed: a 50,000 s scaled-time cap can still let a garbage chart allocate ~100–200 MB inside one `Calc` (estimate, not measured). Pending: `test (windows-2025)` CI, at PR time.
+
 ## Next step
-Run the T2/T3 agents, verify, commit T1–T3.
+Feature `k4-difficulty-index`: engine K4 profile + difficulty stage + `chart_msd` cache table + index wiring.

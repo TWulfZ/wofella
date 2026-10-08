@@ -10,14 +10,13 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-wolluf-core.workspace = true
 wolluf-chart.workspace = true
 wolluf-minacalc.workspace = true
-thiserror.workspace = true
 serde.workspace = true
 postcard.workspace = true
 blake3.workspace = true
 
 [dev-dependencies]
+wolluf-core.workspace = true
 wolluf-chart = { workspace = true, features = ["test-support"] }
 proptest.workspace = true
