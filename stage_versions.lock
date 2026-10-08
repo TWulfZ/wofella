@@ -19,5 +19,5 @@ version = 5
 golden = "c15a66444b81b34d3aef1dac597e1dfaff57afa5a6dc797db57f91f9421a70dd"
 
 [stages."play_ssr"]
-version = 1
-golden = "f9c51cd180948f176b110e4d2d9bc5b167920c8713ec5ad0f4004b48e8d96f73"
+version = 2
+golden = "cee8762cf84fe21efd3627f5425704fb28be6f593a007a79053636c81467d8c9"

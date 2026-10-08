@@ -17,7 +17,7 @@ pub use goal::goal_permyriad;
 pub use mods::PlayMods;
 pub use params::{
     AggregateParams, EvidenceParams, EvidenceTier, ExclusionParams, FamilyParams, GoalParams,
-    PreviewParams, RatingParams,
+    OverallParams, PreviewParams, RatingParams,
 };
 pub use play::{Completeness, PlayCounts, ScoreSystem};
 pub use rating::{

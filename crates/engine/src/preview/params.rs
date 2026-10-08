@@ -1,8 +1,10 @@
 //! Preview thresholds and constants (D17). None of them is calibrated (ADR 0024).
 
 use serde::Serialize;
+use wolluf_core::Keymode;
 
 use super::dan::DanTable4k;
+use crate::stage::difficulty::SKILLSET_IDS;
 
 const GOAL_PARAMS_TAG: &[u8] = b"wolluf.preview.goal.params.v1";
 const EXCLUSION_PARAMS_TAG: &[u8] = b"wolluf.preview.exclusion.params.v1";
@@ -14,6 +16,7 @@ pub struct PreviewParams {
     pub evidence: EvidenceParams,
     pub exclusion: ExclusionParams,
     pub family: FamilyParams,
+    pub overall: OverallParams,
     pub dan_k4: DanTable4k,
 }
 
@@ -184,10 +187,12 @@ impl ExclusionParams {
 /// `[1.2x]`. Matching is ASCII case-insensitive.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FamilyParams {
-    /// A number followed by one of these is a rate tag.
-    pub number_suffixes: Vec<String>,
-    /// One of these followed by a number is a rate tag.
-    pub number_prefixes: Vec<String>,
+    /// A number followed by one of these is a speed multiplier, the chart's own rate.
+    pub multiplier_suffixes: Vec<String>,
+    /// One of these followed by a number is a speed multiplier.
+    pub multiplier_prefixes: Vec<String>,
+    /// A number followed by one of these is a tag that carries no rate (`bpm`).
+    pub other_suffixes: Vec<String>,
     /// Open and close delimiters around a tag.
     pub brackets: Vec<(char, char)>,
 }
@@ -195,12 +200,53 @@ pub struct FamilyParams {
 impl Default for FamilyParams {
     fn default() -> Self {
         Self {
-            number_suffixes: vec!["x".into(), "bpm".into()],
-            number_prefixes: vec!["x".into()],
+            multiplier_suffixes: vec!["x".into()],
+            multiplier_prefixes: vec!["x".into()],
+            other_suffixes: vec!["bpm".into()],
             brackets: vec![('(', ')'), ('[', ']')],
         }
     }
 }
+
+/// ADR 0024: Overall averages the skillsets MinaCalc measures for a keymode.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OverallParams {
+    /// Skillset ids (`SKILLSET_IDS`) that enter a keymode's Overall; a keymode not listed
+    /// averages all 7.
+    pub by_keymode: Vec<(Keymode, Vec<String>)>,
+}
+
+impl Default for OverallParams {
+    fn default() -> Self {
+        let ids = |skip: &[&str]| -> Vec<String> {
+            SKILLSET_IDS[1..]
+                .iter()
+                .filter(|id| !skip.contains(id))
+                .map(|id| (*id).to_owned())
+                .collect()
+        };
+        Self {
+            // MinaCalc's 7K Technical sits near 0.18 on almost every chart of the pilot library.
+            by_keymode: vec![(Keymode::K4, ids(&[])), (Keymode::K7, ids(&["technical"]))],
+        }
+    }
+}
+
+impl OverallParams {
+    /// In `SKILLSET_IDS[1..]` order. Unknown ids select nothing.
+    pub fn skillsets(&self, keymode: Keymode) -> [bool; SKILLSETS] {
+        let Some((_, ids)) = self.by_keymode.iter().find(|(k, _)| *k == keymode) else {
+            return [true; SKILLSETS];
+        };
+        let mut on = [false; SKILLSETS];
+        for (slot, id) in on.iter_mut().zip(&SKILLSET_IDS[1..]) {
+            *slot = ids.iter().any(|want| want == id);
+        }
+        on
+    }
+}
+
+const SKILLSETS: usize = 7;
 
 #[cfg(test)]
 mod tests {
@@ -252,6 +298,28 @@ mod tests {
         for v in variants {
             assert_ne!(v.params_hash(), base.params_hash(), "{v:?}");
         }
+    }
+
+    #[test]
+    fn overall_takes_every_skillset_but_7k_technical() {
+        let p = OverallParams::default();
+        assert_eq!(p.skillsets(Keymode::K4), [true; 7]);
+        let k7 = p.skillsets(Keymode::K7);
+        let left_out: Vec<&str> = SKILLSET_IDS[1..]
+            .iter()
+            .zip(k7)
+            .filter(|(_, on)| !on)
+            .map(|(id, _)| *id)
+            .collect();
+        assert_eq!(left_out, ["technical"]);
+        // A keymode without a listing averages all 7.
+        assert_eq!(p.skillsets(Keymode::new(5).unwrap()), [true; 7]);
+        let custom = OverallParams {
+            by_keymode: vec![(Keymode::K4, vec!["stream".into(), "nonsense".into()])],
+        };
+        let mut only_stream = [false; 7];
+        only_stream[0] = true;
+        assert_eq!(custom.skillsets(Keymode::K4), only_stream);
     }
 
     #[test]

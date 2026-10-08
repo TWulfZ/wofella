@@ -66,20 +66,19 @@ thread_local! {
 
 /// The `play_ssr` key of every keymode rated by MinaCalc, with the `difficulty` key under it.
 #[derive(Debug, Clone, Copy)]
-struct KeymodeKeys {
+pub(super) struct KeymodeKeys {
     keymode: u8,
-    difficulty: VersionKey,
-    ssr: VersionKey,
+    pub(super) difficulty: VersionKey,
+    pub(super) ssr: VersionKey,
 }
 
-pub(super) fn ssr_vkey(
+pub(super) fn keys_for(
     keymode: u8,
     params: &PreviewParams,
-) -> Result<Option<VersionKey>, AppError> {
+) -> Result<Option<KeymodeKeys>, AppError> {
     Ok(keymode_keys(params)?
         .into_iter()
-        .find(|k| k.keymode == keymode)
-        .map(|k| k.ssr))
+        .find(|k| k.keymode == keymode))
 }
 
 fn keymode_keys(params: &PreviewParams) -> Result<Vec<KeymodeKeys>, AppError> {
@@ -186,13 +185,14 @@ struct Env<'a> {
     params: &'a PreviewParams,
 }
 
-/// The rules of ADR 0024 in order: mods the chart's notes no longer describe, ScoreV2, no
-/// parse, too few judgements, then the chart's own MSD status. The goal is kept on excluded rows
-/// for display; the rate is the mod rate the SSR is computed at.
+/// The rules of ADR 0024 in order: mods the chart's notes no longer describe, no parse, too few
+/// judgements, then the chart's own MSD status. ScoreV2 plays count on the V2 windows. The goal is
+/// kept on excluded rows for display; the rate is the mod rate the SSR is computed at.
 fn rate_play(env: &Env<'_>, item: &Item) -> Result<PlaySsrRow, ItemError> {
     let internal = |e: String| ItemError::new(ErrorCode::Internal, e);
     let p = &item.play;
-    let mods = PlayMods::from_bits(p.mods);
+    let mut mods = PlayMods::from_bits(p.mods);
+    mods.score_v2 |= p.score_system == ScoreSystem::V2;
     let counts = engine_counts(p.counts);
     let goal = goal_permyriad(counts, item.od, mods, &env.params.goal);
     let row = |status, centi| PlaySsrRow {
@@ -204,9 +204,6 @@ fn rate_play(env: &Env<'_>, item: &Item) -> Result<PlaySsrRow, ItemError> {
     };
     if mods.unsupported(&env.params.exclusion) {
         return Ok(row(PlaySsrStatus::UnsupportedMods, None));
-    }
-    if mods.score_v2 || p.score_system == ScoreSystem::V2 {
-        return Ok(row(PlaySsrStatus::ScoreV2, None));
     }
     let md5 = p.chart_md5;
     let (parsed, msd) = env
@@ -429,9 +426,12 @@ mod tests {
         assert!((9_000..=9_650).contains(&goal), "{goal}");
         let centi = counted.centi.unwrap();
         assert!(centi[0] > 0, "{centi:?}");
+        // ADR 0024 (amended): ScoreV2 plays count on the V2 windows.
+        let v2_row = status(&f, &v2, SELF);
+        assert_eq!(v2_row.status, PlaySsrStatus::Counted, "{v2_row:?}");
+        assert!(v2_row.centi.is_some(), "{v2_row:?}");
         for (m, want) in [
             (&random, PlaySsrStatus::UnsupportedMods),
-            (&v2, PlaySsrStatus::ScoreV2),
             (&short, PlaySsrStatus::Incomplete),
             (&ln, PlaySsrStatus::LnHeavy),
             (&gone, PlaySsrStatus::NoChart),
@@ -447,7 +447,7 @@ mod tests {
         let s = last_summary(&f).await;
         assert_eq!(s.plays_total, 8, "{s:?}");
         assert_eq!(s.computed, 8, "{s:?}");
-        assert_eq!((s.counted, s.excluded), (2, 6), "{s:?}");
+        assert_eq!((s.counted, s.excluded), (3, 5), "{s:?}");
         assert_eq!(s.failed_items, 0, "{s:?}");
     }
 

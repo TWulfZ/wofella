@@ -1,6 +1,6 @@
 //! `wolluf preview skill` over `PreviewService` (ADR 0024). The per-play SSR cache it reads is
-//! refreshed by `ComputePlaySsr`, which the app chains after every `IndexLibrary`, so
-//! `wolluf library index` (or `wolluf sync`) is how the CLI runs it.
+//! refreshed by `ComputePlaySsr`, which the app chains after every `IndexLibrary` and the preview
+//! starts itself when plays were never rated under the current key; the CLI waits for that run.
 
 use std::process::ExitCode;
 
@@ -9,13 +9,16 @@ use wolluf_app::errors::AppError;
 use wolluf_app::features::players::dto::{self as players_dto, profile_id};
 use wolluf_app::features::players::identity::EntryRef;
 use wolluf_app::features::players::scope::MergeMode;
-use wolluf_app::features::preview::dto::{PreviewStateDto, SkillPreviewDto, TopPlayDto};
+use wolluf_app::features::preview::dto::{
+    EXCLUSION_PENDING, PreviewStateDto, SkillPreviewDto, TopPlayDto,
+};
 use wolluf_core::UnixUs;
 
 use crate::cli::{MergeArg, PreviewCmd, PreviewSkillArgs, ScopeArg};
 use crate::cmd::library::msd;
 use crate::cmd::players::rfc3339_ms;
 use crate::exit;
+use crate::follow;
 use crate::render;
 
 /// The text view lists the best plays only; `--json` keeps every one the service returns.
@@ -44,9 +47,21 @@ pub(crate) async fn run(ctx: &AppContext, cmd: PreviewCmd, json: bool) -> anyhow
 async fn skill(ctx: &AppContext, args: PreviewSkillArgs) -> Result<Vec<SkillPreviewDto>, AppError> {
     let keymode = players_dto::keymode(u32::from(args.keys))?;
     let entry = entry(ctx, args.scope).await?;
-    ctx.preview()
-        .skill(entry, keymode, args.merge.map(merge))
-        .await
+    let merge = args.merge.map(merge);
+    let previews = ctx.preview().skill(entry, keymode, merge).await?;
+    if previews
+        .iter()
+        .all(|p| p.state != PreviewStateDto::Computing)
+    {
+        return Ok(previews);
+    }
+    // Closing the context would cancel the SSR job the preview started; a Ctrl-C stops waiting.
+    tokio::select! {
+        biased;
+        () = follow::ctrl_c() => return Ok(previews),
+        () = ctx.jobs().wait_idle() => {}
+    }
+    ctx.preview().skill(entry, keymode, merge).await
 }
 
 async fn entry(ctx: &AppContext, scope: ScopeArg) -> Result<EntryRef, AppError> {
@@ -81,10 +96,21 @@ fn skill_text(p: &SkillPreviewDto) -> String {
         ("method", p.method.clone()),
         ("state", render::wire(&p.state)),
     ];
+    let pending = p
+        .evidence
+        .excluded
+        .iter()
+        .find(|e| e.reason == EXCLUSION_PENDING)
+        .map_or(0, |e| e.count);
     if p.state == PreviewStateDto::Computing {
         pairs.push((
             "note",
             "SSRs are still being computed: run `wolluf library index`".to_owned(),
+        ));
+    } else if pending > 0 {
+        pairs.push((
+            "note",
+            format!("{pending} plays have no SSR yet: run `wolluf library index`"),
         ));
     }
     pairs.extend([
@@ -378,6 +404,22 @@ warnings  uncalibrated k7_less_validated
             scope = "ab".repeat(32)
         );
         assert_eq!(skill_text(&empty), want);
+    }
+
+    #[test]
+    fn pending_plays_say_what_to_do() {
+        let mut p = ready();
+        p.evidence.excluded.push(ExclusionCountDto {
+            reason: "pending".to_owned(),
+            count: 2,
+        });
+        let text = skill_text(&p);
+        assert!(text.contains("state     ready\n"), "{text}");
+        assert!(
+            text.contains("note      2 plays have no SSR yet: run `wolluf library index`\n"),
+            "{text}"
+        );
+        assert!(!skill_text(&ready()).contains("note "));
     }
 
     #[test]

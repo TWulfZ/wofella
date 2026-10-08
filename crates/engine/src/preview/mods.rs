@@ -5,6 +5,7 @@ use super::play::ScoreSystem;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PlayMods {
+    pub nf: bool,
     pub ez: bool,
     pub hr: bool,
     pub dt: bool,
@@ -17,6 +18,7 @@ pub struct PlayMods {
     pub key_mod: bool,
 }
 
+const NF: i32 = 1;
 const EZ: i32 = 1 << 1;
 const HR: i32 = 1 << 4;
 const DT: i32 = 1 << 6;
@@ -37,6 +39,7 @@ impl PlayMods {
     pub fn from_bits(bits: i32) -> Self {
         let has = |m: i32| bits & m != 0;
         Self {
+            nf: has(NF),
             ez: has(EZ),
             hr: has(HR),
             // stable always stores NC with DT; a lone NC bit still plays at 1.5×.
@@ -80,6 +83,7 @@ impl PlayMods {
 mod tests {
     use super::*;
 
+    const NF: i32 = 1;
     const EZ: i32 = 2;
     const HR: i32 = 16;
     const DT: i32 = 64;
@@ -107,7 +111,8 @@ mod tests {
     #[test]
     fn each_bit_sets_its_flag() {
         type Flag = fn(&PlayMods) -> bool;
-        let cases: [(i32, Flag); 9] = [
+        let cases: [(i32, Flag); 10] = [
+            (NF, |m| m.nf),
             (EZ, |m| m.ez),
             (HR, |m| m.hr),
             (DT, |m| m.dt),
@@ -122,7 +127,8 @@ mod tests {
             let m = PlayMods::from_bits(bit);
             assert!(flag(&m), "bit {bit}: {m:?}");
             let set = [
-                m.ez, m.hr, m.dt, m.ht, m.nc, m.random, m.coop, m.score_v2, m.mirror, m.key_mod,
+                m.nf, m.ez, m.hr, m.dt, m.ht, m.nc, m.random, m.coop, m.score_v2, m.mirror,
+                m.key_mod,
             ];
             assert_eq!(set.iter().filter(|b| **b).count(), 1, "bit {bit}: {m:?}");
         }
@@ -133,8 +139,8 @@ mod tests {
         for bit in [KEY1, KEY2, KEY3, KEY4, 65_536, 131_072, KEY7, 524_288, KEY9] {
             assert!(PlayMods::from_bits(bit).key_mod, "{bit}");
         }
-        // NoFail, Hidden, SuddenDeath, FadeIn, Perfect and Flashlight do not touch the preview.
-        for bit in [1, 8, 32, 1_048_576, 16_384, 1024] {
+        // Hidden, SuddenDeath, FadeIn, Perfect and Flashlight do not touch the preview.
+        for bit in [8, 32, 1_048_576, 16_384, 1024] {
             assert_eq!(PlayMods::from_bits(bit), PlayMods::default(), "{bit}");
         }
     }
@@ -169,7 +175,7 @@ mod tests {
         for bit in [RANDOM, COOP, KEY4] {
             assert!(PlayMods::from_bits(bit).unsupported(&params), "{bit}");
         }
-        for bit in [0, HR, EZ, DT | NC, HT, MIRROR, SCORE_V2] {
+        for bit in [0, NF, HR, EZ, DT | NC, HT, MIRROR, SCORE_V2] {
             assert!(!PlayMods::from_bits(bit).unsupported(&params), "{bit}");
         }
         let lenient = ExclusionParams {

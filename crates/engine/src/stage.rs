@@ -108,7 +108,7 @@ mod tests {
                 ("chart_parse", 1),
                 ("difficulty", 2),
                 ("patterns", 5),
-                ("play_ssr", 1)
+                ("play_ssr", 2)
             ]
         );
     }

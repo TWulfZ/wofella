@@ -1,23 +1,27 @@
 //! `PreviewService` (ADR 0024): the uncalibrated skill preview of each resolved scope, read from
 //! the `play_ssr` cache. Only the scope's own aliases' plays are read (ADR 0005).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
+use wolluf_core::VersionKey;
 use wolluf_core::{ChartMd5, Keymode, PlayId, UnixUs};
-use wolluf_engine::preview::{PlayerRating, RatedPlay, aggregate_with, player_rating};
+use wolluf_engine::preview::{
+    PlayMods, RatedPlay, aggregate_with, player_rating, rate_pbs, top2_per_family,
+};
 use wolluf_engine::stage::difficulty::{CALC_VERSION, SKILLSET_IDS};
 use wolluf_store::DbHandle;
+use wolluf_store::repo::cache::chart_msd;
 use wolluf_store::repo::cache::play_ssr::{self as ssr_repo, PlaySsrRow, PlaySsrStatus};
-use wolluf_store::repo::cache::{CatalogChart, catalog_chart};
+use wolluf_store::repo::cache::{CatalogChart, catalog_chart, item_failure, job_run};
 use wolluf_store::repo::ledger::{Play, play};
 use wolluf_store::time::format_rfc3339_ms;
 
 use super::dto::{
-    DanEstimateDto, DanThirdDto, EvidenceDto, EvidenceTierDto, ExclusionCountDto,
-    METHOD_ETTERNA_RATING, PreviewStateDto, SkillPreviewDto, SkillsetRatingDto, TopPlayDto,
-    TrendPointDto, warning,
+    DanEstimateDto, DanThirdDto, EXCLUSION_PENDING, EvidenceDto, EvidenceTierDto,
+    ExclusionCountDto, METHOD_ETTERNA_RATING, PreviewStateDto, SkillPreviewDto, SkillsetRatingDto,
+    TopPlayDto, TrendPointDto, warning,
 };
-use super::job::ssr_vkey;
+use super::job::{ComputePlaySsrJob, keys_for};
 use super::params::PreviewServiceParams;
 use crate::context::{AppContext, blocking_join_error};
 use crate::errors::AppError;
@@ -33,6 +37,9 @@ const US_PER_MS: i64 = 1_000;
 const US_PER_MS_F64: f64 = 1_000.0;
 /// `YYYY-MM` of an RFC 3339 timestamp.
 const MONTH_LEN: usize = 7;
+/// Every sync chain ends in `ComputePlaySsr`, so its last run is among the newest few; a run older
+/// than this only costs one redundant job.
+const RECENT_RUNS: u32 = 50;
 
 pub struct PreviewService<'a> {
     ctx: &'a AppContext,
@@ -60,19 +67,55 @@ impl<'a> PreviewService<'a> {
             .players()
             .resolve_scopes(entry, keymode, merge)
             .await?;
-        // Read before the cache, so a job that ends in between still reads as computing.
+        // Read before the cache: a job that ends in between reads as computing once, never as
+        // ready over rows it has not written yet.
         let job_pending = self.ctx.jobs().is_active(JobKindDto::ComputePlaySsr);
         let (user, cache) = (self.ctx.user_db().clone(), self.ctx.cache_db().clone());
         let params = self.params.clone();
-        tokio::task::spawn_blocking(move || {
-            scopes
+        let (mut previews, start_job) = tokio::task::spawn_blocking(move || {
+            let read: Vec<(SkillPreviewDto, Vec<PlayId>)> = scopes
                 .iter()
                 .map(|scope| preview(&user, &cache, &params, scope, job_pending))
-                .collect()
+                .collect::<Result<_, AppError>>()?;
+            let pending: BTreeSet<PlayId> = read.iter().flat_map(|(_, ids)| ids).copied().collect();
+            let start_job = !job_pending && unattempted(&cache, &pending)?;
+            Ok::<_, AppError>((read, start_job))
         })
         .await
-        .map_err(blocking_join_error)?
+        .map_err(blocking_join_error)??;
+        if start_job {
+            self.ctx.jobs().submit(Box::new(ComputePlaySsrJob));
+            for (p, ids) in &mut previews {
+                if !ids.is_empty() {
+                    p.state = PreviewStateDto::Computing;
+                }
+            }
+        }
+        Ok(previews.into_iter().map(|(p, _)| p).collect())
     }
+}
+
+/// Whether some pending play was never tried under the current key: a `play_ssr` VERSION bump
+/// orphans every row, and only `IndexLibrary` chains the job. Plays the last run failed on stay
+/// pending instead, or every read would rerun a job that fails them again.
+fn unattempted(cache: &DbHandle, pending: &BTreeSet<PlayId>) -> Result<bool, AppError> {
+    if pending.is_empty() {
+        return Ok(false);
+    }
+    let kind = JobKindDto::ComputePlaySsr.as_str();
+    Ok(cache.read(|c| {
+        let Some(last) = job_run::list_recent(c, RECENT_RUNS)?
+            .into_iter()
+            .find(|r| r.kind == kind)
+        else {
+            return Ok(true);
+        };
+        let failed: BTreeSet<String> = item_failure::list(c, last.id)?
+            .into_iter()
+            .map(|f| f.item_ref)
+            .collect();
+        Ok(pending.iter().any(|id| !failed.contains(&id.to_string())))
+    })?)
 }
 
 fn warnings(keymode: Keymode) -> Vec<String> {
@@ -103,7 +146,7 @@ fn preview(
     params: &PreviewServiceParams,
     scope: &ResolvedScope,
     job_pending: bool,
-) -> Result<SkillPreviewDto, AppError> {
+) -> Result<(SkillPreviewDto, Vec<PlayId>), AppError> {
     let engine = &params.engine;
     let keymode = scope.keymode;
     let mut out = SkillPreviewDto {
@@ -134,31 +177,41 @@ fn preview(
         .into_iter()
         .filter(|p| catalog.contains_key(&p.chart_md5))
         .collect();
-    let Some(vkey) = ssr_vkey(keymode.columns(), engine)?.filter(|_| !plays.is_empty()) else {
-        return Ok(out);
+    let Some(keys) = keys_for(keymode.columns(), engine)?.filter(|_| !plays.is_empty()) else {
+        return Ok((out, Vec::new()));
     };
     // Oldest first: the trend rates growing prefixes and ties go to the earlier play.
     plays.sort_by_key(|p| (p.played_at, p.id));
     let ids: Vec<PlayId> = plays.iter().map(|p| p.id).collect();
     let rows: BTreeMap<PlayId, PlaySsrRow> = cache
-        .read(|c| ssr_repo::get_many(c, vkey, &ids))?
+        .read(|c| ssr_repo::get_many(c, keys.ssr, &ids))?
         .into_iter()
         .map(|r| (r.play_id, r))
         .collect();
-    out.state = if rows.len() < plays.len() || job_pending {
+    // A row that never comes (an item failure, a cancelled job) must not hold the page in
+    // `computing`: only a live job does, and missing rows are reported as pending.
+    out.state = if job_pending {
         PreviewStateDto::Computing
     } else {
         PreviewStateDto::Ready
     };
+    let pending: Vec<PlayId> = plays
+        .iter()
+        .filter(|p| !rows.contains_key(&p.id))
+        .map(|p| p.id)
+        .collect();
     out.evidence.excluded = PlaySsrStatus::ALL
         .iter()
         .filter(|s| **s != PlaySsrStatus::Counted)
-        .filter_map(|&status| {
+        .map(|&status| {
             let n = rows.values().filter(|r| r.status == status).count();
-            (n > 0).then(|| ExclusionCountDto {
-                reason: status.as_str().to_owned(),
-                count: u32::try_from(n).unwrap_or(u32::MAX),
-            })
+            (status.as_str(), n)
+        })
+        .chain([(EXCLUSION_PENDING, pending.len())])
+        .filter(|(_, n)| *n > 0)
+        .map(|(reason, n)| ExclusionCountDto {
+            reason: reason.to_owned(),
+            count: u32::try_from(n).unwrap_or(u32::MAX),
         })
         .collect();
 
@@ -194,8 +247,9 @@ fn preview(
             played_at_ms: c.play.played_at.0.div_euclid(US_PER_MS),
         })
         .collect();
-    let Some(rating) = player_rating(&rated, &engine.rating) else {
-        return Ok(out);
+    let overall = engine.overall.skillsets(keymode);
+    let Some(rating) = player_rating(&rated, &engine.rating, &overall) else {
+        return Ok((out, pending));
     };
     let n_counted = u32::try_from(rating.counted.len()).unwrap_or(u32::MAX);
     out.overall_centi = Some(rating.overall_centi);
@@ -210,7 +264,7 @@ fn preview(
     out.evidence.counted = n_counted;
     out.evidence.tier = tier(engine.evidence.tier(n_counted));
     if keymode == Keymode::K4 {
-        out.dan = dan(&counted, &rating, params);
+        out.dan = dan(cache, keys.difficulty, &counted, params)?;
     }
     out.top_plays = rating
         .counted
@@ -218,31 +272,76 @@ fn preview(
         .take(params.top_plays)
         .map(|&i| top_play(&counted[i]))
         .collect();
-    out.trend = trend(&counted, &rated, params);
-    Ok(out)
+    out.trend = trend(&counted, &rated, &overall, params);
+    Ok((out, pending))
 }
 
-/// ADR 0024: the dan table maps a chart's Overall MSD, so the player side aggregates the
-/// counted plays' Overall SSRs on that scale instead of reusing the mean of the 7 skillsets.
+/// ADR 0024 (amended): the table maps a chart's Overall MSD and a dan course is passed by
+/// surviving, so the input aggregates the Overall MSD, at the played mod rate, of the charts the
+/// scope cleared: counted plays (complete, not excluded) without NoFail, which cannot fail.
+/// Etterna's one PB per rate and two best rates per chart keep a chart replayed many times from
+/// weighing more than twice. A chart without an MSD row at that rate is skipped.
 fn dan(
+    cache: &DbHandle,
+    difficulty: VersionKey,
     counted: &[Counted<'_>],
-    rating: &PlayerRating,
     params: &PreviewServiceParams,
-) -> Option<DanEstimateDto> {
-    let r = &params.engine.rating;
-    let mut overall: Vec<f32> = rating
-        .counted
+) -> Result<Option<DanEstimateDto>, AppError> {
+    let cleared: Vec<&Counted<'_>> = counted
         .iter()
-        .map(|&i| counted[i].centi[0] as f32 / CENTI)
+        .filter(|c| !PlayMods::from_bits(c.play.mods).nf)
         .collect();
+    let mut by_rate: BTreeMap<u16, Vec<ChartMd5>> = BTreeMap::new();
+    for c in &cleared {
+        by_rate
+            .entry(c.row.rate_milli)
+            .or_default()
+            .push(c.chart.md5);
+    }
+    let msd: BTreeMap<(u16, ChartMd5), i32> = cache.read(|conn| {
+        let mut out = BTreeMap::new();
+        for (rate, md5s) in &mut by_rate {
+            md5s.sort_unstable();
+            md5s.dedup();
+            for (md5, overall) in chart_msd::overall_at(conn, difficulty, *rate, md5s)? {
+                out.insert((*rate, md5), overall);
+            }
+        }
+        Ok(out)
+    })?;
+    let rated: Vec<RatedPlay<'_>> = cleared
+        .iter()
+        .filter_map(|c| {
+            let overall = *msd.get(&(c.row.rate_milli, c.chart.md5))?;
+            let mut ssr_centi = [0; 8];
+            ssr_centi[0] = overall;
+            Some(RatedPlay {
+                family: &c.family,
+                rate_milli: c.rate_milli,
+                ssr_centi,
+                played_at_ms: c.play.played_at.0.div_euclid(US_PER_MS),
+            })
+        })
+        .collect();
+    let r = &params.engine.rating;
+    let mut overall: Vec<f32> = top2_per_family(&rated, &rate_pbs(&rated), r)
+        .into_iter()
+        .map(|i| rated[i].ssr_centi[0] as f32 / CENTI)
+        .collect();
+    if overall.is_empty() {
+        return Ok(None);
+    }
     // `SortTopSSRPtrs` feeds the aggregate in ascending order; float sums depend on it.
     overall.sort_by(f32::total_cmp);
     let aggregate = aggregate_with(&overall, &r.aggregate).clamp(r.min_rating, r.max_rating);
-    let estimate = params
+    let Some(estimate) = params
         .engine
         .dan_k4
-        .estimate((aggregate * CENTI).round() as i32)?;
-    Some(DanEstimateDto {
+        .estimate((aggregate * CENTI).round() as i32)
+    else {
+        return Ok(None);
+    };
+    Ok(Some(DanEstimateDto {
         label: estimate.label,
         third: match estimate.third {
             wolluf_engine::preview::DanThird::Low => DanThirdDto::Low,
@@ -250,7 +349,7 @@ fn dan(
             wolluf_engine::preview::DanThird::High => DanThirdDto::High,
         },
         margin_centi: estimate.margin_centi,
-    })
+    }))
 }
 
 fn tier(t: wolluf_engine::preview::EvidenceTier) -> EvidenceTierDto {
@@ -291,6 +390,7 @@ fn month(t: UnixUs) -> String {
 fn trend(
     counted: &[Counted<'_>],
     rated: &[RatedPlay<'_>],
+    overall: &[bool; 7],
     params: &PreviewServiceParams,
 ) -> Vec<TrendPointDto> {
     let mut points: Vec<TrendPointDto> = Vec::new();
@@ -302,7 +402,7 @@ fn trend(
         if !last_of_month {
             continue;
         }
-        if let Some(r) = player_rating(&rated[..=end], &params.engine.rating) {
+        if let Some(r) = player_rating(&rated[..=end], &params.engine.rating, overall) {
             points.push(TrendPointDto {
                 month: m,
                 overall_centi: r.overall_centi,
@@ -314,17 +414,24 @@ fn trend(
 
 #[cfg(test)]
 mod tests {
-    use wolluf_core::{Keymode, PlayId};
+    use std::collections::BTreeMap;
+
+    use wolluf_core::{ChartMd5, Keymode, PlayId};
     use wolluf_engine::preview::{DanTable4k, PreviewParams, aggregate_rating};
+    use wolluf_store::repo::cache::chart_msd;
+    use wolluf_store::repo::cache::chart_parsed;
     use wolluf_store::repo::cache::play_ssr as ssr_repo;
+    use wolluf_store::repo::ledger::alias;
 
     use super::*;
     use crate::features::library::testkit::Map;
+    use crate::features::library::{Keys, Raters};
+    use crate::features::players::selection::Decision;
     use crate::features::plays::testkit::Fixture;
     use crate::features::preview::dto::{EvidenceTierDto, PreviewStateDto, warning};
     use crate::features::preview::testkit::{
-        DT, OTHER, RANDOM, SELF, current_key, dense_4k, month_ticks, play_id, plays, row, score,
-        synced,
+        DT, OTHER, RANDOM, SELF, counts, current_key, dense_4k, last_summary, month_ticks, play_id,
+        plays, recompute, row, score, synced,
     };
 
     async fn self_entry(f: &Fixture) -> EntryRef {
@@ -468,25 +575,162 @@ mod tests {
         }
     }
 
+    /// ADR 0024 (amended): 7K Technical is shown but stays out of Overall.
     #[tokio::test]
-    async fn no_plays_and_computing_states() {
+    async fn seven_k_overall_leaves_technical_out() {
+        let s = Map::k7("Seven");
+        let j = Map::jacks("Jacks");
+        let f = synced(
+            &[s.clone(), j.clone()],
+            &[score(&s, SELF, 1), score(&j, SELF, 2)],
+        )
+        .await;
+        let p = one(&f, self_entry(&f).await, Keymode::K7).await;
+        let ids: Vec<&str> = p.skillsets.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids.len(), 7);
+        assert_eq!(ids[6], "technical");
+        let ratings: Vec<f64> = p
+            .skillsets
+            .iter()
+            .map(|s| f64::from(s.rating_centi))
+            .collect();
+        let six = ratings[..6].iter().sum::<f64>() / 6.0;
+        let seven = ratings.iter().sum::<f64>() / 7.0;
+        assert!((six - seven).abs() > 2.0, "{p:?}");
+        let overall = f64::from(p.overall_centi.unwrap());
+        assert!((overall - six).abs() <= 1.0, "{overall} vs {six}: {p:?}");
+    }
+
+    #[tokio::test]
+    async fn a_keymode_without_plays_reads_as_no_plays() {
         let a = Map::rice4("A");
         let f = synced(std::slice::from_ref(&a), &[score(&a, SELF, 1)]).await;
-        let entry = self_entry(&f).await;
-
-        let none = one(&f, entry, Keymode::K7).await;
+        let none = one(&f, self_entry(&f).await, Keymode::K7).await;
         assert_eq!(none.state, PreviewStateDto::NoPlays);
         assert_eq!(none.overall_centi, None);
         assert!(none.skillsets.is_empty() && none.top_plays.is_empty() && none.trend.is_empty());
         assert_eq!(none.evidence.counted, 0);
+    }
 
+    async fn ssr_runs(f: &Fixture) -> usize {
+        f.ctx
+            .jobs()
+            .list(None)
+            .await
+            .unwrap()
+            .iter()
+            .filter(|j| j.kind == JobKindDto::ComputePlaySsr)
+            .count()
+    }
+
+    /// A `play_ssr` VERSION bump orphans every row, and only `IndexLibrary` chains the job, so
+    /// the preview starts it rather than reading ready with every play pending until an index.
+    #[tokio::test]
+    async fn orphaned_rows_start_the_ssr_job_and_read_as_computing() {
+        let a = Map::rice4("A");
+        let f = synced(std::slice::from_ref(&a), &[score(&a, SELF, 1)]).await;
+        let entry = self_entry(&f).await;
+        let runs = ssr_runs(&f).await;
         f.ctx
             .cache_db()
             .write(|tx| ssr_repo::prune_except(tx, &[]))
             .unwrap();
-        let computing = one(&f, entry, Keymode::K4).await;
-        assert_eq!(computing.state, PreviewStateDto::Computing, "{computing:?}");
-        assert_eq!(computing.overall_centi, None);
+        assert!(!f.ctx.jobs().is_active(JobKindDto::ComputePlaySsr));
+
+        let orphaned = one(&f, entry, Keymode::K4).await;
+        assert_eq!(orphaned.state, PreviewStateDto::Computing, "{orphaned:?}");
+        assert_eq!(excluded(&orphaned), [("pending", 1)]);
+        f.ctx.jobs().wait_idle().await;
+        assert_eq!(ssr_runs(&f).await, runs + 1);
+        assert_eq!(last_summary(&f).await.computed, 1);
+
+        let settled = one(&f, entry, Keymode::K4).await;
+        assert_eq!(settled.state, PreviewStateDto::Ready, "{settled:?}");
+        assert_eq!(settled.evidence.counted, 1);
+        assert!(excluded(&settled).is_empty(), "{settled:?}");
+        f.ctx.jobs().wait_idle().await;
+        assert_eq!(
+            ssr_runs(&f).await,
+            runs + 1,
+            "a settled preview starts nothing"
+        );
+    }
+
+    fn excluded(p: &SkillPreviewDto) -> Vec<(&str, u32)> {
+        p.evidence
+            .excluded
+            .iter()
+            .map(|e| (e.reason.as_str(), e.count))
+            .collect()
+    }
+
+    /// B's rows blob is corrupted, so its play fails as an item and never gets a row.
+    #[tokio::test]
+    async fn an_item_failure_with_an_idle_runner_is_ready_with_a_pending_play() {
+        let a = Map::rice4("A");
+        let b = Map::new("B", 4, dense_4k("B"));
+        let f = synced(
+            &[a.clone(), b.clone()],
+            &[score(&a, SELF, 1), score(&b, SELF, 2)],
+        )
+        .await;
+        let parse = Keys::current().unwrap().parse;
+        let md5: ChartMd5 = b.md5.parse().unwrap();
+        f.ctx
+            .cache_db()
+            .write(move |tx| {
+                let mut parsed = chart_parsed::get(tx.conn(), md5, parse)?.unwrap();
+                parsed.rows_blob = vec![0xff];
+                chart_parsed::put(tx, &parsed)?;
+                ssr_repo::prune_except(tx, &[])
+            })
+            .unwrap();
+        let s = recompute(&f).await;
+        assert_eq!(s.failed_items, 1, "{s:?}");
+        assert!(!f.ctx.jobs().is_active(JobKindDto::ComputePlaySsr));
+
+        let runs = ssr_runs(&f).await;
+        let p = one(&f, self_entry(&f).await, Keymode::K4).await;
+        assert_eq!(p.state, PreviewStateDto::Ready, "{p:?}");
+        assert_eq!(p.evidence.counted, 1);
+        assert_eq!(top_ids(&p), [hex(play_id(&f, &a, SELF))]);
+        assert_eq!(excluded(&p), [("pending", 1)]);
+        f.ctx.jobs().wait_idle().await;
+        assert_eq!(
+            ssr_runs(&f).await,
+            runs,
+            "a play the last run failed is not retried"
+        );
+    }
+
+    #[tokio::test]
+    async fn computing_only_while_the_job_is_queued_or_running() {
+        let a = Map::rice4("A");
+        let f = synced(std::slice::from_ref(&a), &[score(&a, SELF, 1)]).await;
+        let scope = f
+            .ctx
+            .players()
+            .resolve_scopes(self_entry(&f).await, Keymode::K4, None)
+            .await
+            .unwrap()
+            .remove(0);
+        let params = PreviewServiceParams::default();
+        let read = |job_active| {
+            preview(
+                f.ctx.user_db(),
+                f.ctx.cache_db(),
+                &params,
+                &scope,
+                job_active,
+            )
+            .unwrap()
+            .0
+        };
+        let active = read(true);
+        assert_eq!(active.state, PreviewStateDto::Computing, "{active:?}");
+        // The rows already there still show while the job runs.
+        assert_eq!(active.evidence.counted, 1);
+        assert_eq!(read(false).state, PreviewStateDto::Ready);
     }
 
     #[tokio::test]
@@ -517,34 +761,51 @@ mod tests {
         plays(f)[nth - 1].3
     }
 
+    /// ADR 0024 (amended): a dan is cleared by surviving, so the dan reads the cleared charts'
+    /// Overall MSD at the played rate, never the plays' SSRs; NoFail and incomplete plays are not
+    /// clears, and one chart at one rate counts once.
     #[tokio::test]
-    async fn dan_reads_the_aggregate_of_overall_ssrs() {
+    async fn dan_reads_the_aggregate_of_cleared_charts_msd() {
+        const NF: u32 = 1;
         let a = Map::rice4("A");
         let b = Map::new("B", 4, dense_4k("B"));
+        let nofail = Map::new("NoFail", 4, dense_4k("NoFail"));
+        let short = Map::new("Short", 4, dense_4k("Short"));
         let f = synced(
-            &[a.clone(), b.clone()],
-            &[score(&a, SELF, 1), score(&b, SELF, 2)],
+            &[a.clone(), b.clone(), nofail.clone(), short.clone()],
+            &[
+                score(&a, SELF, 1),
+                score(&a, SELF, 2).mods(DT),
+                score(&b, SELF, 3),
+                score(&b, SELF, 4),
+                score(&nofail, SELF, 5).mods(NF),
+                score(&short, SELF, 6).counts(counts(10, 0, 0)),
+            ],
         )
         .await;
-        let mut overall: Vec<f32> = [&a, &b]
-            .iter()
-            .map(|m| {
-                row(&f, current_key(4), play_id(&f, m, SELF))
-                    .unwrap()
-                    .centi
-                    .unwrap()[0] as f32
-                    / 100.0
-            })
-            .collect();
-        overall.sort_by(f32::total_cmp);
-        let aggregate = (aggregate_rating(&overall) * 100.0).round() as i32;
-        let mean_of_7 = one(&f, self_entry(&f).await, Keymode::K4)
-            .await
-            .overall_centi
-            .unwrap();
-        assert_ne!(aggregate, mean_of_7);
+        let parse = Keys::current().unwrap().parse;
+        let difficulty = Raters::current(parse).unwrap().vkey(4).unwrap();
+        let msd_at = |m: &Map, rate: u16| -> f32 {
+            let md5: ChartMd5 = m.md5.parse().unwrap();
+            let rows = f
+                .ctx
+                .cache_db()
+                .read(|c| chart_msd::overall_at(c, difficulty, rate, &[md5]))
+                .unwrap();
+            rows[&md5] as f32 / 100.0
+        };
+        let mut cleared = vec![msd_at(&a, 1000), msd_at(&a, 1500), msd_at(&b, 1000)];
+        cleared.sort_by(f32::total_cmp);
+        let msd = (aggregate_rating(&cleared) * 100.0).round() as i32;
+
+        let ssr_of = |id| row(&f, current_key(4), id).unwrap().centi.unwrap()[0] as f32 / 100.0;
+        let ids = plays(&f);
+        let mut ssrs = vec![ssr_of(ids[0].3), ssr_of(ids[1].3), ssr_of(ids[2].3)];
+        ssrs.sort_by(f32::total_cmp);
+        let ssr = (aggregate_rating(&ssrs) * 100.0).round() as i32;
+        assert_ne!(msd, ssr);
         // A bound between the two inputs tells which one the dan read.
-        let bound = (aggregate + mean_of_7) / 2;
+        let bound = (msd + ssr) / 2;
         let (low, high) = ("Below", "Above");
         let params = PreviewServiceParams {
             engine: PreviewParams {
@@ -562,10 +823,11 @@ mod tests {
             .unwrap()
             .remove(0);
         let dan = p.dan.unwrap();
-        let want = if aggregate >= bound { high } else { low };
-        assert_eq!(dan.label, want, "aggregate {aggregate}, mean {mean_of_7}");
+        let want = if msd >= bound { high } else { low };
+        assert_eq!(dan.label, want, "msd {msd}, ssr {ssr}");
         let lower = if want == high { bound } else { 0 };
-        assert_eq!(dan.margin_centi, aggregate - lower);
+        // Exact: a NoFail, incomplete or repeated play in the input would move the aggregate.
+        assert_eq!(dan.margin_centi, msd - lower);
     }
 
     #[tokio::test]
@@ -586,5 +848,105 @@ mod tests {
         assert!(p.trend[0].overall_centi < p.trend[1].overall_centi, "{p:?}");
         assert_eq!(p.trend[1].overall_centi, p.overall_centi.unwrap());
         assert!(p.top_plays.iter().all(|t| t.played_at_ms > 1.7e12));
+    }
+
+    /// ADR 0005: Separate gives each self alias its own preview, and an alias that is unticked or
+    /// marked not me never feeds one, even with a stronger play. `PREFIX` is a cfg-prefix variant
+    /// of the session user, so it is self until marked not me.
+    #[tokio::test]
+    async fn separate_self_aliases_split_plays_and_never_read_unticked_or_not_me() {
+        const SECOND: &str = "Wulf";
+        const UNTICKED: &str = "w";
+        const PREFIX: &str = "TWulf";
+        let a = Map::rice4("A");
+        let b = Map::rice4("B");
+        let hard = Map::new("Hard", 4, dense_4k("Hard"));
+        let f = synced(
+            &[a.clone(), b.clone(), hard.clone()],
+            &[
+                score(&a, SELF, 1),
+                score(&b, SELF, 2),
+                score(&a, SECOND, 3),
+                score(&hard, UNTICKED, 4),
+                score(&hard, OTHER, 5),
+                score(&hard, PREFIX, 6),
+            ],
+        )
+        .await;
+        let alias_id = |name: &str| {
+            f.ctx
+                .user_db()
+                .read(alias::list)
+                .unwrap()
+                .into_iter()
+                .find(|a| a.raw_name == name.as_bytes())
+                .unwrap()
+                .id
+        };
+        let entry = self_entry(&f).await;
+        let separate = || async {
+            f.ctx
+                .preview()
+                .skill(entry, Keymode::K4, Some(MergeMode::Separate))
+                .await
+                .unwrap()
+        };
+        let not_me = hex(play_id(&f, &hard, PREFIX));
+        let before = separate().await;
+        assert!(
+            before.iter().any(|p| top_ids(p) == [not_me.clone()]),
+            "the prefix alias starts in the self profile: {before:?}"
+        );
+
+        f.ctx
+            .players()
+            .decide(
+                vec![
+                    (alias_id(SECOND), Some(Decision::Me)),
+                    (alias_id(PREFIX), Some(Decision::NotMe)),
+                ],
+                false,
+            )
+            .await
+            .unwrap();
+        let scopes = f
+            .ctx
+            .players()
+            .resolve_scopes(entry, Keymode::K4, Some(MergeMode::Separate))
+            .await
+            .unwrap();
+        let previews = separate().await;
+        assert_eq!(previews.len(), 2, "{previews:?}");
+
+        let mut want: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for (name, maps) in [(SELF, vec![&a, &b]), (SECOND, vec![&a])] {
+            let scope = scopes
+                .iter()
+                .find(|s| s.alias_ids == [alias_id(name)])
+                .unwrap_or_else(|| panic!("no scope for {name}: {scopes:?}"));
+            let mut ids: Vec<String> = maps.iter().map(|m| hex(play_id(&f, m, name))).collect();
+            ids.sort();
+            want.insert(scope.hash.to_string(), ids);
+        }
+        let got: BTreeMap<String, Vec<String>> = previews
+            .iter()
+            .map(|p| {
+                let mut ids = top_ids(p);
+                ids.sort();
+                (p.scope_hash.clone(), ids)
+            })
+            .collect();
+        assert_eq!(got, want);
+        let strangers = [
+            hex(play_id(&f, &hard, UNTICKED)),
+            hex(play_id(&f, &hard, OTHER)),
+            not_me,
+        ];
+        for p in &previews {
+            assert!(
+                p.top_plays.iter().all(|t| !strangers.contains(&t.play_id)),
+                "{p:?}"
+            );
+        }
     }
 }

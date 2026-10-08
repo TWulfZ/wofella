@@ -12,7 +12,7 @@ use crate::error::EngineError;
 use crate::preview::{ExclusionParams, GoalParams};
 
 pub const STAGE: StageId = StageId::from_static("play_ssr");
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 const CONFIG_TAG: &[u8] = b"wolluf.play_ssr.config.v1";
 
@@ -75,7 +75,8 @@ mod tests {
     #[test]
     fn stage_id_and_version_are_stable() {
         assert_eq!(STAGE.as_str(), "play_ssr");
-        assert_eq!(VERSION, 1);
+        // 2: ScoreV2 plays are counted on V2 windows instead of excluded.
+        assert_eq!(VERSION, 2);
     }
 
     #[test]
@@ -131,11 +132,11 @@ mod tests {
         let k7 = difficulty::vkey(upstream, Keymode::K7, &mc).unwrap();
         assert_eq!(
             vkey(k4, &params, &ex).unwrap().to_string(),
-            "856ecc9ea2d33672ab49a114349f871db097af2b0703bd96d0f4ea8e924e8f7b"
+            "23f2295998b49ff01d9b9e2529061c217e50fd15bfac08880421c2b954e418fb"
         );
         assert_eq!(
             vkey(k7, &params, &ex).unwrap().to_string(),
-            "e6bd1fe2b52227375571e6fd7c93339b50da3b16e5a3524426649f9ce8d2f5c4"
+            "c65ae3527a1f1d28f9e616bdef5bbd44cd296f314f82911ef5fc192cd23f4dca"
         );
     }
 }

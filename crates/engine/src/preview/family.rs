@@ -3,11 +3,10 @@
 
 use super::params::FamilyParams;
 
-/// The marker rate-copy tools put on a speed multiplier; `bpm` tags carry no rate.
-const MULTIPLIER: &str = "x";
 const MILLI: f64 = 1_000.0;
 
-/// `set_folder` plus `version` without trailing rate tags, under the default params.
+/// `set_folder` plus `version`, without its trailing tags when they carry a rate, under the
+/// default params.
 pub fn family_key(set_folder: &str, version: &str) -> String {
     FamilyParams::default().family_key(set_folder, version)
 }
@@ -18,22 +17,24 @@ pub fn chart_rate_milli(version: &str) -> Option<u16> {
 }
 
 impl FamilyParams {
-    /// A folder name cannot hold `/`, so the separator never makes two keys collide.
+    /// A folder name cannot hold `/`, so the separator never makes two keys collide. Tags are
+    /// stripped only when they yield a rate: a copy whose rate is unknown would otherwise share
+    /// its original's (family, rate) slot while playing at another speed.
     pub fn family_key(&self, set_folder: &str, version: &str) -> String {
-        format!("{set_folder}/{}", self.strip_rate_tags(version))
+        let version = if self.chart_rate_milli(version).is_some() {
+            self.strip_rate_tags(version)
+        } else {
+            version.trim_end()
+        };
+        format!("{set_folder}/{version}")
     }
 
-    /// The multiplier of the last trailing `x` tag (`1.15x`, `x1.2`, `[1.2x]`); `None` without one,
-    /// or when it rounds to 0 ms per s or past `u16`.
+    /// The multiplier of the last trailing multiplier tag (`1.15x`, `x1.2`, `[1.2x]`); `None`
+    /// without one, or when it rounds to 0 ms per s or past `u16`.
     pub fn chart_rate_milli(&self, version: &str) -> Option<u16> {
         let mut rest = version.trim_end();
         while let Some((shorter, tag)) = self.strip_one(rest) {
-            let lower = tag.to_ascii_lowercase();
-            let number = lower
-                .strip_suffix(MULTIPLIER)
-                .or_else(|| lower.strip_prefix(MULTIPLIER))
-                .filter(|n| is_number(n));
-            if let Some(n) = number {
+            if let Some(n) = self.multiplier(tag) {
                 let milli = (n.parse::<f64>().ok()? * MILLI).round();
                 return (milli >= 1.0 && milli <= f64::from(u16::MAX)).then_some(milli as u16);
             }
@@ -69,16 +70,27 @@ impl FamilyParams {
     }
 
     fn is_tag(&self, token: &str) -> bool {
+        self.multiplier(token).is_some() || {
+            let lower = token.to_ascii_lowercase();
+            self.other_suffixes
+                .iter()
+                .any(|sfx| lower.strip_suffix(sfx.as_str()).is_some_and(is_number))
+        }
+    }
+
+    /// The number of a multiplier tag, as written.
+    fn multiplier(&self, token: &str) -> Option<String> {
         let lower = token.to_ascii_lowercase();
         let suffixed = self
-            .number_suffixes
+            .multiplier_suffixes
             .iter()
-            .any(|sfx| lower.strip_suffix(sfx.as_str()).is_some_and(is_number));
-        suffixed
-            || self
-                .number_prefixes
+            .find_map(|sfx| lower.strip_suffix(sfx.as_str()).filter(|n| is_number(n)));
+        let prefixed = || {
+            self.multiplier_prefixes
                 .iter()
-                .any(|pfx| lower.strip_prefix(pfx.as_str()).is_some_and(is_number))
+                .find_map(|pfx| lower.strip_prefix(pfx.as_str()).filter(|n| is_number(n)))
+        };
+        suffixed.or_else(prefixed).map(str::to_owned)
     }
 }
 
@@ -106,14 +118,13 @@ mod tests {
         for copy in [
             "Insane 1.15x",
             "Insane 1.2X",
-            "Insane (207bpm)",
             "Insane [1.2x]",
             "Insane x1.2",
             "Insane 1.2x (240bpm)",
+            "Insane (240bpm) 1.3x",
             "Insane (1.2x)",
             "Insane  0.9x  ",
             "Insane 1x",
-            "Insane(207BPM)",
         ] {
             assert_eq!(family_key("123 Artist - Title", copy), original, "{copy:?}");
         }
@@ -135,6 +146,29 @@ mod tests {
             assert_ne!(family_key("s", version), insane, "{version:?}");
         }
         assert_ne!(family_key("a", "Insane"), family_key("b", "Insane"));
+    }
+
+    /// A stripped tag with no rate would put the copy in its original's (family, rate) slot at
+    /// the original's rate.
+    #[test]
+    fn tags_without_a_parsable_rate_stay_in_the_key() {
+        let insane = family_key("s", "Insane");
+        for version in [
+            "Insane (207bpm)",
+            "Insane(207BPM)",
+            "Insane 0x",
+            "Insane 0.0001x",
+            "Insane 99999x",
+            "Insane 1.2x 0x",
+        ] {
+            assert_ne!(family_key("s", version), insane, "{version:?}");
+            assert_eq!(
+                family_key("s", version),
+                format!("s/{version}"),
+                "{version:?}"
+            );
+        }
+        assert_eq!(family_key("s", "Insane (207bpm)  "), "s/Insane (207bpm)");
     }
 
     #[test]
@@ -193,17 +227,39 @@ mod tests {
 
     #[test]
     fn tags_follow_the_params() {
-        let params = FamilyParams {
-            number_suffixes: vec!["x".into()],
+        let no_bpm = FamilyParams {
+            other_suffixes: Vec::new(),
             ..FamilyParams::default()
         };
+        // Without `bpm` as a tag, the multiplier is no longer the last tag.
+        assert_eq!(no_bpm.chart_rate_milli("Insane 1.2x (240bpm)"), None);
         assert_ne!(
-            params.family_key("s", "Insane (207bpm)"),
-            params.family_key("s", "Insane")
+            no_bpm.family_key("s", "Insane 1.2x (240bpm)"),
+            no_bpm.family_key("s", "Insane")
         );
         assert_eq!(
-            params.family_key("s", "Insane (1.2x)"),
-            params.family_key("s", "Insane")
+            no_bpm.family_key("s", "Insane (1.2x)"),
+            no_bpm.family_key("s", "Insane")
         );
+
+        let times = FamilyParams {
+            multiplier_suffixes: vec!["x".into(), "\u{d7}".into()],
+            multiplier_prefixes: vec!["x".into(), "\u{d7}".into()],
+            ..FamilyParams::default()
+        };
+        assert_eq!(chart_rate_milli("Insane 1.2\u{d7}"), None);
+        assert_eq!(times.chart_rate_milli("Insane 1.2\u{d7}"), Some(1200));
+        assert_eq!(times.chart_rate_milli("Insane \u{d7}1.3"), Some(1300));
+        assert_eq!(
+            times.family_key("s", "Insane [1.2\u{d7}]"),
+            times.family_key("s", "Insane")
+        );
+
+        let no_prefix = FamilyParams {
+            multiplier_prefixes: Vec::new(),
+            ..FamilyParams::default()
+        };
+        assert_eq!(no_prefix.chart_rate_milli("Insane x1.2"), None);
+        assert_eq!(no_prefix.family_key("s", "Insane x1.2"), "s/Insane x1.2");
     }
 }

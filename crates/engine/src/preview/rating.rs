@@ -127,8 +127,13 @@ fn earlier(plays: &[RatedPlay<'_>], a: usize, b: usize) -> core::cmp::Ordering {
 
 /// `CalcPlayerRating` (`ScoreManager.cpp:874-900`): each non-overall skillset aggregates the
 /// counted plays' SSRs in ascending order (`SortTopSSRPtrs`, `:937`), clamped; Overall is their
-/// mean, not an aggregate (`:897`).
-pub fn player_rating(plays: &[RatedPlay<'_>], params: &RatingParams) -> Option<PlayerRating> {
+/// mean, not an aggregate (`:897`). Unlike upstream, Overall averages only the skillsets `overall`
+/// selects (ADR 0024: 7K Technical is not measured); an empty selection averages all 7.
+pub fn player_rating(
+    plays: &[RatedPlay<'_>],
+    params: &RatingParams,
+    overall: &[bool; 7],
+) -> Option<PlayerRating> {
     if plays.is_empty() {
         return None;
     }
@@ -143,7 +148,17 @@ pub fn player_rating(plays: &[RatedPlay<'_>], params: &RatingParams) -> Option<P
         *slot =
             aggregate_with(&ssrs, &params.aggregate).clamp(params.min_rating, params.max_rating);
     }
-    let overall = skillsets.iter().sum::<f32>() / skillsets.len() as f32;
+    let overall = if overall.contains(&true) {
+        *overall
+    } else {
+        [true; 7]
+    };
+    let (sum, n) = skillsets
+        .iter()
+        .zip(overall)
+        .filter(|(_, on)| *on)
+        .fold((0.0f32, 0u8), |(sum, n), (v, _)| (sum + v, n + 1));
+    let overall = sum / f32::from(n);
     Some(PlayerRating {
         overall_centi: to_centi(overall),
         skillsets_centi: skillsets.map(to_centi),
@@ -191,6 +206,8 @@ mod tests {
         }
     }
 
+    const ALL: [bool; 7] = [true; 7];
+
     fn play(family: &str, rate_milli: u16, overall: i32) -> RatedPlay<'_> {
         RatedPlay {
             family,
@@ -206,12 +223,12 @@ mod tests {
 
     #[test]
     fn no_plays_have_no_rating() {
-        assert_eq!(player_rating(&[], &RatingParams::default()), None);
+        assert_eq!(player_rating(&[], &RatingParams::default(), &ALL), None);
     }
 
     #[test]
     fn a_single_play_rates_as_its_upstream_aggregate() {
-        let r = player_rating(&[play("a", 1000, 3000)], &RatingParams::default()).unwrap();
+        let r = player_rating(&[play("a", 1000, 3000)], &RatingParams::default(), &ALL).unwrap();
         // Etterna rates a lone 30.00 SSR at 23.73, not 30.
         assert_eq!(r.overall_centi, 2373);
         assert_eq!(r.skillsets_centi, [2373; 7]);
@@ -227,7 +244,7 @@ mod tests {
             play("b", 1000, 2500),
         ];
         assert_eq!(rate_pbs(&plays), vec![1, 3]);
-        let r = player_rating(&plays, &RatingParams::default()).unwrap();
+        let r = player_rating(&plays, &RatingParams::default(), &ALL).unwrap();
         assert_eq!(r.counted, vec![1, 3]);
         assert_eq!(r.overall_centi, centi(aggregate_rating(&[25.0, 30.0])));
     }
@@ -279,7 +296,7 @@ mod tests {
             ..RatingParams::default()
         };
         assert_eq!(top2_per_family(&plays, &pbs, &one), vec![2, 3]);
-        let r = player_rating(&plays, &RatingParams::default()).unwrap();
+        let r = player_rating(&plays, &RatingParams::default(), &ALL).unwrap();
         assert_eq!(r.counted, vec![2, 1, 3]);
     }
 
@@ -291,7 +308,7 @@ mod tests {
         best.ssr_centi[1] = 2000;
         best.ssr_centi[7] = 3500;
         let plays = [stream_heavy, best, play("a", 1200, 2800)];
-        let r = player_rating(&plays, &RatingParams::default()).unwrap();
+        let r = player_rating(&plays, &RatingParams::default(), &ALL).unwrap();
         assert_eq!(r.counted, vec![1, 2]);
         // The stream-heavy play is not a top-2 rate of its chart, so its 40.00 stream is unused.
         let stream = aggregate_rating(&[20.0, 28.0]);
@@ -305,8 +322,37 @@ mod tests {
     }
 
     #[test]
+    fn overall_is_the_mean_of_the_listed_skillsets_only() {
+        let mut p = play("a", 1000, 3000);
+        p.ssr_centi[7] = 18;
+        let all = player_rating(&[p], &RatingParams::default(), &ALL).unwrap();
+        let mut no_tech = ALL;
+        no_tech[6] = false;
+        let six = player_rating(&[p], &RatingParams::default(), &no_tech).unwrap();
+        // Skillsets themselves never change; only what Overall averages does.
+        assert_eq!(six.skillsets_centi, all.skillsets_centi);
+        assert_eq!(six.counted, all.counted);
+        let rest = aggregate_rating(&[30.0]);
+        let tech = aggregate_rating(&[0.18]);
+        assert_eq!(six.overall_centi, centi(rest));
+        assert_eq!(
+            all.overall_centi,
+            centi((rest + rest + rest + rest + rest + rest + tech) / 7.0)
+        );
+    }
+
+    #[test]
+    fn an_empty_overall_selection_falls_back_to_all_seven() {
+        let mut p = play("a", 1000, 3000);
+        p.ssr_centi[7] = 1000;
+        let all = player_rating(&[p], &RatingParams::default(), &ALL).unwrap();
+        let none = player_rating(&[p], &RatingParams::default(), &[false; 7]).unwrap();
+        assert_eq!(none, all);
+    }
+
+    #[test]
     fn ratings_clamp_to_100() {
-        let r = player_rating(&[play("a", 1000, 20_000)], &RatingParams::default()).unwrap();
+        let r = player_rating(&[play("a", 1000, 20_000)], &RatingParams::default(), &ALL).unwrap();
         assert_eq!(r.skillsets_centi, [10_000; 7]);
         assert_eq!(r.overall_centi, 10_000);
     }
@@ -333,9 +379,9 @@ mod tests {
         fn adding_a_lower_play_never_lowers_a_rating(raw in arb_plays(), low in 0..1000i32) {
             let params = RatingParams::default();
             let mut plays = to_plays(&raw);
-            let before = player_rating(&plays, &params).unwrap();
+            let before = player_rating(&plays, &params, &ALL).unwrap();
             plays.push(RatedPlay { family: "new", rate_milli: 1000, ssr_centi: [low; 8], played_at_ms: 0 });
-            let after = player_rating(&plays, &params).unwrap();
+            let after = player_rating(&plays, &params, &ALL).unwrap();
             prop_assert!(after.overall_centi >= before.overall_centi);
             for (a, b) in after.skillsets_centi.iter().zip(before.skillsets_centi) {
                 prop_assert!(*a >= b);
@@ -345,7 +391,7 @@ mod tests {
         #[test]
         fn two_plays_of_one_family_and_rate_never_both_count(raw in arb_plays()) {
             let plays = to_plays(&raw);
-            let r = player_rating(&plays, &RatingParams::default()).unwrap();
+            let r = player_rating(&plays, &RatingParams::default(), &ALL).unwrap();
             let mut keys: Vec<(&str, u16)> =
                 r.counted.iter().map(|&i| (plays[i].family, plays[i].rate_milli)).collect();
             let n = keys.len();

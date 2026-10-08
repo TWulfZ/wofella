@@ -213,6 +213,7 @@ const HR: i32 = 16;
 const EZ: i32 = 2;
 const DT_NC: i32 = 64 | 512;
 const HT: i32 = 256;
+const V2: i32 = 1 << 29;
 
 /// `[max, 300, 200, 100, 50, miss]` across OD, every window mod and the edge cases.
 fn play_ssr_fixtures() -> Vec<(&'static str, PlayCounts, f32, i32)> {
@@ -242,6 +243,10 @@ fn play_ssr_fixtures() -> Vec<(&'static str, PlayCounts, f32, i32)> {
         ("near_cap", counts([1000, 600, 100, 30, 10, 10]), 8.0, 0),
         ("rough", counts([300, 300, 200, 100, 50, 40]), 7.0, 0),
         ("max_and_50s", counts([900, 0, 0, 0, 100, 0]), 8.0, 0),
+        ("mid_v2_od0", mid, 0.0, V2),
+        ("mid_v2_od8", mid, 8.0, V2),
+        ("mid_v2_od9", mid, 9.0, V2),
+        ("mid_v2_hr", mid, 8.0, V2 | HR),
     ]
 }
 
@@ -623,10 +628,21 @@ mod tests {
             "goal all_miss Some(0)\n",
             "goal mid_dt_nc Some(",
             "goal max_and_50s Some(",
+            "goal mid_v2_od0 Some(",
+            "goal mid_v2_hr Some(",
         ] {
             assert!(dump.contains(expected), "missing {expected:?} in\n{dump}");
         }
         assert_eq!(dump.lines().count(), 1 + play_ssr_fixtures().len());
+        let goal_of = |name: &str| {
+            dump.lines()
+                .find(|l| l.starts_with(&format!("goal {name} ")))
+                .map(|l| l.rsplit(' ').next().unwrap().to_owned())
+                .unwrap()
+        };
+        // V2 shares V1's 16 ms MAX at OD 8 and widens it at OD 0.
+        assert_eq!(goal_of("mid_v2_od8"), goal_of("mid_od8"));
+        assert_ne!(goal_of("mid_v2_od0"), goal_of("mid_od0"));
     }
 
     #[test]

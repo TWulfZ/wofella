@@ -1,6 +1,11 @@
 //! A play's goal for MinaCalc's SSR (ADR 0024). stable stores no Wife%, so each observed
 //! judgement scores the mean Wife3 J4 points over its timing-error interval and a miss scores
 //! Wife3's miss weight.
+//!
+//! ScoreV2 judges LN heads and tails apart and its header mixes both (research 03 l.121-127). A
+//! tail is judged on `|release| / 1.5` with late releases cut at the 100 edge, but the counts do
+//! not say which judgements are tails, so every judgement takes the note-window value. LN-heavy
+//! charts are excluded upstream, so tails stay a minority of a counted play.
 
 use super::mods::PlayMods;
 use super::params::GoalParams;
@@ -9,6 +14,11 @@ use super::play::PlayCounts;
 /// stable ScoreV1 note windows before mods (research 03 l.121-127): MAX is fixed, the others
 /// fall by `3·OD`.
 const MAX_WINDOW_MS: f64 = 16.0;
+/// ScoreV2 MAX (`rejudge.py:windows`): `22.4 - 0.6·OD` up to OD 5, `24.9 - 1.1·OD` above; the two
+/// meet at OD 5. The other V2 windows are V1's.
+const V2_MAX_KNEE_OD: f64 = 5.0;
+const V2_MAX_LOW: (f64, f64) = (22.4, 0.6);
+const V2_MAX_HIGH: (f64, f64) = (24.9, 1.1);
 const WINDOW_BASE_MS: [f64; 4] = [64.0, 97.0, 127.0, 151.0];
 const WINDOW_OD_SLOPE: f64 = 3.0;
 /// HR divides and EZ multiplies the windows by 1.4 (research 03).
@@ -96,8 +106,15 @@ pub(crate) fn windows(od: f32, mods: PlayMods, params: &GoalParams) -> Windows {
         1.0
     };
     let rate = f64::from(mods.rate_milli()) / MILLI;
+    let max = if !mods.score_v2 {
+        MAX_WINDOW_MS
+    } else if od <= V2_MAX_KNEE_OD {
+        V2_MAX_LOW.0 - V2_MAX_LOW.1 * od
+    } else {
+        V2_MAX_HIGH.0 - V2_MAX_HIGH.1 * od
+    };
     let base = [
-        MAX_WINDOW_MS,
+        max,
         WINDOW_BASE_MS[0] - WINDOW_OD_SLOPE * od,
         WINDOW_BASE_MS[1] - WINDOW_OD_SLOPE * od,
         WINDOW_BASE_MS[2] - WINDOW_OD_SLOPE * od,
@@ -223,6 +240,7 @@ mod tests {
     const DT: i32 = 64;
     const NC: i32 = 512;
     const HT: i32 = 256;
+    const V2: i32 = 1 << 29;
 
     fn c(max: u16, n300: u16, n200: u16, n100: u16, n50: u16, miss: u16) -> PlayCounts {
         PlayCounts {
@@ -265,7 +283,7 @@ mod tests {
         assert_eq!(A2.to_bits(), 0xbe91_a98e);
     }
 
-    const MOD_BITS: [i32; 5] = [0, HR, EZ, DT, HT];
+    const MOD_BITS: [i32; 8] = [0, HR, EZ, DT, HT, V2, V2 | HR, V2 | DT];
 
     fn arb_count() -> impl Strategy<Value = u16> {
         prop_oneof![1 => Just(0u16), 3 => 0..3000u16]
@@ -359,6 +377,41 @@ mod tests {
         let ht = windows(8.0, PlayMods::from_bits(HT), &p);
         assert_eq!(ht.early[0], (12.0 + pad) / 0.75);
         assert_eq!(ht.early[2], (54.0 + pad) / 0.75);
+    }
+
+    /// `rejudge.py:windows`: the V2 MAX window falls with OD; the other windows are V1's.
+    #[test]
+    fn windows_follow_stable_v2_max_by_od() {
+        let p = GoalParams::default();
+        let pad = p.edge_pad_ms;
+        let v2 = |od: f32, bits: i32| windows(od, PlayMods::from_bits(V2 | bits), &p);
+        for (od, max) in [
+            (0.0, 22.0),
+            (5.0, 19.0),
+            (8.0, 16.0),
+            (9.0, 15.0),
+            (10.0, 13.0),
+        ] {
+            assert_eq!(v2(od, 0).early[0], max + pad, "od {od}");
+        }
+        // OD 3: 22.4 - 1.8 = 20.6 floors to 20.
+        assert_eq!(v2(3.0, 0).early[0], 20.0 + pad);
+        let v1 = windows(8.0, PlayMods::from_bits(0), &p);
+        assert_eq!(v2(8.0, 0).early[1..], v1.early[1..]);
+        assert_eq!(v2(8.0, 0).late_100, v1.late_100);
+        // 16.1 / 1.4 = 11.5 and 16.1 × 1.5 = 24.15 in map time.
+        assert_eq!(v2(8.0, HR).early[0], 11.0 + pad);
+        assert_eq!(v2(8.0, DT).early[0], (24.0 + pad) / 1.5);
+    }
+
+    #[test]
+    fn score_v2_counts_judge_against_the_v2_max_window() {
+        let mid = from(BASES[0]);
+        // Same 16 ms MAX at OD 8.
+        assert_eq!(goal(mid, 8.0, V2), goal(mid, 8.0, 0));
+        // A wider MAX at OD 0 is worth less per MAX, a narrower one at OD 10 more.
+        assert!(goal(mid, 0.0, V2).unwrap() < goal(mid, 0.0, 0).unwrap());
+        assert!(goal(mid, 10.0, V2).unwrap() > goal(mid, 10.0, 0).unwrap());
     }
 
     /// `rejudge.py:note_judge`: `-O <= d <= O - 1` is a 100, `-M <= d < -O` a 50, `d > O - 1` a

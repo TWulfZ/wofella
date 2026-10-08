@@ -384,7 +384,7 @@ export type EvidenceDto = {
 export type EvidenceTierDto = "low" | "medium" | "ok";
 
 export type ExclusionCountDto = {
-	/**  A `play_ssr` status other than `counted`. */
+	/**  A `play_ssr` status other than `counted`, or `pending` for a play with no row. */
 	reason: string,
 	count: number,
 };
@@ -733,7 +733,7 @@ export type PatternExampleDto = {
 };
 
 export type PreviewStateDto = "ready" | 
-/**  Some of the scope's plays have no SSR row yet, or `ComputePlaySsr` is queued or running. */
+/**  `ComputePlaySsr` is queued or running; the rows already cached are shown. */
 "computing" | "no_plays";
 
 export type ProfileEntryDto = {

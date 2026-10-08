@@ -4,6 +4,9 @@
 use serde::{Deserialize, Serialize};
 
 pub const METHOD_ETTERNA_RATING: &str = "preview.etterna_rating@1";
+/// A play whose SSR row is missing while no `ComputePlaySsr` runs: an item failure or a job that
+/// never ran under the current key.
+pub const EXCLUSION_PENDING: &str = "pending";
 
 pub mod warning {
     pub const UNCALIBRATED: &str = "uncalibrated";
@@ -18,7 +21,7 @@ pub mod warning {
 #[serde(rename_all = "snake_case")]
 pub enum PreviewStateDto {
     Ready,
-    /// Some of the scope's plays have no SSR row yet, or `ComputePlaySsr` is queued or running.
+    /// `ComputePlaySsr` is queued or running; the rows already cached are shown.
     Computing,
     NoPlays,
 }
@@ -58,7 +61,7 @@ pub struct DanEstimateDto {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ExclusionCountDto {
-    /// A `play_ssr` status other than `counted`.
+    /// A `play_ssr` status other than `counted`, or `pending` for a play with no row.
     pub reason: String,
     pub count: u32,
 }
