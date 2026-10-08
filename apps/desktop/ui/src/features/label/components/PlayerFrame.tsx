@@ -16,7 +16,7 @@ export const PLAYER_FRAME_PARAMS = {
   /** How long the controls show on mount, so the player can be found; short, since they cover the judgement line. */
   revealMs: 2000,
   /** Once called, the controls stay while the pointer moves over the preview; a pointer resting this long dismisses them. */
-  idleMs: 15_000,
+  idleMs: 3000,
   /** A hover peek shorter than this is a pointer passing by, not a viewer finding the settings. */
   settingsFoundDwellMs: 500,
   /** Only the pointer this near the bottom edge calls the controls: a share of the stage, floored for short stages. */

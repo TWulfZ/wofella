@@ -106,9 +106,9 @@ describe("PlayerFrame controls overlay", () => {
     expect(shown()).toBe(true);
   });
 
-  it("hides them after 15 s without pointer movement over the preview", () => {
+  it("hides them after 3 s without pointer movement over the preview", () => {
     vi.useFakeTimers();
-    expect(PLAYER_FRAME_PARAMS.idleMs).toBe(15_000);
+    expect(PLAYER_FRAME_PARAMS.idleMs).toBe(3000);
     renderFrame();
     fireEvent.pointerMove(hoverZone());
     fireEvent.pointerMove(screen.getByTestId("stage"));
