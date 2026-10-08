@@ -104,6 +104,9 @@
     "state": {
       "computing": "Computing ratings for your plays…",
       "computingHint": "This runs after every sync. The page updates when it finishes.",
+      "updating": "Updating ratings…",
+      "preparing_one": "Ratings for {{count}} play are being prepared",
+      "preparing_other": "Ratings for {{count}} plays are being prepared",
       "noPlaysTitle": "No rated {{keymode}}K plays yet",
       "noPlaysBody": "Play and complete some {{keymode}}K charts in osu! stable, then sync from Home. They show up here once rated."
     },

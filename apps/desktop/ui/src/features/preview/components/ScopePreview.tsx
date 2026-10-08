@@ -42,6 +42,16 @@ function NoPlays({ preview, level }: { preview: SkillPreviewDto; level: HeadingL
   );
 }
 
+function Updating() {
+  const { t } = useTranslation();
+  return (
+    <p role="status" className="text-muted-foreground flex items-center gap-2 text-sm">
+      <LoaderCircle aria-hidden="true" className="text-primary size-4 motion-safe:animate-spin" />
+      {t("preview.state.updating")}
+    </p>
+  );
+}
+
 function Ready({ preview, level }: { preview: SkillPreviewDto; level: HeadingLevel }) {
   const { t } = useTranslation();
   const format = usePreviewFormat();
@@ -51,11 +61,14 @@ function Ready({ preview, level }: { preview: SkillPreviewDto; level: HeadingLev
   const skillsets = preview.skillsets.filter((s) => s.id !== "overall");
   const unmeasured = unmeasuredSkillsets(preview.warnings);
   const scale = radarScale(skillsets.filter((s) => !unmeasured.has(s.id)).map((s) => s.ratingCenti));
+  const pending = preview.evidence.excluded.find((e) => e.reason === "pending")?.count ?? 0;
+  const preparing = preview.evidence.counted === 0 && pending > 0;
   return (
     <>
       <WarningsBanner warnings={preview.warnings} />
       <div className={`${CARD} osu-triangles grid items-center gap-6 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]`}>
         <div className="flex flex-col gap-3">
+          {preview.state === "computing" && <Updating />}
           <span className="text-muted-foreground text-sm">{t("preview.overall")}</span>
           {preview.overallCenti !== null && (
             <p data-testid="overall" className="font-display text-6xl leading-none font-extrabold tracking-tight italic tabular-nums">
@@ -69,7 +82,11 @@ function Ready({ preview, level }: { preview: SkillPreviewDto; level: HeadingLev
           </p>
         </div>
         <div className="flex justify-center">
-          <SkillRadar skillsets={skillsets} unmeasured={unmeasured} scale={scale} />
+          {preparing ? (
+            <p className="text-muted-foreground max-w-xs text-center text-sm">{t("preview.state.preparing", { count: pending })}</p>
+          ) : (
+            <SkillRadar skillsets={skillsets} unmeasured={unmeasured} scale={scale} />
+          )}
         </div>
       </div>
       <div className="grid gap-6 lg:grid-cols-2">
@@ -94,11 +111,15 @@ function Ready({ preview, level }: { preview: SkillPreviewDto; level: HeadingLev
   );
 }
 
+function hasCachedRatings(preview: SkillPreviewDto): boolean {
+  return preview.overallCenti !== null || preview.topPlays.length > 0;
+}
+
 export function ScopePreview({ preview, name }: { preview: SkillPreviewDto; name?: string | undefined }) {
   const headingId = useId();
   const level: HeadingLevel = name === undefined ? 2 : 3;
   const body =
-    preview.state === "computing" ? (
+    preview.state === "computing" && !hasCachedRatings(preview) ? (
       <Computing />
     ) : preview.state === "no_plays" ? (
       <NoPlays preview={preview} level={level} />

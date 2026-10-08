@@ -104,6 +104,9 @@
     "state": {
       "computing": "Calculando ratings de tus jugadas…",
       "computingHint": "Esto se ejecuta tras cada sincronización. La página se actualiza cuando termina.",
+      "updating": "Actualizando ratings…",
+      "preparing_one": "Se está preparando el rating de {{count}} jugada",
+      "preparing_other": "Se están preparando los ratings de {{count}} jugadas",
       "noPlaysTitle": "Todavía no hay jugadas de {{keymode}}K con rating",
       "noPlaysBody": "Juega y completa algunos mapas de {{keymode}}K en osu! stable y luego sincroniza desde Inicio. Aparecen aquí cuando tienen rating."
     },

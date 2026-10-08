@@ -169,10 +169,33 @@ describe("SkillPage ready (7K)", () => {
 });
 
 describe("SkillPage states", () => {
-  it("shows a computing state while ratings are pending", async () => {
-    renderPage([ready4k({ state: "computing", overallCenti: null, skillsets: [], dan: null })]);
+  it("shows the computing placeholder while ratings are pending and nothing is cached", async () => {
+    renderPage([ready4k({ state: "computing", overallCenti: null, skillsets: [], dan: null, topPlays: [] })]);
     expect(await screen.findByRole("status")).toHaveTextContent("Computing ratings for your plays…");
     expect(screen.queryByTestId("overall")).not.toBeInTheDocument();
+  });
+
+  it("keeps the cached ratings on screen while they update", async () => {
+    renderPage([ready4k({ state: "computing" })]);
+    expect(await screen.findByTestId("overall")).toHaveTextContent("≈ 24.36");
+    expect(screen.getByRole("status")).toHaveTextContent("Updating ratings…");
+    expect(screen.queryByText("Computing ratings for your plays…")).not.toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "Top plays" })).toBeInTheDocument();
+  });
+
+  it("says plays are being prepared instead of an empty radar when only pending plays exist", async () => {
+    renderPage([
+      ready4k({
+        overallCenti: null,
+        skillsets: [],
+        dan: null,
+        topPlays: [],
+        trend: [],
+        evidence: { counted: 0, tier: "low", excluded: [{ reason: "pending", count: 5 }] },
+      }),
+    ]);
+    expect(await screen.findByText("Ratings for 5 plays are being prepared")).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /Skillset radar/ })).not.toBeInTheDocument();
   });
 
   it("explains how to get plays when there are none", async () => {
@@ -229,5 +252,11 @@ describe("SkillPage in Spanish", () => {
     expect(within(evidence).getByText("Sin completar")).toBeInTheDocument();
     expect(within(evidence).getByText("Aún sin calcular")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cómo se calcula" })).toBeInTheDocument();
+  });
+
+  it("words the update indicator in Spanish", async () => {
+    await i18n.changeLanguage("es");
+    renderPage([ready4k({ state: "computing" })]);
+    expect(await screen.findByRole("status")).toHaveTextContent("Actualizando ratings…");
   });
 });
