@@ -6112,6 +6112,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "wolluf-difficulty"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "postcard",
+ "proptest",
+ "serde",
+ "thiserror 2.0.21",
+ "wolluf-chart",
+ "wolluf-core",
+ "wolluf-minacalc",
+]
+
+[[package]]
 name = "wolluf-engine"
 version = "0.1.0"
 dependencies = [
@@ -6125,6 +6139,13 @@ dependencies = [
  "wolluf-core",
  "wolluf-patterns",
  "zstd",
+]
+
+[[package]]
+name = "wolluf-minacalc"
+version = "0.1.0"
+dependencies = [
+ "cc",
 ]
 
 [[package]]

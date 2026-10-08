@@ -153,7 +153,8 @@ wolluf/
 │  ├─ chart/       wolluf-chart      # normalized Chart {rows, LN pairs, timing, SV}; ChartDecoder (osu via rosu-map, pure over bytes);
 │  │                                 #   layout module (column→finger/hand presets: 3|1+3 thumb, 3+1|3, 4|3, 3|4, two thumbs); chart! DSL
 │  ├─ patterns/    wolluf-patterns   # PatternRule trait, rules/<one file per rule>.rs, segmenter + overlap resolution, override merge
-│  ├─ difficulty/  wolluf-difficulty # DifficultyCalculator trait; sunny/ (clean-room), minacalc (feature), rosu display SR (feature),
+│  ├─ minacalc/    wolluf-minacalc   # vendored Etterna MinaCalc v527 behind a C ABI; the only crate allowed `unsafe` (ADR 0022)
+│  ├─ difficulty/  wolluf-difficulty # DifficultyCalculator trait; sunny/ (clean-room), minacalc (ADR 0022), rosu display SR (feature),
 │  │                                 #   LeoBlack tables, calibration application, rate transform
 │  ├─ judge/       wolluf-judge      # JudgeRuleset trait; osu_stable::{v1,v2} (prelude MIT port + audit fixes); parity checker
 │  ├─ skill/       wolluf-skill      # SkillModel trait; gaussian_axis_v1 (τ_p, pattern offsets, σ inflation); consumes core::Evidence ONLY
@@ -223,7 +224,7 @@ Arrows point from a dependency to its dependent. **No edge may point the other w
 | D5 | Only `engine` knows the concrete set of keymodes, rules, calculators and rulesets. Features go through `Registry` and `EngineManifest`. | Adding a rule or keymode touches a single place. | review + D1 |
 | D6 | Only `store` contains SQL. Repositories take and return domain types; domain types don't derive rusqlite traits. | Schema changes never become archaeology. | grep for `rusqlite` outside store in check-layers |
 | D7 | Adapters never depend on `app` or on each other. | Keeps the composition acyclic. | D1 |
-| D8 | Traits exist only for (a) an extension axis with ≥2 real impls (`PatternRule`, `DifficultyCalculator`, `JudgeRuleset`, `SkillModel`, `ChartDecoder`) or (b) IO that tests cannot run for real (`Clock`, `OsuProcessProbe`, `OsuApi`, `TelemetryTransport`, `PackFeed`). SQLite repositories are **not** behind traits: tests use in-memory SQLite with the real migrations. Pure libraries (rosu-pp, minacalc-rs) are not wrapped in ports. | Each abstraction pays for itself. | review |
+| D8 | Traits exist only for (a) an extension axis with ≥2 real impls (`PatternRule`, `DifficultyCalculator`, `JudgeRuleset`, `SkillModel`, `ChartDecoder`) or (b) IO that tests cannot run for real (`Clock`, `OsuProcessProbe`, `OsuApi`, `TelemetryTransport`, `PackFeed`). SQLite repositories are **not** behind traits: tests use in-memory SQLite with the real migrations. Pure libraries (rosu-pp, the vendored MinaCalc of ADR 0022) are not wrapped in ports. | Each abstraction pays for itself. | review |
 | D9 | `source-osu` is read-only by construction: it has no fs write calls. The only writer touching osu! is `app::export`. Its functions require an `ExportPermit` whose private field can only be set by `export::confirm()`, after (1) an explicit UI confirmation of a recorded preview, (2) an osu!-not-running check (for collection.db), and (3) a timestamped backup. | Nobody writes into the osu! folder by accident. | banned-API grep on source-osu; trybuild compile-fail test |
 | D10 | Telemetry builders take `&ConsentToken` (minted only from a current consent row) and a `SelfScope` (obtainable only from a `kind=self` profile). | Another player's play cannot be uploaded by accident. | trybuild + privacy regression test |
 | D11 | Shells contain no logic. A command maps the DTO, calls one app function and maps the error. More than ~10 lines, or any branching on domain data, fails review. | UI churn never touches logic, and the CLI gets every feature for free. | review |
@@ -597,7 +598,7 @@ Gate rules live in `params/gates.toml`. A pack cannot be released without a comm
 2. `engine/profiles/k4.toml`: axes as data (stream, jumpstream, handstream, jackspeed, chordjack, technical, plus stamina derived), enabled rule ids, calculators (`minacalc` primary, `sunny` secondary), label tables, and layout preset ids. Add one line in `Registry::builtin()`. A registry test asserts that every id in every profile exists.
 3. `chart::layout`: add the 4K presets (2|2 and thumb variants), with a unit test each.
 4. `patterns`: generic rules (jack, trill, roll, stream) declare `supports(km)` and need nothing. Add 4K-only rules, one file each (§9.2).
-5. `difficulty`: `minacalc` (feature) returns `supports(4) = true`.
+5. `difficulty`: `minacalc` (vendored, ADR 0022) returns `supports(4) = true`.
 6. Param pack: add `patterns.k4`, `difficulty.calibration.k4` and `skill.priors.k4` sections. Section hashing leaves 7K data valid.
 7. Store: no migration, since every table is keyed by keymode and axis id. The planner sees 4K charts as newly supported and backfills them.
 8. UI: no new components, because `meta_*` drives the keymode switcher, radar and pattern lists. Add i18n strings only.
