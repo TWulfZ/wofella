@@ -45,7 +45,9 @@ CREATE TABLE play_ssr (
 
 IPC (camelCase): `preview_skill(entry: EntryRefDto, keymode: u8, merge: Option<MergeModeDto>) -> Vec<SkillPreviewDto>` (one per resolved scope):
 - `SkillPreviewDto { scopeHash, keymode, method: "preview.etterna_rating@1", calcVersion, state: "ready" | "computing" | "no_plays", overallCenti: Option<i32>, skillsets: Vec<SkillsetRatingDto { id, ratingCenti }>, dan: Option<DanEstimateDto { label, third: "low"|"mid"|"high", marginCenti }>, evidence: EvidenceDto { counted: u32, tier: "low"|"medium"|"ok", excluded: Vec<ExclusionCountDto { reason, count }> }, topPlays: Vec<TopPlayDto { playId, md5, title, version, rateMilli, goalPermyriad, overallCenti, dominantSkillset, playedAtMs }>, trend: Vec<TrendPointDto { month: "YYYY-MM", overallCenti }>, warnings: Vec<String> }`.
-- `warnings` codes: `uncalibrated`, `k7_less_validated`, `ln_not_measured`, `goal_estimated`.
+- `warnings` codes: `uncalibrated`, `k7_less_validated`, `ln_not_measured`, `goal_estimated`, `k7_tech_not_measured` (7K Technical ≈ 0.18 on almost every chart). Skillset ids are MinaCalc's bare ids, as in `ChartMsdDto` (amended 2026-10-08).
+- Dan input: `aggregate_rating` over the counted plays' Overall SSR (chart-Overall scale of the table), not the mean of the 7 skillsets.
+- Play rate = mod rate × the chart's own rate when its difficulty name carries a rate tag (`family.rs`), so a rate copy and its original never share a (family, rate) slot by accident.
 - `DataChanged` domain `preview` after `ComputePlaySsr`.
 
 ## Acceptance criteria
