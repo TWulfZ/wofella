@@ -20,13 +20,13 @@ The user wants recommendations at any rate and wofella to generate the rates (20
 - TDD strict; DSP checked by tolerances (onset drift ≤ 2 ms at 0.70–1.50x on a click track), never hashes.
 
 ### Frozen contracts
-- `wolluf_drills::rate_copy(osu: &[u8], rate_milli: u16, &RateCopyParams) -> Result<RateCopy, DrillError>`; `RateCopy { osu: Vec<u8>, version: String, audio_filename: String, source_audio: String, osu_filename: String }`. Rules in ADR 0025. Errors: `UnsupportedMode`, `Keysounded`, `NoAudio`, `Malformed { line }`.
-- `wolluf_signalsmith::Stretcher::new(channels, sample_rate)`, `stretch(&mut self, input: &[f32] interleaved, rate: f32) -> Vec<f32>` (pitch kept).
-- `wolluf_audio::render_rate(audio: &[u8], ext_hint: &str, rate_milli: u16, &AudioParams) -> Result<Vec<u8> /* ogg */, AudioError>`.
+- `wolluf_drills::rate_copy(osu: &[u8], rate_milli: u16, &RateCopyParams) -> Result<RateCopy, DrillError>`; `RateCopy { osu: Vec<u8>, version: String, audio_filename: String, source_audio: String, osu_filename: String }`. Rules in ADR 0025. Errors: `UnsupportedMode`, `Keysounded`, `NoAudio`, `Malformed { line }`, `RateOutOfRange { rate_milli }`, `IdentityRate`, `AlreadyRateCopy` (amended 2026-10-08). The set's `.osb` is not seen by the rewriter: the app refuses sets whose `.osb` has `Sample` events.
+- `wolluf_signalsmith::Stretcher::new(channels, sample_rate) -> Result<Stretcher, StretchError>`, `stretch(&mut self, input: &[f32] interleaved, rate: f32) -> Result<Vec<f32>, StretchError>` (pitch kept; amended: input validation needs an error).
+- `wolluf_audio::render_rate(audio: &[u8], ext_hint: &str, rate_milli: u16, &AudioParams) -> Result<Vec<u8> /* ogg */, AudioError>`; also `decode` and `Pcm`. `AudioParams { vorbis_quality, mp3_gapless }`.
 - IPC: `rate_copy_plan(md5, rateMilli) -> RateCopyPlanDto { previewId, md5, rateMilli, folder, osuFilename, version, audioFilename, audioExists, osuExists, refusal: Option<String> }`; `rate_copy_confirm(previewId) -> JobIdDto` (mints the permit, starts job `rate_copy`); job emits DataChanged `library` when done.
 
 ## Acceptance criteria
-- Rewriter: rate 1000 is the identity on times; LN tails only with type bit 128; hit-sample fields byte-identical; t′·r within 0.5 ms of t; untouched sections byte-identical; deterministic → drills tests + proptest.
+- Rewriter: rate 1000 is refused (and is the identity on times inside the rewriter); LN tails only with type bit 128; hit-sample fields byte-identical; |t′ − t/r| ≤ 0.5 ms (amended: |t′·r − t| ≤ r/2 is the real bound when r > 1); untouched sections byte-identical; deterministic → drills tests + proptest.
 - Stretch: click-track onset drift ≤ 2 ms, output length = input/r ± 10 ms → signalsmith/audio tests.
 - Export: no write without a permit (trybuild); never overwrites; refuses keysounded/LN-heavy → app tests.
 - Corpus: one rate copy of a pilot 4K chart rendered into a scratch copy of its folder, decoded back, `.osu` parsed by our decoder with the expected rate-scaled times → `#[ignore]` test.
@@ -35,13 +35,16 @@ The user wants recommendations at any rate and wofella to generate the rates (20
 
 ## Tasks
 - [x] T1 — ADR 0025, crate skeletons, layers edges, workspace deps, architecture wording. Route: inline. Tier: high (crate edges, native code). Commit: `build: add rate-copy crates and their edges (ADR 0025)`
-- [ ] T2 — `wolluf-drills` rewriter. Route: delegated. Tier: medium. Commit: —
-- [ ] T3 — `wolluf-signalsmith` vendored + `wolluf-audio` decode/stretch/encode. Route: delegated. Tier: high (unsafe, licensing). Commit: —
+- [x] T2 — `wolluf-drills` rewriter. Route: delegated. Tier: medium. Commit: `feat(drills): rewrite .osu files to a rate`
+- [x] T3 — `wolluf-signalsmith` vendored + `wolluf-audio` decode/stretch/encode. Route: delegated. Tier: high (unsafe, licensing). Commit: `feat(audio): time-stretch chart audio to Ogg Vorbis`
 - [ ] T4 — `app::export` + `ExportPermit` + rate-copy service and job; shells; CLI. Route: delegated. Tier: high (D9). Commit: —
 - [ ] T5 — UI dialog and wiring from recommendations and chart details. Route: delegated. Tier: medium. Commit: —
 
 ## Progress
 - 2026-10-08 T1: `cargo check` of the three skeletons ok (vorbis_rs 0.5.6 builds its C with cc, no bindgen); `cargo xtask check-layers` 15 members, 0 violations; `cargo deny check` ok.
+- 2026-10-08 T2: RED (20 of 21 on a stub) → GREEN, 29 tests; exact decimal arithmetic for `round_half_up(t / r)`; Video line dropped; storyboard commands retimed; spinner ends scaled; old negative-beatLength lines never rescaled; rate label gets a 3rd decimal only when needed (1.155x vs 1.16x).
+- 2026-10-08 T3: RED → GREEN, 29 tests + `!Sync` doctest. Signalsmith Stretch 1.4.0 (`a670068d`) + Linear 0.6.4 (`de55e6a5`), cc only, `exact()` offline with a fixed seed. Click-track onset drift 0.477 / 0.141 / 0.156 / 0.023 ms at 0.70 / 0.85 / 1.15 / 1.50 (limit 2 ms), same after Vorbis round trip; 3-min stereo at 1.2x in 2.66 s release (decode 45 ms, stretch 1.80 s, encode ~0.8 s).
+- 2026-10-08 Verifier (high): PASS with conditions (NOTICE, contract wording, MP3 encoder delay untested). One scoped correction: `AudioParams.mp3_gapless` (Symphonia's own `gapless` switch; LAME-tagged test records 228,624 vs 230,400 frames), decode buffer reserved from the frame count (capped at 30 min), source freed before encode, non-UTF-8 kept event lines, tolerant Bookmarks, offsets keep `max(3, source)` decimals, `IdentityRate` and `AlreadyRateCopy`, audio name split on the file-name component, lone CR read as a line break, unused deps removed. Re-run: drills+signalsmith+audio+minacalc 83 passed; clippy, fmt, deny, layers ok. NOTICE entries for Signalsmith added by the parent. Open for the Windows E2E: whether stable's BASS trims LAME delay like Symphonia (default `mp3_gapless = true`).
 
 ## Next step
 T1 inline, then T2 ∥ T3.
