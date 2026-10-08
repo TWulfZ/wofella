@@ -9,6 +9,7 @@ pub mod mods;
 pub mod params;
 pub mod play;
 pub mod rating;
+pub mod recs;
 
 pub use dan::{DanEstimate, DanTable4k, DanThird};
 pub use family::family_key;
