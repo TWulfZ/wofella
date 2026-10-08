@@ -4,6 +4,7 @@ pub mod app;
 pub mod chart;
 pub mod jobs;
 pub mod label;
+pub mod meta;
 pub mod players;
 pub mod session;
 pub mod settings;

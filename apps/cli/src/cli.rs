@@ -133,7 +133,7 @@ pub(crate) struct LibraryListArgs {
 pub(crate) enum ChartCmd {
     /// Print an ASCII playfield of one time window.
     Show(ChartShowArgs),
-    /// Print the chart's metadata, summary, labels and pattern segments.
+    /// Print the chart's metadata, summary, labels, pattern segments and MinaCalc MSD per rate.
     Info {
         #[arg(value_name = "MD5")]
         md5: String,

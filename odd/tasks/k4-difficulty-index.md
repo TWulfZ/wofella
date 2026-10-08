@@ -56,8 +56,10 @@ App/IPC DTOs (camelCase):
 - [x] T1 — ADR 0023 + architecture §9.1/§12 amendments. Route: inline. Tier: high (re-litigable, cross-crate). Commit: `docs: enable 4K through a calculator-only profile (ADR 0023)`
 - [x] T2 — Engine: profile `Option` taxonomy + calculators, K4 profile, `DEFAULT_K4`, `difficulty` stage + golden + lock. Route: delegated (engine owner). Tier: high (stage-lock, persisted key). Commit: `feat(engine): enable 4K and rate charts in a difficulty stage`
 - [x] T3 — Store: `chart_msd` tables, repo, cache v6. Route: delegated (store owner, parallel with T2). Tier: medium. Commit: `feat(store): cache MinaCalc skillsets per chart and rate`
-- [ ] T4 — App: index runs the difficulty stage, skips segmentation without a taxonomy, played charts first; meta keymodes; chart MSD query; library list MSD. Route: delegated (app owner). Tier: medium. Commit: —
-- [ ] T5 — Shells + UI: `meta_keymodes`, `chart_msd` commands; CLI MSD; UI keymode switcher, settings keymode from URL, thumb flags prop, MSD block; bindings. Route: delegated (desktop, cli, ui owners). Tier: medium (additive IPC). Commit: —
+- [x] T4 — App: index runs the difficulty stage, skips segmentation without a taxonomy, played charts first; meta keymodes; chart MSD query; library list MSD. Route: delegated (app owner). Tier: medium. Commit: `feat(app): rate indexed charts with MinaCalc and expose keymodes`
+- [x] T5 — Shells: `meta_keymodes`, `chart_msd` commands; CLI MSD column and `chart info` table; bindings. Route: delegated (desktop, cli owners). Tier: medium (additive IPC). Commit: `feat: serve keymodes and chart MSD over IPC and the CLI`
+- [ ] T6 — UI: keymode switcher from `meta_keymodes`, settings keymode from the URL, thumb flags hidden without a thumb, MSD block in chart details. Route: delegated (ui owner). Tier: medium. Commit: —
+- [ ] T7 — Investigate the 461 `calc_rejected` charts (4K 37, 7K 424) and MSD dips on tiny charts; fix or document. Route: delegated (research). Tier: medium. Commit: —
 
 ## Progress
 - 2026-10-08 T2: RED (E0425 `DEFAULT_K4`; 9 profile errors; 28 unresolved stage names; 5 app tests pinning "4K disabled") → GREEN. Frozen keys: difficulty K7 `25087453…`, K4 `37e2514d…`; lock diff +4/−0 (`difficulty` v1 only); 7K patterns key test untouched and green.
@@ -65,5 +67,8 @@ App/IPC DTOs (camelCase):
 - 2026-10-08 Verifier (high): PASS; `cargo nextest run --workspace` 1108 passed, 20 skipped; stage-lock, clippy, fmt, layers, deny, lint-canary ok. Scoped correction applied: vkey BLOB(32) like other cache tables (contract amended), `Rated` without rows rejected (RED observed), shared `hash_field` helper (no key moved). Re-run: store+engine+app 446 passed, 6 skipped; stage-lock ok; clippy ok. Spot check by parent: `cargo xtask stage-lock --check` ok.
 - Note for T4: `missing_for_keymode` lists catalog charts, including ones that never parse; plan difficulty work from the parse memo, not from that list.
 
+- 2026-10-08 T4: RED (24 compile errors on the new API) → GREEN, `cargo nextest run -p wolluf-app` 255 passed, 6 skipped. Corpus `corpus_library_index` (release, osu! closed): 4K 2,777 catalog / 2,777 status (2,351 rated, 389 LN-heavy, 37 rejected); 7K 18,565 / 18,339 (14,467 rated, 3,448 LN-heavy, 424 rejected; 226 missing = md5 drift, never parsed). First index 266.0 s for 21,116 charts, second 838 ms. Deviations accepted: `Calc::new()` failure is an unmemoized item failure; a catalog/file keymode mismatch memoizes as ParseFailed with no status row.
+- 2026-10-08 T5: RED ("Command meta_keymodes not found"; 5 CLI tests) → GREEN. `cargo nextest run -p wolluf-desktop` 28/28 after `cargo xtask bindings` (+50 lines); `wolluf-cli` 86/86; `pnpm tsc --noEmit` clean (parent). `meta_keymodes` returns `Result` like every command (UI `call()` unwraps Results).
+
 ## Next step
-T1 inline, then T2 ∥ T3.
+T6 UI, T7 calc_rejected investigation.

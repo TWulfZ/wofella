@@ -113,6 +113,12 @@ mod bindings {
             "labelExport",
             "LabelExportDto",
             "appOpenExportsDir",
+            "metaKeymodes",
+            "KeymodeDto",
+            "chartMsd",
+            "ChartMsdDto",
+            "MsdRateDto",
+            "MsdStatusDto",
             "job-progress",
             "IpcError",
         ] {

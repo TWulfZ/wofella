@@ -122,6 +122,13 @@ export const commands = {
 	/**  Into `<data dir>/exports/`, which the opener scope already covers (no save dialog). */
 	labelExport: (keymode: number) => typedError<LabelExportDto, IpcError>(__TAURI_INVOKE("label_export", { keymode })),
 	appOpenExportsDir: () => typedError<null, IpcError>(__TAURI_INVOKE("app_open_exports_dir")),
+	/**
+	 *  Enabled keymodes, ascending, so the UI never hard-codes them (D5). Infallible, but a `Result`
+	 *  like every other command because the UI's `call` unwraps only that shape.
+	 */
+	metaKeymodes: () => typedError<KeymodeDto[], IpcError>(__TAURI_INVOKE("meta_keymodes")),
+	/**  MinaCalc skillsets per rate at the current difficulty key; `pending` until the index rates it. */
+	chartMsd: (md5: string) => typedError<ChartMsdDto, IpcError>(__TAURI_INVOKE("chart_msd", { md5 })),
 };
 
 /** Events */
@@ -227,6 +234,19 @@ export type ChartImageDto = {
 	base64: string,
 	width: number,
 	height: number,
+};
+
+/**  A chart's MinaCalc skillsets per rate (ADR 0022, ADR 0023). */
+export type ChartMsdDto = {
+	md5: string,
+	status: MsdStatusDto,
+	/**  LN objects over all objects; 0 while pending. */
+	holdSharePermille: number,
+	calcVersion: number,
+	/**  The order of every `MsdRateDto::centi`, Overall first. */
+	skillsets: string[],
+	/**  Ascending; empty unless rated. */
+	rates: MsdRateDto[],
 };
 
 /**  Values match the persisted and exported ids. */
@@ -357,6 +377,8 @@ export type IndexLibrarySummaryDto = {
 	labelsWritten: number,
 	/**  Pattern segments stored this run (`patterns` stage). */
 	segmentsWritten: number,
+	/**  Charts given an MSD status this run (`difficulty` stage), rated or not. */
+	msdWritten: number,
 	failedItems: number,
 };
 
@@ -452,6 +474,22 @@ export type KeymodeCountDto = {
 	/**  `k1`..`k16` or `unknown` (`KeymodeBucket`). */
 	bucket: string,
 	n: number,
+};
+
+/**  One keymode the engine indexes (ADR 0023). */
+export type KeymodeDto = {
+	keymode: number,
+	/**
+	 *  Whether the keymode has a pattern taxonomy, so segments, labelling and session labels
+	 *  exist for it.
+	 */
+	hasPatterns: boolean,
+	/**  Calculator ids, e.g. `minacalc`. */
+	calculators: string[],
+	/**  A layout preset id. */
+	defaultLayout: string,
+	/**  Whether the default layout has a thumb column; thumb-side choices only make sense then. */
+	hasThumb: boolean,
 };
 
 export type LabelEventDto = {
@@ -595,6 +633,18 @@ export type MoveWindowRequestDto = {
 	anchor: AnchorDto,
 	t0Ms: number,
 };
+
+export type MsdRateDto = {
+	rateMilli: number,
+	/**  MSD × 100 per skillset, in `ChartMsdDto::skillsets` order. */
+	centi: number[],
+};
+
+export type MsdStatusDto = "rated" | 
+/**  MinaCalc ignores holds and releases, so from the LN cut-off on its numbers mean nothing. */
+"ln_heavy" | "calc_rejected" | 
+/**  Not rated yet under the current `difficulty` key: unindexed, unparsed or missing. */
+"pending";
 
 /**  lazer's values; the wiki's 0/1/2 disagree and are unverified (research 06). */
 export type NoteBodyStyleDto = "stretch" | "repeat_top" | "repeat_bottom" | "repeat_top_and_bottom";

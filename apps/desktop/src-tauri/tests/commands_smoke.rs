@@ -528,6 +528,45 @@ mod commands_smoke {
     }
 
     #[test]
+    fn meta_and_chart_msd_commands_answer() {
+        let h = synced();
+        let keymodes = h.invoke("meta_keymodes", json!({})).unwrap();
+        let keymodes = keymodes.as_array().unwrap();
+        assert!(keymodes.len() >= 2, "{keymodes:?}");
+        let k7 = keymodes.iter().find(|k| k["keymode"] == json!(7)).unwrap();
+        assert_eq!(
+            (&k7["hasPatterns"], &k7["hasThumb"], &k7["defaultLayout"]),
+            (&json!(true), &json!(true), &json!("k7.313_right_thumb")),
+            "{k7}"
+        );
+        assert_eq!(k7["calculators"], json!(["minacalc"]), "{k7}");
+
+        // Sync chains the library index, so the chart already has a status row.
+        let msd = h.invoke("chart_msd", json!({ "md5": CHART_MD5 })).unwrap();
+        assert_eq!(msd["md5"], json!(CHART_MD5), "{msd}");
+        assert_eq!(msd["status"], json!("rated"), "{msd}");
+        assert_eq!(msd["skillsets"][0], json!("overall"), "{msd}");
+        assert_eq!(msd["skillsets"].as_array().unwrap().len(), 8, "{msd}");
+        assert!(msd["calcVersion"].is_number(), "{msd}");
+        assert!(msd["holdSharePermille"].is_number(), "{msd}");
+        // Centi values stay unpinned: they may differ by 1 across platforms (ADR 0022).
+        let at_1x = msd["rates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["rateMilli"] == json!(1_000))
+            .unwrap();
+        assert_eq!(at_1x["centi"].as_array().unwrap().len(), 8, "{msd}");
+
+        let err = h
+            .invoke("chart_msd", json!({ "md5": "0".repeat(32) }))
+            .unwrap_err();
+        assert_eq!(err["code"], json!("NOT_FOUND"), "{err}");
+        let err = h.invoke("chart_msd", json!({ "md5": "../x" })).unwrap_err();
+        assert_eq!(err["code"], json!("INVALID_INPUT"), "{err}");
+    }
+
+    #[test]
     fn label_export_writes_under_the_data_dir() {
         let h = synced();
         let out = h.invoke("label_export", json!({ "keymode": 7 })).unwrap();

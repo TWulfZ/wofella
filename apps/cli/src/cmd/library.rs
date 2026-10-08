@@ -19,6 +19,7 @@ use crate::progress::Progress;
 use crate::render;
 
 const PERCENT: f64 = 100.0;
+const CENTI: f64 = 100.0;
 const MS_PER_SECOND: u32 = 1_000;
 const SECONDS_PER_MINUTE: u32 = 60;
 
@@ -114,6 +115,7 @@ fn job_text(job: &JobDto) -> String {
             ("skipped unavailable", s.skipped_unavailable.to_string()),
             ("labels written", s.labels_written.to_string()),
             ("segments written", s.segments_written.to_string()),
+            ("msd written", s.msd_written.to_string()),
             ("failed items", s.failed_items.to_string()),
         ]);
     }
@@ -136,6 +138,11 @@ fn job_text(job: &JobDto) -> String {
 pub(crate) fn duration(ms: u32) -> String {
     let s = ms / MS_PER_SECOND;
     format!("{}:{:02}", s / SECONDS_PER_MINUTE, s % SECONDS_PER_MINUTE)
+}
+
+/// A centi-MSD as MSD with 2 decimals.
+pub(crate) fn msd(centi: i32) -> String {
+    format!("{:.2}", f64::from(centi) / CENTI)
 }
 
 pub(crate) fn ln_percent(ratio: f64) -> String {
@@ -168,13 +175,14 @@ fn charts_table(charts: &[LibraryChartDto]) -> String {
                 ln_percent(c.ln_ratio),
                 duration(c.length_ms),
                 format!("{:.2}", c.nps),
+                c.msd_overall_centi.map_or_else(|| "-".to_owned(), msd),
                 labels(&c.labels),
             ]
         })
         .collect();
     render::table(
         &[
-            "MD5", "TITLE", "VERSION", "NOTES", "LN%", "LENGTH", "NPS", "LABELS",
+            "MD5", "TITLE", "VERSION", "NOTES", "LN%", "LENGTH", "NPS", "MSD", "LABELS",
         ],
         &rows,
     )
@@ -308,6 +316,8 @@ mod tests {
         assert_eq!(duration(65_999), "1:05");
         assert_eq!(duration(3_600_000), "60:00");
         assert_eq!(ln_percent(1.0 / 3.0), "33.3");
+        assert_eq!(msd(2_765), "27.65");
+        assert_eq!(msd(5), "0.05");
         assert_eq!(labels(&[]), "-");
         assert_eq!(share(None), "-");
         assert_eq!(share(Some(0.1234)), "12.3");
