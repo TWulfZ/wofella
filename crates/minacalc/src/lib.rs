@@ -2,7 +2,7 @@
 //!
 //! Outputs are platform floats (libm, `rsqrtss`): quantise them before they reach a hash.
 
-// ADR 0022: the only workspace crate allowed `unsafe`, confined to the FFI calls below.
+// ADR 0022/0025: `unsafe` only here and in wolluf-signalsmith, confined to the FFI calls below.
 #![allow(unsafe_code)]
 
 use std::ffi::{c_int, c_uint, c_void};

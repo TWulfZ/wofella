@@ -10,7 +10,6 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-wolluf-core.workspace = true
 wolluf-signalsmith.workspace = true
 thiserror.workspace = true
 symphonia.workspace = true
