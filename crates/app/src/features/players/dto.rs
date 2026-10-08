@@ -356,6 +356,15 @@ pub fn profile_entries(entries: Vec<ProfileEntry>) -> Result<Vec<ProfileEntryDto
     entries.into_iter().map(ProfileEntryDto::try_from).collect()
 }
 
+impl From<EntryRefDto> for EntryRef {
+    fn from(e: EntryRefDto) -> Self {
+        match e {
+            EntryRefDto::Profile { id } => Self::Profile(profile_id(id)),
+            EntryRefDto::AllPlayers => Self::AllPlayers,
+        }
+    }
+}
+
 pub fn profile_id(id: u32) -> ProfileId {
     ProfileId(i64::from(id))
 }

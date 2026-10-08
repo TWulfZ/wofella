@@ -566,6 +566,53 @@ mod commands_smoke {
         assert_eq!(err["code"], json!("INVALID_INPUT"), "{err}");
     }
 
+    /// Rating values belong to `PreviewService`'s tests; the shell proves the wiring and the
+    /// frozen wire shape (`odd/tasks/skill-preview.md`).
+    #[test]
+    fn preview_skill_command_answers() {
+        let h = synced();
+        for entry in [
+            json!({ "kind": "profile", "id": 1 }),
+            json!({ "kind": "all_players" }),
+        ] {
+            let previews = h
+                .invoke(
+                    "preview_skill",
+                    json!({ "entry": entry, "keymode": 7, "merge": null }),
+                )
+                .unwrap();
+            for p in previews.as_array().unwrap() {
+                assert_eq!(p["keymode"], json!(7), "{p}");
+                assert_eq!(p["method"], json!("preview.etterna_rating@1"), "{p}");
+                assert!(
+                    ["ready", "computing", "no_plays"].contains(&p["state"].as_str().unwrap()),
+                    "{p}"
+                );
+                assert!(p["scopeHash"].is_string(), "{p}");
+                assert!(p["evidence"]["counted"].is_number(), "{p}");
+                assert!(
+                    p["warnings"]
+                        .as_array()
+                        .unwrap()
+                        .contains(&json!("uncalibrated"))
+                );
+            }
+        }
+        let merged = h.invoke(
+            "preview_skill",
+            json!({ "entry": { "kind": "profile", "id": 1 }, "keymode": 7, "merge": "separate" }),
+        );
+        assert!(merged.unwrap().is_array());
+
+        let err = h
+            .invoke(
+                "preview_skill",
+                json!({ "entry": { "kind": "all_players" }, "keymode": 0, "merge": null }),
+            )
+            .unwrap_err();
+        assert_eq!(err["code"], json!("INVALID_INPUT"), "{err}");
+    }
+
     #[test]
     fn label_export_writes_under_the_data_dir() {
         let h = synced();

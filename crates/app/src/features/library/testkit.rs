@@ -175,7 +175,7 @@ impl Map {
         format!("{}/{}", self.folder.replace('\\', "/"), self.file)
     }
 
-    fn beatmap(&self) -> OsuDbBeatmap {
+    pub(crate) fn beatmap(&self) -> OsuDbBeatmap {
         let builder = BeatmapBuilder::mania(&self.md5, self.keys)
             .folder(&self.folder)
             .osu_file(&self.file)

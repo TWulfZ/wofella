@@ -6,6 +6,7 @@
 
 use wolluf_core::{StageId, VersionKey, VersionKeyBuilder};
 
+use super::difficulty::{Calc, CalcError, Chart};
 use super::hash_field;
 use crate::error::EngineError;
 use crate::preview::{ExclusionParams, GoalParams};
@@ -28,6 +29,18 @@ pub fn vkey(
         .finish()?)
 }
 
+/// A play's SSRs in `SKILLSET_IDS` order, centi. `goal` is Wife% (1.0 = 100%); `rate_milli` is the
+/// mod rate. `calc` keeps native scratch buffers, so a caller holds one per worker thread.
+pub fn run(
+    calc: &mut Calc,
+    chart: &Chart,
+    rate_milli: u16,
+    goal: f32,
+) -> Result<[i32; 8], CalcError> {
+    let rows = wolluf_difficulty::minacalc::note_rows(chart).rows;
+    wolluf_difficulty::minacalc::ssr_centi(calc, &rows, rate_milli, goal, chart.keymode().columns())
+}
+
 /// The `difficulty` key in the ADR 0006 encoding: a new calc, rate grid or parse re-rates plays.
 fn config_hash(difficulty_vkey: VersionKey) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new();
@@ -42,6 +55,22 @@ mod tests {
 
     use super::*;
     use crate::stage::{chart_parse, difficulty};
+
+    #[test]
+    fn run_rates_a_stream_and_rejects_a_chart_without_notes() {
+        let mut calc = Calc::new().unwrap();
+        let stream = wolluf_chart::chart![step = 110;
+            "x...", ".x..", "..x.", "...x", "..x.", ".x..", "x...", ".x..",
+            "..x.", "...x", "..x.", ".x..", "x...", ".x..", "..x.", "...x",
+        ];
+        let ssr = run(&mut calc, &stream, 1000, 0.93).unwrap();
+        assert!(ssr[0] > 0, "{ssr:?}");
+        let faster = run(&mut calc, &stream, 1500, 0.93).unwrap();
+        assert!(faster[0] > ssr[0], "{faster:?} vs {ssr:?}");
+
+        let silent = wolluf_chart::chart![step = 110; "....", "...."];
+        assert_eq!(run(&mut calc, &silent, 1000, 0.93), Err(CalcError::Empty));
+    }
 
     #[test]
     fn stage_id_and_version_are_stable() {

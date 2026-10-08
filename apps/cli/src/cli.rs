@@ -54,6 +54,9 @@ pub(crate) enum Command {
     Chart(ChartCmd),
     /// Blind gold-set labelling: label sampled chart windows by pattern (interactive, stdin).
     Label(LabelArgs),
+    /// Uncalibrated previews (ADR 0024); `wolluf library index` refreshes their per-play cache.
+    #[command(subcommand)]
+    Preview(PreviewCmd),
     /// `.osg` spike tools: they only read the given files and never open the data dir.
     #[command(subcommand)]
     Osg(OsgCmd),
@@ -92,7 +95,8 @@ pub(crate) enum JobsCmd {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum LibraryCmd {
-    /// Parse and label the catalog's charts and wait for the job; Ctrl-C cancels.
+    /// Parse and label the catalog's charts and wait for it and the jobs it chains (the skill
+    /// preview's per-play SSRs); Ctrl-C cancels.
     Index,
     /// Indexed charts of one keymode, filtered by label or text.
     List(LibraryListArgs),
@@ -127,6 +131,52 @@ pub(crate) struct LibraryListArgs {
     pub(crate) limit: u32,
     #[arg(long, value_name = "N", default_value_t = 0)]
     pub(crate) offset: u32,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum PreviewCmd {
+    /// Overall, skillsets, dan (4K), evidence, top plays and trend of one player scope.
+    Skill(PreviewSkillArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct PreviewSkillArgs {
+    /// 4K is the keymode the preview is validated on and the only one with a dan table.
+    #[arg(long, value_name = "N", default_value_t = 4)]
+    pub(crate) keys: u8,
+    /// `self`, `all` (every player) or `p:<profile id>`.
+    #[arg(long, value_name = "SCOPE", default_value = "self", value_parser = parse_scope)]
+    pub(crate) scope: ScopeArg,
+    /// Overrides the profile's stored merge mode.
+    #[arg(long, value_enum, value_name = "MODE")]
+    pub(crate) merge: Option<MergeArg>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ScopeArg {
+    SelfProfile,
+    AllPlayers,
+    Profile(u32),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum MergeArg {
+    Merged,
+    Separate,
+}
+
+const PROFILE_SCOPE_PREFIX: &str = "p:";
+
+fn parse_scope(s: &str) -> Result<ScopeArg, String> {
+    match s {
+        "self" => Ok(ScopeArg::SelfProfile),
+        "all" => Ok(ScopeArg::AllPlayers),
+        _ => s
+            .strip_prefix(PROFILE_SCOPE_PREFIX)
+            .and_then(|id| id.parse::<u32>().ok())
+            .map(ScopeArg::Profile)
+            .ok_or_else(|| format!("`{s}` is not a scope: use `self`, `all` or `p:<profile id>`")),
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -555,6 +605,46 @@ mod tests {
         };
         assert_eq!(out, PathBuf::from("/x.jsonl"));
         assert!(Cli::try_parse_from(["wolluf", "label", "--seed", "1", "stats"]).is_err());
+    }
+
+    #[test]
+    fn preview_skill_defaults_to_self_4k() {
+        let cli = Cli::try_parse_from(["wolluf", "preview", "skill"]).unwrap();
+        let Command::Preview(PreviewCmd::Skill(args)) = cli.command else {
+            panic!("{:?}", cli.command);
+        };
+        assert_eq!(
+            (args.keys, args.scope, args.merge),
+            (4, ScopeArg::SelfProfile, None)
+        );
+    }
+
+    #[test]
+    fn preview_skill_flags() {
+        for (scope, want) in [
+            ("self", ScopeArg::SelfProfile),
+            ("all", ScopeArg::AllPlayers),
+            ("p:12", ScopeArg::Profile(12)),
+        ] {
+            let cli = Cli::try_parse_from([
+                "wolluf", "preview", "skill", "--keys", "7", "--scope", scope, "--merge",
+                "separate",
+            ])
+            .unwrap();
+            let Command::Preview(PreviewCmd::Skill(args)) = cli.command else {
+                panic!("{:?}", cli.command);
+            };
+            assert_eq!(
+                (args.keys, args.scope, args.merge),
+                (7, want, Some(MergeArg::Separate))
+            );
+        }
+        for bad in ["", "me", "p:", "p:x", "p:-1", "P:1", "12"] {
+            let err =
+                Cli::try_parse_from(["wolluf", "preview", "skill", "--scope", bad]).unwrap_err();
+            assert_eq!(err.exit_code(), i32::from(exit::USAGE), "{bad:?}");
+        }
+        assert!(Cli::try_parse_from(["wolluf", "preview", "skill", "--merge", "x"]).is_err());
     }
 
     #[test]

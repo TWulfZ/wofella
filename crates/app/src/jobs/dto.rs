@@ -27,16 +27,24 @@ pub enum JobKindDto {
     RefreshIdentity,
     /// Chained after every `SyncPlays` too, and startable on its own.
     IndexLibrary,
+    /// Chained after every `IndexLibrary` (ADR 0024); never started from IPC.
+    ComputePlaySsr,
 }
 
 impl JobKindDto {
-    pub const ALL: &'static [Self] = &[Self::SyncPlays, Self::RefreshIdentity, Self::IndexLibrary];
+    pub const ALL: &'static [Self] = &[
+        Self::SyncPlays,
+        Self::RefreshIdentity,
+        Self::IndexLibrary,
+        Self::ComputePlaySsr,
+    ];
 
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::SyncPlays => "sync_plays",
             Self::RefreshIdentity => "refresh_identity",
             Self::IndexLibrary => "index_library",
+            Self::ComputePlaySsr => "compute_play_ssr",
         }
     }
 
@@ -63,6 +71,8 @@ pub enum JobStageDto {
     Ingest,
     Archive,
     Index,
+    /// Per-play goals and SSRs for the skill preview.
+    PlaySsr,
 }
 
 /// `JobService::start` input, tagged on `kind` (spec 003 IPC).
@@ -118,12 +128,28 @@ pub struct IndexLibrarySummaryDto {
     pub failed_items: u32,
 }
 
+/// ComputePlaySsr counters (ADR 0024).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ComputePlaySsrSummaryDto {
+    /// Ledger plays, of every alias, on a catalog chart of a keymode with a calculator.
+    pub plays_total: u32,
+    /// Rows written this run, counted or excluded.
+    pub computed: u32,
+    pub counted: u32,
+    pub excluded: u32,
+    /// Already had a row under the current `play_ssr` key.
+    pub skipped_memoized: u32,
+    pub failed_items: u32,
+}
+
 /// Per-kind result, stored as `job_run.summary_json`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "kind", content = "counters", rename_all = "snake_case")]
 pub enum JobSummaryDto {
     SyncPlays(SyncSummaryDto),
     IndexLibrary(IndexLibrarySummaryDto),
+    ComputePlaySsr(ComputePlaySsrSummaryDto),
 }
 
 /// Why a job ended `failed` or `cancelled`; the UI localises `messageKey` (§7).
@@ -191,6 +217,23 @@ mod tests {
             r#""index""#
         );
         assert_eq!(JobKindDto::IndexLibrary.as_str(), "index_library");
+        assert_eq!(JobKindDto::ComputePlaySsr.as_str(), "compute_play_ssr");
+        assert_eq!(
+            serde_json::to_string(&JobStageDto::PlaySsr).unwrap(),
+            r#""play_ssr""#
+        );
+        let summary = JobSummaryDto::ComputePlaySsr(ComputePlaySsrSummaryDto {
+            plays_total: 4,
+            computed: 3,
+            counted: 2,
+            excluded: 1,
+            skipped_memoized: 1,
+            failed_items: 0,
+        });
+        assert_eq!(
+            serde_json::to_string(&summary).unwrap(),
+            r#"{"kind":"compute_play_ssr","counters":{"playsTotal":4,"computed":3,"counted":2,"excluded":1,"skippedMemoized":1,"failedItems":0}}"#
+        );
         for kind in JobKindDto::ALL {
             assert_eq!(JobKindDto::parse(kind.as_str()), Some(*kind));
             assert_eq!(

@@ -6,5 +6,6 @@ pub(crate) mod label;
 pub(crate) mod library;
 pub(crate) mod osg;
 pub(crate) mod players;
+pub(crate) mod preview;
 pub(crate) mod setup;
 pub(crate) mod sync;

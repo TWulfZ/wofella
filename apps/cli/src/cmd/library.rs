@@ -1,4 +1,5 @@
-//! `wolluf library index|list|scales|patterns|hints` over `LibraryService` and `IndexLibrary` (F1).
+//! `wolluf library index|list|scales|patterns|hints` over `LibraryService` and `IndexLibrary` (F1);
+//! `index` also waits for the jobs it chains.
 
 use std::future::Future;
 use std::process::ExitCode;
@@ -84,8 +85,18 @@ async fn index_job(
 ) -> Result<(JobDto, bool), AppError> {
     let mut rx = ctx.subscribe();
     let id = ctx.job_service().start(JobStartDto::IndexLibrary).await?;
-    let interrupted =
-        follow::until_finished(ctx, &mut rx, &id, progress, std::pin::pin!(interrupt)).await?;
+    let mut interrupt = std::pin::pin!(interrupt);
+    let mut interrupted =
+        follow::until_finished(ctx, &mut rx, &id, progress, interrupt.as_mut()).await?;
+    // The chained ComputePlaySsr is the CLI's only way to refresh the skill preview, and closing
+    // the context would cancel it; a Ctrl-C here stops waiting instead.
+    if !interrupted {
+        tokio::select! {
+            biased;
+            () = &mut interrupt => interrupted = true,
+            () = ctx.jobs().wait_idle() => {}
+        }
+    }
     Ok((follow::history_entry(ctx, &id).await?, interrupted))
 }
 

@@ -6,6 +6,7 @@ pub mod library;
 pub mod meta;
 pub mod players;
 pub mod plays;
+pub mod preview;
 pub mod session;
 pub mod settings;
 pub mod setup;

@@ -31,6 +31,7 @@ use wolluf_store::{Conn, DbHandle, StoreError};
 
 use crate::context::{blocking_join_error, catalog_install, songs_dir};
 use crate::errors::AppError;
+use crate::features::preview::ComputePlaySsrJob;
 use crate::jobs::dto::{IndexLibrarySummaryDto, JobKindDto, JobStageDto, JobSummaryDto};
 use crate::jobs::{ItemError, ItemResult, Job, JobCtx, JobFuture, JobSummary, panic_text};
 
@@ -71,13 +72,13 @@ impl Job for IndexLibraryJob {
 
 /// The stage-level keys every library row is stored and read under (D15).
 #[derive(Debug, Clone, Copy)]
-pub(super) struct Keys {
-    pub(super) parse: VersionKey,
-    pub(super) label: VersionKey,
+pub(crate) struct Keys {
+    pub(crate) parse: VersionKey,
+    pub(crate) label: VersionKey,
 }
 
 impl Keys {
-    pub(super) fn current() -> Result<Self, AppError> {
+    pub(crate) fn current() -> Result<Self, AppError> {
         let key = |r: Result<VersionKey, EngineError>| {
             r.map_err(|e| AppError::internal(format!("library vkey: {e}")))
         };
@@ -118,13 +119,13 @@ impl Segmenters {
 
 /// The `difficulty` stage per keymode profile rated with MinaCalc (ADR 0023), keyed on the
 /// `chart_parse` key its rows are computed from.
-pub(super) struct Raters {
+pub(crate) struct Raters {
     params: MinaCalcParams,
     keys: Vec<(u8, VersionKey)>,
 }
 
 impl Raters {
-    pub(super) fn current(parse: VersionKey) -> Result<Self, AppError> {
+    pub(crate) fn current(parse: VersionKey) -> Result<Self, AppError> {
         Self::with_params(parse, MinaCalcParams::default())
     }
 
@@ -147,7 +148,7 @@ impl Raters {
         Ok(Self { params, keys })
     }
 
-    pub(super) fn vkey(&self, keymode: u8) -> Option<VersionKey> {
+    pub(crate) fn vkey(&self, keymode: u8) -> Option<VersionKey> {
         self.keys
             .iter()
             .find(|(k, _)| *k == keymode)
@@ -156,6 +157,11 @@ impl Raters {
 
     fn vkeys(&self) -> Vec<VersionKey> {
         self.keys.iter().map(|(_, v)| *v).collect()
+    }
+
+    /// `(keymode, difficulty key)` of every keymode rated by MinaCalc.
+    pub(crate) fn keys(&self) -> &[(u8, VersionKey)] {
+        &self.keys
     }
 }
 
@@ -231,7 +237,7 @@ pub(super) fn segment_row(s: Segment) -> SegmentRow {
 
 /// osu!.db builds the catalog path as `<folder>/<file>`.
 /// The set folder that holds the chart, even under nested Songs folders (`Normal/<set>/x.osu`).
-pub(super) fn folder_of(path: &str) -> &str {
+pub(crate) fn folder_of(path: &str) -> &str {
     let parent = path.rsplit_once('/').map_or("", |(folder, _)| folder);
     parent.rsplit_once('/').map_or(parent, |(_, last)| last)
 }
@@ -724,7 +730,8 @@ fn finish(summary: IndexLibrarySummaryDto) -> JobSummary {
     JobSummary {
         summary: Some(JobSummaryDto::IndexLibrary(summary)),
         changed: Vec::new(),
-        follow_ups: Vec::new(),
+        // New parses can turn `no_chart` plays into rated ones.
+        follow_ups: vec![Box::new(ComputePlaySsrJob)],
     }
 }
 

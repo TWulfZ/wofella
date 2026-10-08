@@ -87,6 +87,7 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::app::app_open_exports_dir::<tauri::Wry>,
             commands::meta::meta_keymodes,
             commands::chart::chart_msd,
+            commands::preview::preview_skill,
         ])
 }
 

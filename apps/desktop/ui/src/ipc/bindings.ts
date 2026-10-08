@@ -129,6 +129,11 @@ export const commands = {
 	metaKeymodes: () => typedError<KeymodeDto[], IpcError>(__TAURI_INVOKE("meta_keymodes")),
 	/**  MinaCalc skillsets per rate at the current difficulty key; `pending` until the index rates it. */
 	chartMsd: (md5: string) => typedError<ChartMsdDto, IpcError>(__TAURI_INVOKE("chart_msd", { md5 })),
+	/**
+	 *  One uncalibrated preview per resolved scope of `entry` (ADR 0024); `merge` overrides the
+	 *  profile's own merge mode for this read only.
+	 */
+	previewSkill: (entry: EntryRefDto, keymode: number, merge: "merged" | "separate" | null) => typedError<SkillPreviewDto[], IpcError>(__TAURI_INVOKE("preview_skill", { entry, keymode, merge })),
 };
 
 /** Events */
@@ -307,6 +312,19 @@ export type ColumnDto = {
 	finger: FingerDto,
 };
 
+/**  ComputePlaySsr counters (ADR 0024). */
+export type ComputePlaySsrSummaryDto = {
+	/**  Ledger plays, of every alias, on a catalog chart of a keymode with a calculator. */
+	playsTotal: number,
+	/**  Rows written this run, counted or excluded. */
+	computed: number,
+	counted: number,
+	excluded: number,
+	/**  Already had a row under the current `play_ssr` key. */
+	skippedMemoized: number,
+	failedItems: number,
+};
+
 export type CountDto = {
 	key: string,
 	count: number,
@@ -317,6 +335,14 @@ export type CreateProfileInput = {
 	aliasIds: number[],
 	mergeMode?: MergeModeDto | null,
 };
+
+export type DanEstimateDto = {
+	label: string,
+	third: DanThirdDto,
+	marginCenti: number,
+};
+
+export type DanThirdDto = "low" | "mid" | "high";
 
 export type DataChanged = DataChangedDto;
 
@@ -348,6 +374,20 @@ export type EntryRefDto = { kind: "profile"; id: number } | { kind: "all_players
 
 /**  Wire mirror of core's `ErrorCode`: domain types never derive specta (D13). */
 export type ErrorCodeDto = "OSU_DIR_NOT_FOUND" | "UNSUPPORTED_FORMAT" | "PARSE_FAILED" | "OSU_RUNNING" | "CONSENT_REQUIRED" | "SIGNATURE_INVALID" | "NOT_FOUND" | "INVALID_INPUT" | "CONFLICT" | "CANCELLED" | "INTERNAL";
+
+export type EvidenceDto = {
+	counted: number,
+	tier: EvidenceTierDto,
+	excluded: ExclusionCountDto[],
+};
+
+export type EvidenceTierDto = "low" | "medium" | "ok";
+
+export type ExclusionCountDto = {
+	/**  A `play_ssr` status other than `counted`. */
+	reason: string,
+	count: number,
+};
 
 export type FingerDto = "pinky" | "ring" | "middle" | "index" | "thumb";
 
@@ -442,7 +482,9 @@ export type JobKindDto = "sync_plays" |
 /**  Chained after every `SyncPlays` (spec 004); never started from IPC. */
 "refresh_identity" | 
 /**  Chained after every `SyncPlays` too, and startable on its own. */
-"index_library";
+"index_library" | 
+/**  Chained after every `IndexLibrary` (ADR 0024); never started from IPC. */
+"compute_play_ssr";
 
 export type JobProgress = JobProgressDto;
 
@@ -456,7 +498,9 @@ export type JobProgressDto = {
 };
 
 /**  The step a job is in; the UI localises it (`jobs.stage.<id>`). */
-export type JobStageDto = "catalog" | "ingest" | "archive" | "index";
+export type JobStageDto = "catalog" | "ingest" | "archive" | "index" | 
+/**  Per-play goals and SSRs for the skill preview. */
+"play_ssr";
 
 /**  `JobService::start` input, tagged on `kind` (spec 003 IPC). */
 export type JobStartDto = {
@@ -468,7 +512,7 @@ export type JobStartDto = {
 export type JobStatusDto = "queued" | "running" | "ok" | "failed" | "cancelled";
 
 /**  Per-kind result, stored as `job_run.summary_json`. */
-export type JobSummaryDto = { kind: "sync_plays"; counters: SyncSummaryDto } | { kind: "index_library"; counters: IndexLibrarySummaryDto };
+export type JobSummaryDto = { kind: "sync_plays"; counters: SyncSummaryDto } | { kind: "index_library"; counters: IndexLibrarySummaryDto } | { kind: "compute_play_ssr"; counters: ComputePlaySsrSummaryDto };
 
 export type KeymodeCountDto = {
 	/**  `k1`..`k16` or `unknown` (`KeymodeBucket`). */
@@ -688,6 +732,10 @@ export type PatternExampleDto = {
 	window: ChartWindowDto,
 };
 
+export type PreviewStateDto = "ready" | 
+/**  Some of the scope's plays have no SSR row yet, or `ComputePlaySsr` is queued or running. */
+"computing" | "no_plays";
+
 export type ProfileEntryDto = {
 	ref: EntryRefDto,
 	profileKind: ProfileKindDto,
@@ -840,6 +888,27 @@ export type SetupStatusDto = {
 	lastSync: JobDto | null,
 };
 
+export type SkillPreviewDto = {
+	scopeHash: string,
+	keymode: number,
+	method: string,
+	calcVersion: number,
+	state: PreviewStateDto,
+	overallCenti: number | null,
+	skillsets: SkillsetRatingDto[],
+	dan: DanEstimateDto | null,
+	evidence: EvidenceDto,
+	topPlays: TopPlayDto[],
+	trend: TrendPointDto[],
+	warnings: string[],
+};
+
+export type SkillsetRatingDto = {
+	/**  A MinaCalc skillset id (`stream`, `jumpstream`, …), as `ChartMsdDto.skillsets` names them. */
+	id: string,
+	ratingCenti: number,
+};
+
 export type SkinDiagnosticDto = {
 	/**  A stable `skin.*` id. */
 	code: string,
@@ -964,6 +1033,26 @@ export type TopChartDto = {
 	title: string | null,
 	version: string | null,
 	n: number,
+};
+
+export type TopPlayDto = {
+	/**  64 hex chars. */
+	playId: string,
+	md5: string,
+	title: string,
+	version: string,
+	rateMilli: number,
+	goalPermyriad: number,
+	overallCenti: number,
+	dominantSkillset: string,
+	/**  Unix ms; an `f64` holds it exactly and crosses the bindings without a BigInt. */
+	playedAtMs: number | null,
+};
+
+export type TrendPointDto = {
+	/**  `YYYY-MM`, UTC. */
+	month: string,
+	overallCenti: number,
 };
 
 /**  A window inside one chart the user picked, start chosen like the sampler's. */

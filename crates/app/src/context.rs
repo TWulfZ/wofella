@@ -24,6 +24,7 @@ use crate::features::library::LibraryService;
 use crate::features::meta::MetaService;
 use crate::features::players::PlayersService;
 use crate::features::plays::PlaysService;
+use crate::features::preview::PreviewService;
 use crate::features::session::{SessionService, SessionState};
 use crate::features::settings::SettingsService;
 use crate::features::setup::SetupService;
@@ -381,6 +382,10 @@ impl AppContext {
 
     pub fn players(&self) -> PlayersService<'_> {
         PlayersService::new(self)
+    }
+
+    pub fn preview(&self) -> PreviewService<'_> {
+        PreviewService::new(self)
     }
 
     pub fn skins(&self) -> SkinsService<'_> {
