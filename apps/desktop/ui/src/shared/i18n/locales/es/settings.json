@@ -44,7 +44,7 @@
     },
     "sessionNotify": {
       "title": "Avisar cuando termine una canción",
-      "description": "Cuando un mapa que terminaste entra en la lista de esta sesión a la espera de etiqueta, el icono de wolluf en la barra de tareas parpadea. No se envía ninguna notificación del sistema."
+      "description": "Cuando un mapa que terminaste entra en la lista de esta sesión a la espera de etiqueta, el icono de wofella en la barra de tareas parpadea. No se envía ninguna notificación del sistema."
     }
   }
 }

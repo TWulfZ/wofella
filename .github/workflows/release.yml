@@ -62,14 +62,15 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist-release | Out-Null
           $tag = "$env:GITHUB_REF_NAME"
-          Copy-Item target/release/wolluf-desktop.exe "dist-release/wolluf-$tag-portable.exe"
-          Copy-Item (Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1).FullName "dist-release/wolluf-$tag-setup.exe"
+          # Without mainBinaryName the exe keeps its Cargo name; NSIS names the installer after productName.
+          Copy-Item target/release/wolluf-desktop.exe "dist-release/wofella-$tag-portable.exe"
+          Copy-Item (Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1).FullName "dist-release/wofella-$tag-setup.exe"
           Get-ChildItem dist-release
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="${GITHUB_REF_NAME}"
-          flags=(--generate-notes --title "wolluf $tag")
+          flags=(--generate-notes --title "wofella $tag")
           if [[ "$tag" == *-* ]]; then flags+=(--prerelease); fi
           gh release create "$tag" dist-release/* "${flags[@]}"

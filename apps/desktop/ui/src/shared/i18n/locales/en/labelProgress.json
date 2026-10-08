@@ -18,7 +18,7 @@
       "chosen_other": "{{count}} chosen",
       "unknown_one": "{{count}} with no recorded origin",
       "unknown_other": "{{count}} with no recorded origin",
-      "originsExplained": "Blind windows were offered by the plan or Random and labelled as offered; they are what the evaluation uses. Chosen ones came from Now playing or this session, or were moved on the timeline. Labels saved before wolluf recorded the origin have none."
+      "originsExplained": "Blind windows were offered by the plan or Random and labelled as offered; they are what the evaluation uses. Chosen ones came from Now playing or this session, or were moved on the timeline. Labels saved before wofella recorded the origin have none."
     },
     "axes": {
       "title": "Gold labels by pattern",
@@ -42,9 +42,9 @@
     },
     "session": {
       "title": "This session",
-      "description": "Every map you finished in osu! since wolluf opened. Name its dominant pattern: the one its dense parts are made of.",
+      "description": "Every map you finished in osu! since wofella opened. Name its dominant pattern: the one its dense parts are made of.",
       "counts": "{{labelled}} · {{pending}}",
-      "empty": "Play a map in osu! with wolluf open and it shows up here, ready to label.",
+      "empty": "Play a map in osu! with wofella open and it shows up here, ready to label.",
       "pending": "Pending",
       "noPattern": "No clear pattern",
       "choose": "Choose pattern",

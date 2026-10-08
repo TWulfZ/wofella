@@ -25,7 +25,7 @@ describe("ErrorView", () => {
     render(
       <ErrorView error={failure({ code: "CONFLICT", messageKey: "error.instance_running", args: { path: "/d" } })} />,
     );
-    expect(screen.getByRole("alert")).toHaveTextContent("wolluf is already running with this data folder (/d).");
+    expect(screen.getByRole("alert")).toHaveTextContent("wofella is already running with this data folder (/d).");
   });
 
   it("falls back to error.code.<CODE> when the message key is missing", () => {

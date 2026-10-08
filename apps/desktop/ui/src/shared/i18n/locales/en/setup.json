@@ -1,7 +1,7 @@
 {
   "setup": {
     "title": "Find your osu! install",
-    "intro": "wolluf reads your osu! stable folder without changing anything in it. Pick the install to use.",
+    "intro": "wofella reads your osu! stable folder without changing anything in it. Pick the install to use.",
     "detecting": "Looking for osu! installs…",
     "noneFound": "No osu! stable install was found automatically. Use Browse… to pick its folder.",
     "detectFailed": "Automatic detection failed.",
@@ -23,7 +23,7 @@
       "program_files": "Program Files"
     },
     "error": {
-      "lazer_not_supported": "“{{path}}” is an osu!lazer install. wolluf reads osu! stable only."
+      "lazer_not_supported": "“{{path}}” is an osu!lazer install. wofella reads osu! stable only."
     },
     "valid": "Ready to use",
     "steps": {

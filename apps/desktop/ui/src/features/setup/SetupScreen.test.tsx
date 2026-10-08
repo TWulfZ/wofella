@@ -117,7 +117,7 @@ describe("SetupScreen", () => {
     await userEvent.click(screen.getByRole("button", { name: "Use this install" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "“/home/pilot/.local/share/osu” is an osu!lazer install. wolluf reads osu! stable only.",
+      "“/home/pilot/.local/share/osu” is an osu!lazer install. wofella reads osu! stable only.",
     );
   });
 

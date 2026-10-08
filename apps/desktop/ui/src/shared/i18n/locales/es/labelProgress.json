@@ -18,7 +18,7 @@
       "chosen_other": "{{count}} elegidas",
       "unknown_one": "{{count}} sin origen registrado",
       "unknown_other": "{{count}} sin origen registrado",
-      "originsExplained": "Las ventanas a ciegas las ofrecieron el plan o Al azar y se etiquetaron tal cual; son las que usa la evaluación. Las elegidas vienen de Sonando ahora o de esta sesión, o se movieron en la línea de tiempo. Las etiquetas guardadas antes de que wolluf registrara el origen no lo tienen."
+      "originsExplained": "Las ventanas a ciegas las ofrecieron el plan o Al azar y se etiquetaron tal cual; son las que usa la evaluación. Las elegidas vienen de Sonando ahora o de esta sesión, o se movieron en la línea de tiempo. Las etiquetas guardadas antes de que wofella registrara el origen no lo tienen."
     },
     "axes": {
       "title": "Etiquetas gold por patrón",
@@ -42,9 +42,9 @@
     },
     "session": {
       "title": "Esta sesión",
-      "description": "Cada mapa que terminaste en osu! desde que se abrió wolluf. Nombra su patrón dominante: el de sus partes densas.",
+      "description": "Cada mapa que terminaste en osu! desde que se abrió wofella. Nombra su patrón dominante: el de sus partes densas.",
       "counts": "{{labelled}} · {{pending}}",
-      "empty": "Juega un mapa en osu! con wolluf abierto y aparecerá aquí, listo para etiquetar.",
+      "empty": "Juega un mapa en osu! con wofella abierto y aparecerá aquí, listo para etiquetar.",
       "pending": "Pendiente",
       "noPattern": "Sin patrón claro",
       "choose": "Elegir patrón",

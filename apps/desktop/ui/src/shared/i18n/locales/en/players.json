@@ -4,7 +4,7 @@
       "title": "Which of these are you?",
       "intro": "These names appear in your osu! scores. Tick every name that is yours: only those plays count toward your skill.",
       "noMatch": "None of these names matched your osu! login. Tick the names that are yours.",
-      "cfgMissing": "wolluf could not read your osu! login from the osu! config, so nothing was preselected.",
+      "cfgMissing": "wofella could not read your osu! login from the osu! config, so nothing was preselected.",
       "empty": "No plays yet. Sync your osu! scores first.",
       "syncNow": "Sync now",
       "syncing": "Importing your plays… The list updates when the import finishes.",

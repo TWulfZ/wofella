@@ -4,7 +4,7 @@
       "title": "¿Cuáles de estos eres tú?",
       "intro": "Estos nombres aparecen en tus puntuaciones de osu!. Marca todos los que sean tuyos: solo esas jugadas cuentan para tu habilidad.",
       "noMatch": "Ninguno de estos nombres coincide con tu usuario de osu!. Marca los nombres que sean tuyos.",
-      "cfgMissing": "wolluf no pudo leer tu usuario de osu! de la configuración de osu!, así que no se preseleccionó nada.",
+      "cfgMissing": "wofella no pudo leer tu usuario de osu! de la configuración de osu!, así que no se preseleccionó nada.",
       "empty": "Todavía no hay jugadas. Sincroniza primero tus puntuaciones de osu!.",
       "syncNow": "Sincronizar ahora",
       "syncing": "Importando tus jugadas… La lista se actualiza cuando termine la importación.",

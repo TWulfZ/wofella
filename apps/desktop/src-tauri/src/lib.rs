@@ -24,7 +24,7 @@ const LOG_FILTER_ENV: &str = "WOLLUF_LOG";
 /// The CLI defaults to `warn`; the desktop keeps `info` so a user's log file explains a sync.
 const DEFAULT_LOG_FILTER: &str = "info";
 pub(crate) const MAIN_WINDOW: &str = "main";
-const FATAL_TITLE: &str = "wolluf";
+const FATAL_TITLE: &str = "wofella";
 
 /// Registers the plugins every build uses, generic so tests can pass the mock runtime.
 pub fn with_plugins<R: Runtime>(builder: Builder<R>) -> Builder<R> {
@@ -257,7 +257,7 @@ fn fatal_message(error: &AppError, logs_dir: Option<&Path>) -> String {
     let args: Vec<String> = error.args.iter().map(|(k, v)| format!("{k}={v}")).collect();
     let logs = logs_dir.map_or_else(|| "unavailable".to_owned(), |d| d.display().to_string());
     format!(
-        "wolluf could not start.\n\nerror[{}]: {} {{{}}}\n\nLogs: {logs}",
+        "wofella could not start.\n\nerror[{}]: {} {{{}}}\n\nLogs: {logs}",
         error.code.as_str(),
         error.message_key,
         args.join(", ")
@@ -304,6 +304,7 @@ mod scaffold {
             .with_key("error.instance_running")
             .with_arg("path", "/d");
         let text = fatal_message(&error, Some(Path::new("/d/logs")));
+        assert!(text.starts_with("wofella could not start."), "{text}");
         assert!(
             text.contains("error[CONFLICT]: error.instance_running {path=/d}"),
             "{text}"

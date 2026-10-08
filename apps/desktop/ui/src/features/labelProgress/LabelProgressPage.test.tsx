@@ -377,7 +377,7 @@ describe("LabelProgressPage", () => {
   it("shows the empty session state when nothing was played since opening", async () => {
     renderPage({ sessionPlays: () => ({ ...SESSION, plays: [] }) });
     const region = await sessionRegion();
-    expect(await within(region).findByText(/Play a map in osu! with wolluf open/)).toBeInTheDocument();
+    expect(await within(region).findByText(/Play a map in osu! with wofella open/)).toBeInTheDocument();
   });
 
   it("shows the session error", async () => {

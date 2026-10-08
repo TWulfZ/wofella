@@ -44,7 +44,7 @@
     },
     "sessionNotify": {
       "title": "Notify when a song ends",
-      "description": "When a map you finished joins this session's list waiting for a label, wolluf's taskbar entry flashes. No system notification is sent."
+      "description": "When a map you finished joins this session's list waiting for a label, wofella's taskbar entry flashes. No system notification is sent."
     }
   }
 }
