@@ -14,6 +14,8 @@ pub const CHANNELS: RangeInclusive<u16> = 1..=8;
 pub const SAMPLE_RATES: RangeInclusive<u32> = 8_000..=192_000;
 /// Upstream sounds best between 0.75x and 1.5x and randomises phases past a 2x stretch.
 pub const RATES: RangeInclusive<f32> = 0.5..=2.0;
+/// One octave either way: enough for a pitch that follows any supported rate.
+pub const TRANSPOSE_FACTORS: RangeInclusive<f32> = 0.5..=2.0;
 
 /// Upstream counts samples in `int`; output can be twice the input at 0.5x.
 const MAX_FRAMES: usize = (i32::MAX / 4) as usize;
@@ -26,6 +28,7 @@ pub enum StretchError {
     Channels(u16),
     SampleRate(u32),
     Rate,
+    Transpose,
     Ragged { samples: usize, channels: u16 },
     NonFinite { index: usize },
     TooLong { frames: usize },
@@ -38,6 +41,10 @@ impl fmt::Display for StretchError {
             Self::Channels(c) => write!(f, "{c} channels; supported are {CHANNELS:?}"),
             Self::SampleRate(r) => write!(f, "{r} Hz; supported are {SAMPLE_RATES:?}"),
             Self::Rate => write!(f, "rate is not finite or outside {RATES:?}"),
+            Self::Transpose => write!(
+                f,
+                "transpose factor is not finite or outside {TRANSPOSE_FACTORS:?}"
+            ),
             Self::Ragged { samples, channels } => write!(
                 f,
                 "{samples} interleaved samples is not a whole number of {channels}-channel frames"
@@ -60,6 +67,7 @@ unsafe extern "C" {
         in_frames: usize,
         output: *mut c_float,
         out_frames: usize,
+        transpose: c_float,
     ) -> c_int;
 }
 
@@ -104,8 +112,22 @@ impl Stretcher {
     /// Plays `input` (interleaved) `rate` times faster with the pitch kept: the output has
     /// `round(frames / rate)` frames and stays aligned to the input (no pre-roll).
     pub fn stretch(&mut self, input: &[f32], rate: f32) -> Result<Vec<f32>, StretchError> {
+        self.stretch_transposed(input, rate, 1.0)
+    }
+
+    /// [`Self::stretch`] with every frequency multiplied by `transpose`; `transpose == rate`
+    /// sounds like resampling (osu!'s NC).
+    pub fn stretch_transposed(
+        &mut self,
+        input: &[f32],
+        rate: f32,
+        transpose: f32,
+    ) -> Result<Vec<f32>, StretchError> {
         if !(rate.is_finite() && RATES.contains(&rate)) {
             return Err(StretchError::Rate);
+        }
+        if !(transpose.is_finite() && TRANSPOSE_FACTORS.contains(&transpose)) {
+            return Err(StretchError::Transpose);
         }
         let channels = usize::from(self.channels);
         if !input.len().is_multiple_of(channels) {
@@ -136,6 +158,7 @@ impl Stretcher {
                 in_frames,
                 output.as_mut_ptr(),
                 out_frames,
+                transpose,
             )
         };
         if status == STATUS_OK {

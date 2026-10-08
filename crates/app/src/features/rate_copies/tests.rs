@@ -44,10 +44,18 @@ impl Set {
     }
 
     async fn plan(&self, rate_milli: u16) -> RateCopyPlanDto {
+        self.plan_with(rate_milli, false).await
+    }
+
+    async fn plan_nc(&self, rate_milli: u16) -> RateCopyPlanDto {
+        self.plan_with(rate_milli, true).await
+    }
+
+    async fn plan_with(&self, rate_milli: u16, nightcore: bool) -> RateCopyPlanDto {
         self.f
             .ctx
             .rate_copies()
-            .plan(&self.map.md5, rate_milli)
+            .plan(&self.map.md5, rate_milli, nightcore)
             .await
             .unwrap()
     }
@@ -119,6 +127,7 @@ async fn plan_names_the_copy_and_writes_nothing() {
     assert_eq!(plan.refusal, None);
     assert_eq!(plan.md5, set.map.md5);
     assert_eq!(plan.rate_milli, 1150);
+    assert!(!plan.nightcore);
     assert_eq!(PathBuf::from(&plan.folder), set.folder());
     assert_eq!(plan.version, "Normal 1.15x (138bpm)");
     assert_eq!(
@@ -183,11 +192,14 @@ async fn plan_errors_on_unknown_or_bad_charts() {
     let set = Set::new(&OsuChart::k7("T"), &[wav_audio()]).await;
     let svc = set.f.ctx.rate_copies();
     assert_eq!(
-        svc.plan("nope", 1100).await.unwrap_err().code,
+        svc.plan("nope", 1100, false).await.unwrap_err().code,
         ErrorCode::InvalidInput
     );
     assert_eq!(
-        svc.plan(&"0".repeat(32), 1100).await.unwrap_err().code,
+        svc.plan(&"0".repeat(32), 1100, false)
+            .await
+            .unwrap_err()
+            .code,
         ErrorCode::NotFound
     );
 }
@@ -201,7 +213,7 @@ async fn plan_rejects_a_catalog_folder_outside_songs() {
         .f
         .ctx
         .rate_copies()
-        .plan(&set.map.md5, 1100)
+        .plan(&set.map.md5, 1100, false)
         .await
         .unwrap_err();
     assert_eq!(err.code, ErrorCode::InvalidInput, "{err:?}");
@@ -447,4 +459,84 @@ async fn an_audio_target_that_is_not_a_playable_file_fails_the_copy() {
     assert!(!set.folder().join(&plan.osu_filename).exists());
     assert!(std::fs::read(&target).unwrap().is_empty());
     no_temp_files(&set);
+}
+
+fn stretched_seconds(ogg: &[u8]) -> f64 {
+    let pcm = decode(ogg, "ogg", &AudioParams::default()).unwrap();
+    pcm.samples.len() as f64 / f64::from(pcm.sample_rate) / f64::from(pcm.channels)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_nightcore_plan_names_its_own_audio_and_version() {
+    let set = Set::new(&OsuChart::k7("T"), &[wav_audio()]).await;
+    let before = set.files();
+    let plan = set.plan_nc(1150).await;
+    assert_eq!(plan.refusal, None);
+    assert!(plan.nightcore);
+    assert!(!plan.preview_id.is_empty());
+    assert_eq!(plan.version, "Normal 1.15x NC (138bpm)");
+    assert_eq!(
+        plan.osu_filename,
+        "wolluf - T (wolluf) [Normal 1.15x NC (138bpm)].osu"
+    );
+    assert_eq!(plan.audio_filename, "audio 1.15x nc.ogg");
+    assert!(!plan.audio_exists && !plan.osu_exists);
+    assert_eq!(set.files(), before, "a plan writes nothing");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn pitch_kept_and_nightcore_copies_of_one_rate_coexist() {
+    let set = Set::new(&OsuChart::k7("T"), &[wav_audio()]).await;
+    let before = set.files();
+    let dt = set.plan(1250).await;
+    summary(&set.confirm(&dt.preview_id).await.0);
+    let dt_files = (
+        std::fs::read(set.folder().join(&dt.osu_filename)).unwrap(),
+        std::fs::read(set.folder().join(&dt.audio_filename)).unwrap(),
+    );
+
+    let nc = set.plan_nc(1250).await;
+    assert_eq!(nc.refusal, None);
+    assert!(
+        !nc.audio_exists && !nc.osu_exists,
+        "the DT copy is not reused"
+    );
+    let (job, _) = set.confirm(&nc.preview_id).await;
+    let s = summary(&job);
+    assert_eq!(
+        (s.osu_written, s.audio_written, s.audio_reused),
+        (true, true, false)
+    );
+    assert_eq!(s.audio_filename, "audio 1.25x nc.ogg");
+
+    let osu = std::fs::read_to_string(set.folder().join(&nc.osu_filename)).unwrap();
+    assert!(osu.contains("AudioFilename: audio 1.25x nc.ogg"), "{osu}");
+    assert!(osu.contains("Version:Normal 1.25x NC (150bpm)"), "{osu}");
+    let nc_ogg = std::fs::read(set.folder().join(&nc.audio_filename)).unwrap();
+    assert!(
+        (stretched_seconds(&nc_ogg) - AUDIO_SECONDS / 1.25).abs() < 0.05,
+        "stretched length"
+    );
+    assert_ne!(
+        nc_ogg, dt_files.1,
+        "the NC audio is rendered with its pitch"
+    );
+
+    let mut expected = before;
+    expected.extend([
+        dt.audio_filename.clone(),
+        dt.osu_filename.clone(),
+        nc.audio_filename.clone(),
+        nc.osu_filename.clone(),
+    ]);
+    expected.sort();
+    assert_eq!(set.files(), expected);
+    assert_eq!(
+        (
+            std::fs::read(set.folder().join(&dt.osu_filename)).unwrap(),
+            std::fs::read(set.folder().join(&dt.audio_filename)).unwrap(),
+        ),
+        dt_files,
+        "the DT copy is untouched"
+    );
 }

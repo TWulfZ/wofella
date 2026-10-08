@@ -90,21 +90,25 @@ wl_stretch_free(void* handle) noexcept
 
 // Offline stretch of `in_frames` interleaved frames into exactly `out_frames` frames,
 // aligned to the input (upstream's `exact`: seek for pre-roll, flush for the tail).
+// `transpose` multiplies every frequency; 1 keeps the pitch.
 int
 wl_stretch_process(void* handle,
 				   const float* input,
 				   size_t in_frames,
 				   float* output,
-				   size_t out_frames) noexcept
+				   size_t out_frames,
+				   float transpose) noexcept
 {
 	auto* h = static_cast<Handle*>(handle);
 	if (h == nullptr || input == nullptr || output == nullptr || in_frames == 0 ||
-		out_frames == 0) {
+		out_frames == 0 || !(transpose > 0.F) || !std::isfinite(transpose)) {
 		return WL_BAD_ARGS;
 	}
 	try {
 		configure(*h);
 		Stretch& s = *h->stretch;
+		// A zero tonality limit scales every frequency, as resampling (osu!'s NC) does.
+		s.setTransposeFactor(transpose);
 		const size_t ch = static_cast<size_t>(h->channels);
 		const double rate = static_cast<double>(in_frames) / static_cast<double>(out_frames);
 

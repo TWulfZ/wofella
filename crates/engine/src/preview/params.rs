@@ -193,6 +193,9 @@ pub struct FamilyParams {
     pub multiplier_prefixes: Vec<String>,
     /// A number followed by one of these is a tag that carries no rate (`bpm`).
     pub other_suffixes: Vec<String>,
+    /// Whole words that mark a rate copy without carrying a rate (`NC`, written by wofella's
+    /// pitch-following copies, ADR 0025); matched case-insensitively.
+    pub marker_tags: Vec<String>,
     /// Open and close delimiters around a tag.
     pub brackets: Vec<(char, char)>,
 }
@@ -203,6 +206,7 @@ impl Default for FamilyParams {
             multiplier_suffixes: vec!["x".into()],
             multiplier_prefixes: vec!["x".into()],
             other_suffixes: vec!["bpm".into()],
+            marker_tags: vec!["nc".into()],
             brackets: vec![('(', ')'), ('[', ']')],
         }
     }

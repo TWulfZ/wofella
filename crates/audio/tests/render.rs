@@ -409,3 +409,99 @@ fn lame_delay_and_padding_follow_mp3_gapless() {
             .len()
     );
 }
+
+const TONE_HZ: f64 = 440.0;
+
+/// Taylor series after range reduction: the workspace bans platform libm (D3), even in tests.
+fn sine(phase: f64) -> f64 {
+    let tau = 2.0 * std::f64::consts::PI;
+    let x = phase - tau * (phase / tau).round();
+    let (mut term, mut sum) = (x, x);
+    for n in 1..12 {
+        term *= -x * x / f64::from((2 * n) * (2 * n + 1));
+        sum += term;
+    }
+    sum
+}
+
+fn tone_wav(seconds: f64) -> Vec<u8> {
+    let frames = (seconds * 44_100.0) as usize;
+    wav(2, 44_100, frames, |f, _| {
+        (0.5 * sine(2.0 * std::f64::consts::PI * TONE_HZ * f as f64 / 44_100.0)) as f32
+    })
+}
+
+/// Frequency of channel 0 from the rising zero crossings of the middle half.
+fn zero_crossing_hz(pcm: &Pcm) -> f64 {
+    let ch = usize::from(pcm.channels);
+    let left: Vec<f64> = pcm
+        .samples
+        .iter()
+        .step_by(ch)
+        .map(|&s| f64::from(s))
+        .collect();
+    let (lo, hi) = (left.len() / 4, left.len() * 3 / 4);
+    let crossings: Vec<f64> = (lo..hi)
+        .filter(|&i| left[i] <= 0.0 && left[i + 1] > 0.0)
+        .map(|i| i as f64 + left[i] / (left[i] - left[i + 1]))
+        .collect();
+    assert!(
+        crossings.len() > 10,
+        "too few crossings: {}",
+        crossings.len()
+    );
+    let span = crossings[crossings.len() - 1] - crossings[0];
+    (crossings.len() - 1) as f64 * f64::from(pcm.sample_rate) / span
+}
+
+fn nightcore() -> AudioParams {
+    AudioParams {
+        pitch_follows_rate: true,
+        ..AudioParams::default()
+    }
+}
+
+#[test]
+fn pitch_is_kept_by_default() {
+    assert!(!AudioParams::default().pitch_follows_rate);
+    let ogg = render_rate(&tone_wav(3.0), "wav", 1500, &AudioParams::default()).unwrap();
+    let out = decode(&ogg, "ogg", &AudioParams::default()).unwrap();
+    let hz = zero_crossing_hz(&out);
+    assert!((hz - TONE_HZ).abs() <= TONE_HZ * 0.02, "{hz:.2} Hz");
+}
+
+#[test]
+fn nightcore_round_trip_raises_the_pitch_by_the_rate() {
+    for rate_milli in [1500u16, 800] {
+        let ogg = render_rate(&tone_wav(3.0), "wav", rate_milli, &nightcore()).unwrap();
+        let out = decode(&ogg, "ogg", &AudioParams::default()).unwrap();
+        let r = f64::from(rate_milli) / 1000.0;
+        assert!(
+            (seconds(&out) - 3.0 / r).abs() <= 0.010,
+            "{rate_milli}: {:.4} s",
+            seconds(&out)
+        );
+        let hz = zero_crossing_hz(&out);
+        let expected = TONE_HZ * r;
+        assert!(
+            (hz - expected).abs() <= expected * 0.02,
+            "{rate_milli}: {hz:.2} Hz, expected {expected:.2} Hz"
+        );
+    }
+}
+
+#[test]
+fn nightcore_keeps_the_onsets_on_the_copy_times() {
+    let source_s = 10.0;
+    let ogg = render_rate(&click_wav(2, 44_100, source_s), "wav", 1250, &nightcore()).unwrap();
+    let out = decode(&ogg, "ogg", &AudioParams::default()).unwrap();
+    let mut t = FIRST_CLICK_S;
+    while t < source_s - 0.1 {
+        let expected = t / 1.25;
+        let center = (expected * 44_100.0).round() as usize;
+        let found = peak_frame(&out, 0, center, 2_205);
+        let drift_ms = (found as f64 / 44_100.0 - expected).abs() * 1000.0;
+        assert!(drift_ms <= 2.0, "click at {t:.2} s {drift_ms:.3} ms off");
+        t += CLICK_PERIOD_S;
+    }
+}

@@ -5,7 +5,8 @@ use wolluf_app::jobs::dto::JobId;
 use super::Ctx;
 use crate::error::to_ipc;
 
-/// Previews a rate copy of the chart (ADR 0025); writes nothing.
+/// Previews a rate copy of the chart (ADR 0025); writes nothing. `nightcore` makes the pitch
+/// follow the rate.
 #[tauri::command]
 #[specta::specta]
 #[tracing::instrument(skip_all)]
@@ -13,8 +14,9 @@ pub async fn rate_copy_plan(
     ctx: Ctx<'_>,
     md5: String,
     rate_milli: u16,
+    nightcore: bool,
 ) -> Result<RateCopyPlanDto, IpcError> {
-    let plan = ctx.rate_copies().plan(&md5, rate_milli).await;
+    let plan = ctx.rate_copies().plan(&md5, rate_milli, nightcore).await;
     plan.map_err(to_ipc)
 }
 

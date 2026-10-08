@@ -22,6 +22,7 @@ use crate::jobs::dto::JobId;
 pub(crate) struct RateCopyPreview {
     pub(crate) md5: ChartMd5,
     pub(crate) rate_milli: u16,
+    pub(crate) nightcore: bool,
     pub(crate) copy: RateCopy,
     pub(crate) songs_dir: PathBuf,
     pub(crate) chart_rel_path: PathBuf,
@@ -52,7 +53,12 @@ impl<'a> RateCopiesService<'a> {
 
     /// Reads the chart and its set folder and records a preview; writes nothing. A refused plan
     /// is not recorded, so its `previewId` is empty.
-    pub async fn plan(&self, md5: &str, rate_milli: u16) -> Result<RateCopyPlanDto, AppError> {
+    pub async fn plan(
+        &self,
+        md5: &str,
+        rate_milli: u16,
+        nightcore: bool,
+    ) -> Result<RateCopyPlanDto, AppError> {
         let md5: ChartMd5 = md5
             .parse()
             .map_err(|_| AppError::invalid_input().with_arg("md5", md5))?;
@@ -81,7 +87,7 @@ impl<'a> RateCopiesService<'a> {
             let folder = SetFolder::resolve(&songs_dir, &chart_rel_path)?;
             let osu = read_chart_verified(&songs_dir, &chart_rel_path, md5)
                 .map_err(|e| chart_error(md5, &e))?;
-            let mut assessment = assess(&osu, rate_milli, ln_heavy, &params);
+            let mut assessment = assess(&osu, rate_milli, nightcore, ln_heavy, &params);
             let (mut audio_exists, mut osu_exists) = (false, false);
             if let Some(copy) = &assessment.copy {
                 let mut refusal = assessment.refusal;
@@ -128,10 +134,16 @@ impl<'a> RateCopiesService<'a> {
         })
         .await
         .map_err(blocking_join_error)??;
-        Ok(self.record(md5, rate_milli, planned))
+        Ok(self.record(md5, rate_milli, nightcore, planned))
     }
 
-    fn record(&self, md5: ChartMd5, rate_milli: u16, planned: Planned) -> RateCopyPlanDto {
+    fn record(
+        &self,
+        md5: ChartMd5,
+        rate_milli: u16,
+        nightcore: bool,
+        planned: Planned,
+    ) -> RateCopyPlanDto {
         let Planned {
             folder,
             assessment,
@@ -144,6 +156,7 @@ impl<'a> RateCopiesService<'a> {
             preview_id: String::new(),
             md5: md5.to_string(),
             rate_milli,
+            nightcore,
             folder: folder.shown().to_string_lossy().into_owned(),
             osu_filename: String::new(),
             version: String::new(),
@@ -168,6 +181,7 @@ impl<'a> RateCopiesService<'a> {
                     payload: RateCopyPreview {
                         md5,
                         rate_milli,
+                        nightcore,
                         copy,
                         songs_dir,
                         chart_rel_path,

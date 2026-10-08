@@ -72,9 +72,11 @@ impl FamilyParams {
     fn is_tag(&self, token: &str) -> bool {
         self.multiplier(token).is_some() || {
             let lower = token.to_ascii_lowercase();
-            self.other_suffixes
-                .iter()
-                .any(|sfx| lower.strip_suffix(sfx.as_str()).is_some_and(is_number))
+            self.marker_tags.contains(&lower)
+                || self
+                    .other_suffixes
+                    .iter()
+                    .any(|sfx| lower.strip_suffix(sfx.as_str()).is_some_and(is_number))
         }
     }
 
@@ -128,6 +130,21 @@ mod tests {
         ] {
             assert_eq!(family_key("123 Artist - Title", copy), original, "{copy:?}");
         }
+    }
+
+    #[test]
+    fn nc_copies_share_the_original_family_and_carry_their_rate() {
+        let dt = "Normal 1.25x (150bpm)";
+        let nc = "Normal 1.25x NC (150bpm)";
+        assert_eq!(chart_rate_milli(nc), Some(1250));
+        assert_eq!(family_key("s", nc), family_key("s", dt));
+        assert_eq!(family_key("s", nc), family_key("s", "Normal"));
+    }
+
+    #[test]
+    fn a_marker_alone_is_not_a_rate_copy() {
+        assert_eq!(chart_rate_milli("Normal NC"), None);
+        assert_eq!(family_key("s", "Normal NC"), "s/Normal NC");
     }
 
     #[test]

@@ -36,6 +36,8 @@ pub struct AudioParams {
     /// `false` keeps the decoder's whole output, leading delay included, which is what a player
     /// that ignores the tag hears.
     pub mp3_gapless: bool,
+    /// NC: the pitch rises and falls with the rate. `false` keeps it, as DT does (ADR 0025).
+    pub pitch_follows_rate: bool,
 }
 
 impl Default for AudioParams {
@@ -45,6 +47,7 @@ impl Default for AudioParams {
             vorbis_quality: 0.5,
             // Open question: whether stable's BASS trims too is checked in the pilot's Windows E2E.
             mp3_gapless: true,
+            pitch_follows_rate: false,
         }
     }
 }
@@ -77,8 +80,9 @@ pub enum AudioError {
     Encode(#[from] VorbisError),
 }
 
-/// Decodes `audio`, plays it `rate_milli / 1000` times faster with the pitch kept, and
-/// encodes the result as Ogg Vorbis with the source's sample rate and channels.
+/// Decodes `audio`, plays it `rate_milli / 1000` times faster (pitch kept unless
+/// `params.pitch_follows_rate`), and encodes the result as Ogg Vorbis with the source's sample
+/// rate and channels.
 pub fn render_rate(
     audio: &[u8],
     ext_hint: &str,
@@ -97,7 +101,9 @@ pub fn render_rate(
         sample_rate,
     } = decode(audio, ext_hint, params)?;
     let rate = f32::from(rate_milli) / 1000.0;
-    let stretched = Stretcher::new(channels, sample_rate)?.stretch(&samples, rate)?;
+    let transpose = if params.pitch_follows_rate { rate } else { 1.0 };
+    let stretched =
+        Stretcher::new(channels, sample_rate)?.stretch_transposed(&samples, rate, transpose)?;
     // Peak memory then holds one full-length PCM buffer during encoding, not two.
     drop(samples);
     encode_vorbis(

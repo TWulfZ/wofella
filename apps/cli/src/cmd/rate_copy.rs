@@ -81,7 +81,7 @@ pub(crate) async fn run(
 }
 
 async fn plan(ctx: &AppContext, args: &RateCopyArgs) -> Result<RateCopyPlanDto, AppError> {
-    ctx.rate_copies().plan(&args.md5, args.rate).await
+    ctx.rate_copies().plan(&args.md5, args.rate, args.nc).await
 }
 
 fn existing(exists: bool) -> &'static str {
@@ -92,6 +92,15 @@ fn plan_text(p: &RateCopyPlanDto) -> String {
     render::key_values(&[
         ("md5", p.md5.clone()),
         ("rate", format!("{:.3}x", f64::from(p.rate_milli) / 1000.0)),
+        (
+            "pitch",
+            if p.nightcore {
+                "NC (pitch follows the rate)"
+            } else {
+                "kept (DT)"
+            }
+            .to_owned(),
+        ),
         ("folder", p.folder.clone()),
         (
             "version",

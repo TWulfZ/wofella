@@ -844,14 +844,23 @@ mod commands_smoke {
         let plan = h
             .invoke(
                 "rate_copy_plan",
-                json!({ "md5": CHART_MD5, "rateMilli": 1100 }),
+                json!({ "md5": CHART_MD5, "rateMilli": 1100, "nightcore": false }),
             )
             .unwrap();
         assert_eq!(plan["md5"], json!(CHART_MD5), "{plan}");
         assert_eq!(plan["rateMilli"], json!(1100), "{plan}");
+        assert_eq!(plan["nightcore"], json!(false), "{plan}");
         assert_eq!(plan["audioFilename"], json!("audio 1.10x.ogg"), "{plan}");
         assert_eq!(plan["refusal"], json!("audio_missing"), "{plan}");
         assert_eq!(plan["previewId"], json!(""), "{plan}");
+        let nc = h
+            .invoke(
+                "rate_copy_plan",
+                json!({ "md5": CHART_MD5, "rateMilli": 1100, "nightcore": true }),
+            )
+            .unwrap();
+        assert_eq!(nc["nightcore"], json!(true), "{nc}");
+        assert_eq!(nc["audioFilename"], json!("audio 1.10x nc.ogg"), "{nc}");
         let err = h
             .invoke("rate_copy_confirm", json!({ "previewId": "01JNOPREVIEW" }))
             .unwrap_err();

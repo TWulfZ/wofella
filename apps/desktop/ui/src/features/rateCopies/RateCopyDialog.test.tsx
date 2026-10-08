@@ -19,6 +19,7 @@ const PLAN: RateCopyPlanDto = {
   previewId: "01JPREVIEW",
   md5: MD5,
   rateMilli: 1100,
+  nightcore: false,
   folder: "/mnt/e/Games/osu!/Songs/292301 xi - Blue Zenith",
   osuFilename: "xi - Blue Zenith (Skystar) [7K Insane 1.1x (220bpm)].osu",
   version: "7K Insane 1.1x (220bpm)",
@@ -79,7 +80,7 @@ describe("RateCopyDialog plan", () => {
   it("previews the new files when nothing exists yet", async () => {
     const { calls, dialog } = await renderDialog();
     expect(await within(dialog).findByText(PLAN.osuFilename)).toBeInTheDocument();
-    expect(argsOf(calls, "rate_copy_plan")).toEqual([{ md5: MD5, rateMilli: 1100 }]);
+    expect(argsOf(calls, "rate_copy_plan")).toEqual([{ md5: MD5, rateMilli: 1100, nightcore: false }]);
     expect(dialog).toHaveTextContent("xi - Blue Zenith [7K Insane]");
     expect(dialog).toHaveTextContent("1.10x");
     expect(dialog).toHaveTextContent(PLAN.folder);
@@ -135,6 +136,45 @@ describe("RateCopyDialog plan", () => {
     renderWithRouter(<RateCopyDialog target={TARGET} onOpenChange={vi.fn()} />);
     const dialog = await screen.findByRole("dialog", { name: "Generar una copia con rate" });
     expect(await within(dialog).findByText("Se generará")).toBeInTheDocument();
+    expect(within(dialog).getByRole("switch", { name: "Cambiar el tono (NC)" })).not.toBeChecked();
+    expect(dialog).toHaveTextContent("Suena como el Nightcore de osu!; desactivado mantiene el tono, como DT.");
+  });
+});
+
+describe("RateCopyDialog pitch", () => {
+  const NC_PLAN: RateCopyPlanDto = {
+    ...PLAN,
+    previewId: "01JPREVIEWNC",
+    nightcore: true,
+    osuFilename: "xi - Blue Zenith (Skystar) [7K Insane 1.10x NC (220bpm)].osu",
+    version: "7K Insane 1.10x NC (220bpm)",
+    audioFilename: "audio 1.10x nc.ogg",
+  };
+
+  it("keeps the pitch by default and explains the NC option", async () => {
+    const { dialog } = await renderDialog();
+    const pitch = await within(dialog).findByRole("switch", { name: "Change pitch (NC)" });
+    expect(pitch).not.toBeChecked();
+    expect(pitch).toHaveAccessibleDescription("Sounds like osu! Nightcore; off keeps the pitch, like DT.");
+  });
+
+  it("re-plans with NC names when toggled and confirms the NC preview", async () => {
+    const { calls, dialog } = await renderDialog({ rateCopyPlan: (args) => (args["nightcore"] === true ? NC_PLAN : PLAN) });
+    expect(await within(dialog).findByText(PLAN.audioFilename)).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole("switch", { name: "Change pitch (NC)" }));
+    expect(await within(dialog).findByText(NC_PLAN.audioFilename)).toBeInTheDocument();
+    expect(within(dialog).getByText(NC_PLAN.osuFilename)).toBeInTheDocument();
+    expect(dialog).toHaveTextContent(NC_PLAN.version);
+    expect(within(dialog).getByRole("switch", { name: "Change pitch (NC)" })).toBeChecked();
+    expect(argsOf(calls, "rate_copy_plan")).toEqual([
+      { md5: MD5, rateMilli: 1100, nightcore: false },
+      { md5: MD5, rateMilli: 1100, nightcore: true },
+    ]);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Generate" }));
+    expect(argsOf(calls, "rate_copy_confirm")).toEqual([{ previewId: NC_PLAN.previewId }]);
+    await waitFor(() => {
+      expect(within(dialog).queryByRole("switch")).not.toBeInTheDocument();
+    });
   });
 });
 
@@ -211,6 +251,18 @@ describe("RateCopyDialog confirm", () => {
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(/preview expired/);
   });
 
+  it("clears a confirm error when the pitch switch re-plans", async () => {
+    const { dialog } = await renderDialog({
+      rateCopyConfirm: () => mockIpcError("NOT_FOUND", {}, { messageKey: "export.error.preview_unknown" }),
+    });
+    await userEvent.click(await within(dialog).findByRole("button", { name: "Generate" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(/preview expired/);
+    await userEvent.click(within(dialog).getByRole("switch", { name: "Change pitch (NC)" }));
+    await waitFor(() => {
+      expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument();
+    });
+  });
+
   it("names the refusal when confirm reports one", async () => {
     const { dialog } = await renderDialog({
       rateCopyConfirm: () => mockIpcError("INVALID_INPUT", { refusal: "ln_heavy" }, { messageKey: "rate_copy.error.refused" }),
@@ -235,7 +287,7 @@ describe("RateCopyAction", () => {
     const dialog = await screen.findByRole("dialog", { name: "Generate a rate copy" });
     expect(dialog).toHaveTextContent("1.15x");
     await waitFor(() => {
-      expect(argsOf(calls, "rate_copy_plan")).toEqual([{ md5: MD5, rateMilli: 1150 }]);
+      expect(argsOf(calls, "rate_copy_plan")).toEqual([{ md5: MD5, rateMilli: 1150, nightcore: false }]);
     });
   });
 });

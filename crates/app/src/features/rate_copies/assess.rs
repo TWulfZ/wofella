@@ -2,7 +2,7 @@
 //! written. No IO here; the service reads the files and the MSD status.
 
 use wolluf_engine::stage::chart_parse::{ParsedChart, parse_chart};
-use wolluf_engine::{DrillError, RateCopy, note_rows, rate_copy};
+use wolluf_engine::{DrillError, RateCopy, RateCopyParams, note_rows, rate_copy};
 
 use super::dto::refusal;
 use super::params::RateCopiesParams;
@@ -19,6 +19,7 @@ pub(super) struct Assessment {
 pub(super) fn assess(
     osu: &[u8],
     rate_milli: u16,
+    nightcore: bool,
     ln_heavy: Option<bool>,
     params: &RateCopiesParams,
 ) -> Assessment {
@@ -26,7 +27,11 @@ pub(super) fn assess(
         copy: None,
         refusal: Some(id),
     };
-    let copy = match rate_copy(osu, rate_milli, &params.rewrite) {
+    let rewrite = RateCopyParams {
+        nightcore,
+        ..params.rewrite.clone()
+    };
+    let copy = match rate_copy(osu, rate_milli, &rewrite) {
         Ok(copy) => copy,
         Err(e) => return refused(drill_refusal(&e)),
     };
@@ -248,12 +253,18 @@ mod tests {
         rate_milli: u16,
         ln_heavy: Option<bool>,
     ) -> Option<&'static str> {
-        assess(&chart.bytes(), rate_milli, ln_heavy, &params()).refusal
+        assess(&chart.bytes(), rate_milli, false, ln_heavy, &params()).refusal
     }
 
     #[test]
     fn a_plain_chart_gets_its_copy_names() {
-        let a = assess(&OsuChart::k7("T").bytes(), 1150, Some(false), &params());
+        let a = assess(
+            &OsuChart::k7("T").bytes(),
+            1150,
+            false,
+            Some(false),
+            &params(),
+        );
         assert_eq!(a.refusal, None);
         let copy = a.copy.unwrap();
         assert_eq!(copy.version, "Normal 1.15x (138bpm)");
@@ -312,7 +323,7 @@ mod tests {
             refusal_of(&silent, 1100, Some(false)),
             Some(refusal::NO_AUDIO)
         );
-        let refused = assess(&k7.bytes(), 1000, Some(false), &params());
+        let refused = assess(&k7.bytes(), 1000, false, Some(false), &params());
         assert!(refused.copy.is_none());
     }
 

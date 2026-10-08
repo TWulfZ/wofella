@@ -6,7 +6,7 @@
 use std::ffi::OsStr;
 use std::path::Path;
 
-use wolluf_audio::render_rate;
+use wolluf_audio::{AudioParams, render_rate};
 use wolluf_engine::RateCopy;
 use wolluf_source_osu::songs::{SongFileError, read_song_file};
 
@@ -59,6 +59,7 @@ impl Job for RateCopyJob {
         serde_json::json!({
             "md5": self.preview.md5.to_string(),
             "rateMilli": self.preview.rate_milli,
+            "nightcore": self.preview.nightcore,
         })
     }
 
@@ -106,9 +107,13 @@ fn run(ctx: &JobCtx, job: &RateCopyJob) -> Result<JobSummary, AppError> {
                 .extension()
                 .and_then(OsStr::to_str)
                 .unwrap_or_default();
+            let audio = AudioParams {
+                pitch_follows_rate: preview.nightcore,
+                ..params.audio
+            };
             let ogg = ctx
                 .cpu
-                .install(|| render_rate(&source, ext, preview.rate_milli, &params.audio))
+                .install(|| render_rate(&source, ext, preview.rate_milli, &audio))
                 .map_err(|e| AppError::unsupported_format().with_details(e.to_string()))?;
             Some(ogg)
         }

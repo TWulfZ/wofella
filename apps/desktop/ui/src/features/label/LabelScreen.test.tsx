@@ -2008,6 +2008,7 @@ describe("LabelScreen player layout", () => {
         previewId: "01JPREVIEW",
         md5: String(args["md5"]),
         rateMilli: Number(args["rateMilli"]),
+        nightcore: false,
         folder: "/songs/1 Artist - Alpha Song",
         osuFilename: "Artist - Alpha Song (Mapper) [Insane 1.2x].osu",
         version: "Insane 1.2x",
@@ -2025,7 +2026,7 @@ describe("LabelScreen player layout", () => {
     const dialog = await screen.findByRole("dialog", { name: "Generate a rate copy" });
     expect(await within(dialog).findByText("audio 1.20x.ogg")).toBeInTheDocument();
     expect(dialog).toHaveTextContent("Artist - Alpha Song [Insane]");
-    expect(argsOf(calls, "rate_copy_plan")).toEqual([{ md5: ANCHOR_A.md5, rateMilli: 1200 }]);
+    expect(argsOf(calls, "rate_copy_plan")).toEqual([{ md5: ANCHOR_A.md5, rateMilli: 1200, nightcore: false }]);
   });
 
   it("takes a clicked chip to its pattern card, opening the card's axis but leaving focus on the page", async () => {

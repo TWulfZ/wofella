@@ -5,6 +5,10 @@
     "trigger": "Generar copia con rate",
     "rate": "Rate",
     "rateValue": "{{rate}}x",
+    "pitch": {
+      "label": "Cambiar el tono (NC)",
+      "hint": "Suena como el Nightcore de osu!; desactivado mantiene el tono, como DT."
+    },
     "planning": "Revisando el mapa…",
     "field": {
       "chart": "Mapa",

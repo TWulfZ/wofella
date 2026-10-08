@@ -83,6 +83,7 @@ describe("/recommendations preview", () => {
         previewId: "01JPREVIEW",
         md5: String(args["md5"]),
         rateMilli: Number(args["rateMilli"]),
+        nightcore: false,
         folder: "/mnt/e/Games/osu!/Songs/292301 xi - Blue Zenith",
         osuFilename: "xi - Blue Zenith (Skystar) [7K Insane 1.15x (230bpm)].osu",
         version: "7K Insane 1.15x (230bpm)",
@@ -98,7 +99,7 @@ describe("/recommendations preview", () => {
     const dialog = await screen.findByRole("dialog", { name: "Generate a rate copy" });
     expect(dialog).toHaveTextContent("xi - Blue Zenith [7K Insane]");
     expect(await within(dialog).findByText("audio 1.15x.ogg")).toBeInTheDocument();
-    expect(calls.filter((c) => c.cmd === "rate_copy_plan").map((c) => c.args)).toEqual([{ md5: ITEM.md5, rateMilli: 1150 }]);
+    expect(calls.filter((c) => c.cmd === "rate_copy_plan").map((c) => c.args)).toEqual([{ md5: ITEM.md5, rateMilli: 1150, nightcore: false }]);
   });
 
   it("speaks Spanish", async () => {

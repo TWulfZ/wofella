@@ -142,8 +142,11 @@ export const commands = {
 	/**  "Enable rates" on the Recommended page; off until the user turns it on. */
 	settingsGetRecsAnyRate: () => typedError<boolean, IpcError>(__TAURI_INVOKE("settings_get_recs_any_rate")),
 	settingsSetRecsAnyRate: (on: boolean) => typedError<null, IpcError>(__TAURI_INVOKE("settings_set_recs_any_rate", { on })),
-	/**  Previews a rate copy of the chart (ADR 0025); writes nothing. */
-	rateCopyPlan: (md5: string, rateMilli: number) => typedError<RateCopyPlanDto, IpcError>(__TAURI_INVOKE("rate_copy_plan", { md5, rateMilli })),
+	/**
+	 *  Previews a rate copy of the chart (ADR 0025); writes nothing. `nightcore` makes the pitch
+	 *  follow the rate.
+	 */
+	rateCopyPlan: (md5: string, rateMilli: number, nightcore: boolean) => typedError<RateCopyPlanDto, IpcError>(__TAURI_INVOKE("rate_copy_plan", { md5, rateMilli, nightcore })),
 	/**  The only path that mints an `ExportPermit` (D9): starts the `rate_copy` job. */
 	rateCopyConfirm: (previewId: string) => typedError<JobId, IpcError>(__TAURI_INVOKE("rate_copy_confirm", { previewId })),
 };
@@ -788,6 +791,8 @@ export type RateCopyPlanDto = {
 	previewId: string,
 	md5: string,
 	rateMilli: number,
+	/**  The audio's pitch follows the rate (osu!'s NC); `false` keeps it, as DT does. */
+	nightcore: boolean,
 	/**  The set folder the files go into. */
 	folder: string,
 	osuFilename: string,

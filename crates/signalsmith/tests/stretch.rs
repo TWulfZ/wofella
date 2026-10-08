@@ -213,3 +213,103 @@ fn mono_works() {
     let expected = (input.len() as f64 / 1.5).round() as usize;
     assert_eq!(out.len(), expected);
 }
+
+const TONE_HZ: f64 = 440.0;
+
+/// Taylor series after range reduction: the workspace bans platform libm (D3), even in tests.
+fn sine(phase: f64) -> f64 {
+    let tau = 2.0 * std::f64::consts::PI;
+    let x = phase - tau * (phase / tau).round();
+    let (mut term, mut sum) = (x, x);
+    for n in 1..12 {
+        term *= -x * x / f64::from((2 * n) * (2 * n + 1));
+        sum += term;
+    }
+    sum
+}
+
+fn mono_tone(seconds: f64) -> Vec<f32> {
+    let frames = (seconds * f64::from(SR)) as usize;
+    (0..frames)
+        .map(|i| {
+            let t = i as f64 / f64::from(SR);
+            (0.5 * sine(2.0 * std::f64::consts::PI * TONE_HZ * t)) as f32
+        })
+        .collect()
+}
+
+/// Frequency from the rising zero crossings of the middle half, interpolated between samples.
+fn zero_crossing_hz(samples: &[f32]) -> f64 {
+    let (lo, hi) = (samples.len() / 4, samples.len() * 3 / 4);
+    let crossings: Vec<f64> = (lo..hi)
+        .filter(|&i| samples[i] <= 0.0 && samples[i + 1] > 0.0)
+        .map(|i| {
+            let (a, b) = (f64::from(samples[i]), f64::from(samples[i + 1]));
+            i as f64 + a / (a - b)
+        })
+        .collect();
+    assert!(
+        crossings.len() > 10,
+        "too few crossings: {}",
+        crossings.len()
+    );
+    let span = crossings[crossings.len() - 1] - crossings[0];
+    (crossings.len() - 1) as f64 * f64::from(SR) / span
+}
+
+#[test]
+fn transpose_equal_to_rate_raises_the_pitch_like_nightcore() {
+    let input = mono_tone(3.0);
+    let out = Stretcher::new(1, SR)
+        .unwrap()
+        .stretch_transposed(&input, 1.5, 1.5)
+        .unwrap();
+    assert_eq!(out.len(), (input.len() as f64 / 1.5).round() as usize);
+    let hz = zero_crossing_hz(&out);
+    let expected = TONE_HZ * 1.5;
+    assert!(
+        (hz - expected).abs() <= expected * 0.02,
+        "{hz:.2} Hz, expected {expected:.2} Hz"
+    );
+}
+
+#[test]
+fn transpose_one_keeps_the_pitch() {
+    let input = mono_tone(3.0);
+    let mut stretcher = Stretcher::new(1, SR).unwrap();
+    let out = stretcher.stretch_transposed(&input, 1.5, 1.0).unwrap();
+    assert_eq!(out.len(), (input.len() as f64 / 1.5).round() as usize);
+    let hz = zero_crossing_hz(&out);
+    assert!(
+        (hz - TONE_HZ).abs() <= TONE_HZ * 0.02,
+        "{hz:.2} Hz, expected {TONE_HZ:.2} Hz"
+    );
+    assert_eq!(out, stretcher.stretch(&input, 1.5).unwrap());
+}
+
+#[test]
+fn transposed_renders_are_repeatable() {
+    let input = click_track();
+    let mut stretcher = Stretcher::new(CHANNELS, SR).unwrap();
+    let first = stretcher.stretch_transposed(&input, 1.3, 1.3).unwrap();
+    let pitched_down = stretcher.stretch_transposed(&input, 0.8, 0.8).unwrap();
+    let second = stretcher.stretch_transposed(&input, 1.3, 1.3).unwrap();
+    assert_eq!(first, second, "a transpose never leaks into the next call");
+    assert_ne!(first.len(), pitched_down.len());
+    assert_ne!(first, stretcher.stretch(&input, 1.3).unwrap());
+}
+
+#[test]
+fn rejects_bad_transpose_factors() {
+    let mut stretcher = Stretcher::new(2, SR).unwrap();
+    let ok = vec![0.0f32; 2000];
+    for factor in [0.49, 2.01, 0.0, -1.0, f32::NAN, f32::INFINITY] {
+        assert_eq!(
+            stretcher.stretch_transposed(&ok, 1.0, factor).unwrap_err(),
+            StretchError::Transpose,
+            "factor {factor}"
+        );
+    }
+    assert!(stretcher.stretch_transposed(&ok, 1.0, 0.5).is_ok());
+    assert!(stretcher.stretch_transposed(&ok, 1.0, 2.0).is_ok());
+}

@@ -712,3 +712,54 @@ fn inserting_into_a_trailing_section_without_final_break() {
     let out = text(&copy.osu);
     assert!(out.ends_with("\n[Metadata]\nVersion:Insane 1.15x (230bpm)\nTags:wofella"));
 }
+
+fn nightcore() -> RateCopyParams {
+    RateCopyParams {
+        nightcore: true,
+        ..RateCopyParams::default()
+    }
+}
+
+#[test]
+fn nightcore_is_off_by_default() {
+    assert!(!RateCopyParams::default().nightcore);
+}
+
+#[test]
+fn nightcore_copy_names_its_audio_and_version_nc() {
+    let copy = rate_copy(FIXTURE.as_bytes(), 1150, &nightcore()).unwrap();
+    assert_eq!(copy.version, "Insane 1.15x NC (230bpm)");
+    assert_eq!(copy.audio_filename, "audio 1.15x nc.ogg");
+    assert_eq!(copy.source_audio, "audio.mp3");
+    assert_eq!(
+        copy.osu_filename,
+        "Test Artist - Synthetic Song (fixture-mapper) [Insane 1.15x NC (230bpm)].osu"
+    );
+
+    // Only the two lines that name the copy differ from the pitch-kept copy.
+    let dt = text(&rate_copy(FIXTURE.as_bytes(), 1150, &params()).unwrap().osu);
+    let nc = text(&copy.osu);
+    let differing: Vec<(&str, &str)> = dt.lines().zip(nc.lines()).filter(|(a, b)| a != b).collect();
+    assert_eq!(dt.lines().count(), nc.lines().count());
+    assert_eq!(
+        differing,
+        [
+            (
+                "AudioFilename: audio 1.15x.ogg",
+                "AudioFilename: audio 1.15x nc.ogg"
+            ),
+            (
+                "Version:Insane 1.15x (230bpm)",
+                "Version:Insane 1.15x NC (230bpm)"
+            ),
+        ]
+    );
+}
+
+#[test]
+fn nightcore_version_is_inserted_when_absent() {
+    let src = replace_line(FIXTURE, "Version:Insane\n", "");
+    let copy = rate_copy(src.as_bytes(), 850, &nightcore()).unwrap();
+    assert_eq!(copy.version, "0.85x NC (170bpm)");
+    assert!(text(&copy.osu).contains("\nVersion:0.85x NC (170bpm)\n"));
+}

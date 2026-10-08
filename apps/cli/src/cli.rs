@@ -80,6 +80,9 @@ pub(crate) struct RateCopyArgs {
     /// Music rate, e.g. 1.15 (at most three decimals).
     #[arg(long, value_name = "RATE", value_parser = parse_rate_milli)]
     pub(crate) rate: u16,
+    /// Raise or lower the pitch with the rate, like osu!'s NC; by default it is kept, like DT.
+    #[arg(long)]
+    pub(crate) nc: bool,
 }
 
 #[derive(Debug, Args)]

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleAlert, CircleCheck, LoaderCircle, ShieldCheck } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { isFinished, jobKeys, jobsListQuery, type TrayJob, useTrayJob } from "@/features/jobs";
 import { commands, type JobDto, type JobId, type RateCopyPlanDto, type RateCopySummaryDto } from "@/ipc/bindings";
@@ -10,6 +10,7 @@ import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { Progress } from "@/shared/ui/progress";
+import { Switch } from "@/shared/ui/switch";
 import { rateCopyPlanQuery } from "./queries";
 
 export interface RateCopyTarget {
@@ -102,6 +103,25 @@ function Plan({ plan, target }: { plan: RateCopyPlanDto; target: RateCopyTarget 
         <ShieldCheck aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
         <span>{writes === 0 ? t("rateCopy.writesNothing") : t("rateCopy.writes", { count: writes })}</span>
       </p>
+    </div>
+  );
+}
+
+function PitchToggle({ checked, disabled, onChange }: { checked: boolean; disabled: boolean; onChange: (on: boolean) => void }) {
+  const { t } = useTranslation();
+  const switchId = useId();
+  const hintId = useId();
+  return (
+    <div className="flex items-start justify-between gap-6">
+      <div className="flex min-w-0 flex-col gap-1">
+        <label htmlFor={switchId} className="text-sm font-medium">
+          {t("rateCopy.pitch.label")}
+        </label>
+        <p id={hintId} className="text-muted-foreground text-sm">
+          {t("rateCopy.pitch.hint")}
+        </p>
+      </div>
+      <Switch id={switchId} aria-describedby={hintId} checked={checked} disabled={disabled} onCheckedChange={onChange} className="mt-1" />
     </div>
   );
 }
@@ -207,12 +227,13 @@ function Flow({ target, onClose }: { target: RateCopyTarget; onClose: () => void
   const { t } = useTranslation();
   const errorText = useRateCopyErrorText();
   const [jobId, setJobId] = useState<JobId | null>(null);
+  const [nightcore, setNightcore] = useState(false);
   const confirm = useMutation({
     mutationFn: (previewId: string) => call(commands.rateCopyConfirm(previewId)),
     onSuccess: setJobId,
   });
   const plan = useQuery({
-    ...rateCopyPlanQuery(target.md5, target.rateMilli),
+    ...rateCopyPlanQuery(target.md5, target.rateMilli, nightcore),
     // Once confirmed the preview is spent; re-planning would only mint ids nobody can use.
     enabled: jobId === null && !confirm.isPending,
   });
@@ -252,6 +273,15 @@ function Flow({ target, onClose }: { target: RateCopyTarget; onClose: () => void
   const previewId = plan.data?.previewId;
   return (
     <>
+      {jobId === null && <PitchToggle
+          checked={nightcore}
+          disabled={confirm.isPending}
+          onChange={(next) => {
+            // The error belongs to the previous preview; the toggle starts a new one.
+            confirm.reset();
+            setNightcore(next);
+          }}
+        />}
       {body}
       {jobId === null && confirm.isError && (
         <p role="alert" className="bg-destructive/10 text-destructive rounded-lg px-3 py-2">

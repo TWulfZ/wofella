@@ -105,3 +105,38 @@ fn create_refuses_a_refused_plan_with_a_usage_exit() {
     let names: Vec<_> = std::fs::read_dir(&folder).unwrap().collect();
     assert_eq!(names.len(), 2, "only the chart and its audio");
 }
+
+#[test]
+fn nc_flag_plans_and_creates_the_pitch_shifted_copy() {
+    let (env, md5, folder) = synced();
+    let plan = env.json(&["rate-copy", "plan", &md5, "--rate", "1.15", "--nc"]);
+    assert_eq!(plan["refusal"], serde_json::Value::Null, "{plan}");
+    assert_eq!(plan["nightcore"], true, "{plan}");
+    assert_eq!(plan["audioFilename"], "audio 1.15x nc.ogg", "{plan}");
+    assert_eq!(plan["osuFilename"], "a - t (c) [v 1.15x NC (138bpm)].osu");
+
+    let text = env
+        .wolluf()
+        .args(["rate-copy", "plan", &md5, "--rate", "1.15", "--nc"])
+        .output()
+        .unwrap();
+    assert!(
+        String::from_utf8_lossy(&text.stdout).contains("NC (pitch follows the rate)"),
+        "{}",
+        String::from_utf8_lossy(&text.stdout)
+    );
+
+    let created = env.json(&[
+        "rate-copy",
+        "create",
+        &md5,
+        "--rate",
+        "1.15",
+        "--nc",
+        "--yes",
+    ]);
+    assert_eq!(created["job"]["status"], "ok", "{created}");
+    assert!(folder.join("audio 1.15x nc.ogg").is_file());
+    assert!(folder.join("a - t (c) [v 1.15x NC (138bpm)].osu").is_file());
+    assert!(!folder.join("audio 1.15x.ogg").exists());
+}

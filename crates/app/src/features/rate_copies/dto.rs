@@ -10,6 +10,8 @@ pub struct RateCopyPlanDto {
     pub preview_id: String,
     pub md5: String,
     pub rate_milli: u16,
+    /// The audio's pitch follows the rate (osu!'s NC); `false` keeps it, as DT does.
+    pub nightcore: bool,
     /// The set folder the files go into.
     pub folder: String,
     pub osu_filename: String,
@@ -61,6 +63,7 @@ mod tests {
             preview_id: "01J".to_owned(),
             md5: "0".repeat(32),
             rate_milli: 1150,
+            nightcore: false,
             folder: "/s/1 a".to_owned(),
             osu_filename: "a.osu".to_owned(),
             version: "x 1.15x (138bpm)".to_owned(),
@@ -73,7 +76,7 @@ mod tests {
         assert_eq!(
             json,
             format!(
-                r#"{{"previewId":"01J","md5":"{}","rateMilli":1150,"folder":"/s/1 a","osuFilename":"a.osu","version":"x 1.15x (138bpm)","audioFilename":"audio 1.15x.ogg","audioExists":false,"osuExists":true,"refusal":"ln_heavy"}}"#,
+                r#"{{"previewId":"01J","md5":"{}","rateMilli":1150,"nightcore":false,"folder":"/s/1 a","osuFilename":"a.osu","version":"x 1.15x (138bpm)","audioFilename":"audio 1.15x.ogg","audioExists":false,"osuExists":true,"refusal":"ln_heavy"}}"#,
                 "0".repeat(32)
             )
         );

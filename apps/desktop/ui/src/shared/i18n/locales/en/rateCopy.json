@@ -5,6 +5,10 @@
     "trigger": "Generate rate copy",
     "rate": "Rate",
     "rateValue": "{{rate}}x",
+    "pitch": {
+      "label": "Change pitch (NC)",
+      "hint": "Sounds like osu! Nightcore; off keeps the pitch, like DT."
+    },
     "planning": "Checking the chart…",
     "field": {
       "chart": "Chart",

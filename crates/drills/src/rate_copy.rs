@@ -24,6 +24,9 @@ pub struct RateCopyParams {
     pub tag: String,
     pub min_rate_milli: u16,
     pub max_rate_milli: u16,
+    /// NC copy: its audio follows the rate in pitch, so it gets its own audio and version names
+    /// and never shares files with the pitch-kept copy of the same rate (ADR 0025).
+    pub nightcore: bool,
 }
 
 impl Default for RateCopyParams {
@@ -32,6 +35,7 @@ impl Default for RateCopyParams {
             tag: "wofella".to_owned(),
             min_rate_milli: 500,
             max_rate_milli: 2000,
+            nightcore: false,
         }
     }
 }
@@ -76,6 +80,7 @@ pub fn rate_copy(
     let mut rw = Rewriter {
         rate_milli,
         label: &label,
+        nightcore: params.nightcore,
         tag: params.tag.as_bytes(),
         st: Collected::default(),
     };
@@ -139,7 +144,8 @@ pub fn rate_copy(
     if !version.is_empty() {
         version.push(b' ');
     }
-    version.extend_from_slice(format!("{label}x ({bpm}bpm)").as_bytes());
+    let mod_name = if params.nightcore { " NC" } else { "" };
+    version.extend_from_slice(format!("{label}x{mod_name} ({bpm}bpm)").as_bytes());
 
     let mut inserts: Vec<Vec<u8>> = Vec::new();
     match &st.version {
@@ -298,6 +304,7 @@ struct Collected {
 struct Rewriter<'p> {
     rate_milli: u16,
     label: &'p str,
+    nightcore: bool,
     tag: &'p [u8],
     st: Collected,
 }
@@ -370,7 +377,8 @@ impl Rewriter<'_> {
                     return keep;
                 }
                 let base = strip_extension(name);
-                let copy_name = format!("{base} {}x.ogg", self.label);
+                let nc = if self.nightcore { " nc" } else { "" };
+                let copy_name = format!("{base} {}x{nc}.ogg", self.label);
                 let line = kv.with_value(copy_name.as_bytes());
                 self.st.audio = Some((name.to_owned(), copy_name));
                 Some(Some(Cow::Owned(line)))
