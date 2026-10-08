@@ -63,6 +63,25 @@ pub(crate) fn jacks_7k(title: &str) -> Vec<u8> {
     osu_text(7, title, &taps, &[])
 }
 
+/// 64 single taps 120 ms apart over the four columns: rice MinaCalc rates on every grid rate.
+pub(crate) fn rice_4k(title: &str) -> Vec<u8> {
+    let taps: Vec<(u8, i32)> = (0..64)
+        .map(|i| ([0, 2, 1, 3][i % 4], 1_000 + i32::try_from(i).unwrap() * 120))
+        .collect();
+    osu_text(4, title, &taps, &[])
+}
+
+/// Mostly holds: the LN share is far above the difficulty stage's LN cut-off.
+pub(crate) fn ln_heavy_4k(title: &str) -> Vec<u8> {
+    let holds: Vec<(u8, i32, i32)> = (0..16)
+        .map(|i| {
+            let head = 1_000 + i * 300;
+            (u8::try_from(i % 4).unwrap(), head, head + 250)
+        })
+        .collect();
+    osu_text(4, title, &[(0, 6_000), (1, 6_100)], &holds)
+}
+
 /// One osu!.db row and what sits in `Songs/` for it.
 #[derive(Debug, Clone)]
 pub(crate) struct Map {
@@ -107,6 +126,14 @@ impl Map {
 
     pub(crate) fn jacks(title: &str) -> Self {
         Self::new(title, 7, jacks_7k(title))
+    }
+
+    pub(crate) fn rice4(title: &str) -> Self {
+        Self::new(title, 4, rice_4k(title))
+    }
+
+    pub(crate) fn ln4(title: &str) -> Self {
+        Self::new(title, 4, ln_heavy_4k(title))
     }
 
     pub(crate) fn named(mut self, folder: &str, version: &str) -> Self {

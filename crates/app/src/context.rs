@@ -21,6 +21,7 @@ use crate::errors::{AppError, keys};
 use crate::events::AppEvent;
 use crate::features::labeling::LabelingService;
 use crate::features::library::LibraryService;
+use crate::features::meta::MetaService;
 use crate::features::players::PlayersService;
 use crate::features::plays::PlaysService;
 use crate::features::session::{SessionService, SessionState};
@@ -368,6 +369,10 @@ impl AppContext {
 
     pub fn library(&self) -> LibraryService<'_> {
         LibraryService::new(self)
+    }
+
+    pub fn meta(&self) -> MetaService {
+        MetaService
     }
 
     pub fn labeling(&self) -> LabelingService<'_> {

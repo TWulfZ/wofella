@@ -955,6 +955,7 @@ fn chart_facts_drop_name_hints() {
         length_ms: 1,
         nps: 1.0,
         stars: None,
+        msd_overall_centi: None,
         labels: vec![
             label("name_hint", "hint_axis", "7k.regular.jack"),
             label("road_to_gamma", "jinjin_dan", "gamma_entry"),

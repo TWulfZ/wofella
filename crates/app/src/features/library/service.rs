@@ -12,12 +12,14 @@ use wolluf_engine::profile::Registry;
 use wolluf_engine::render::{RenderOpts, RowMark, render_window};
 use wolluf_engine::rows_blob::decode_rows;
 use wolluf_engine::stage::chart_parse::parse_chart;
+use wolluf_engine::stage::difficulty::{CALC_VERSION, SKILLSET_IDS};
 use wolluf_engine::taxonomy;
 use wolluf_engine::window::{TimingLine, chart_window};
 use wolluf_source_osu::song_image::{SongImageError, SongImageLimits, read_song_image};
 use wolluf_source_osu::songs::{
     ChartReadError, SongFileError, read_chart_verified, read_song_file,
 };
+use wolluf_store::repo::cache::chart_msd::{self, ChartMsd, MsdStatusRow};
 use wolluf_store::repo::cache::{
     CatalogChart, ChartLabel, LabelFilter, ParsedSummary, SegmentRow, catalog_chart,
     chart_label as label_repo, chart_parsed, segment as segment_repo,
@@ -27,11 +29,11 @@ use wolluf_store::{Conn, DbHandle, StoreError};
 use super::LibraryParams;
 use super::chart_audio::mime_of;
 use super::dto::{
-    ChartAudioDto, ChartDetailDto, ChartDetailsDto, ChartImageDto, ChartLabelDto, ChartWindowDto,
-    HintAgreementDto, LibraryChartDto, LibraryFilterDto, PatternCountDto, ScaleCountDto,
-    SegmentDto,
+    ChartAudioDto, ChartDetailDto, ChartDetailsDto, ChartImageDto, ChartLabelDto, ChartMsdDto,
+    ChartWindowDto, HintAgreementDto, LibraryChartDto, LibraryFilterDto, MsdRateDto, MsdStatusDto,
+    PatternCountDto, ScaleCountDto, SegmentDto,
 };
-use super::index::{IndexLibraryJob, Keys, Segmenters};
+use super::index::{IndexLibraryJob, Keys, Raters, Segmenters};
 use crate::base64;
 use crate::context::{AppContext, blocking_join_error, catalog_install, songs_dir};
 use crate::errors::{AppError, keys};
@@ -41,6 +43,8 @@ use crate::jobs::dto::{JobDto, JobId};
 const MS_PER_SECOND: f64 = 1_000.0;
 const MS_PER_MINUTE: f64 = 60_000.0;
 const US_PER_SECOND: f64 = 1_000_000.0;
+/// The rate a listing shows MSD at.
+const RATE_1X_MILLI: u16 = 1_000;
 /// Shown for a pattern id the keymode's taxonomy does not know.
 const UNKNOWN_KEY: &str = "?";
 
@@ -147,8 +151,30 @@ impl<'a> LibraryService<'a> {
         let keymode = Keymode::new(filter.keymode).map_err(|_| {
             AppError::invalid_input().with_arg("keymode", filter.keymode.to_string())
         })?;
-        self.blocking(move |dbs, keys| Ok(dbs.cache.read(|c| list(c, keys, keymode, &filter))?))
-            .await
+        self.blocking(move |dbs, keys| {
+            let msd = Raters::current(keys.parse)?.vkey(keymode.columns());
+            Ok(dbs.cache.read(|c| list(c, keys, msd, keymode, &filter))?)
+        })
+        .await
+    }
+
+    /// The chart's MinaCalc skillsets per rate under its keymode's current `difficulty` key;
+    /// `pending` until an index rates it. `NOT_FOUND` for a chart osu!.db does not list or of a
+    /// keymode without a calculator.
+    pub async fn chart_msd(&self, md5: &str) -> Result<ChartMsdDto, AppError> {
+        let md5 = parse_md5(md5)?;
+        self.blocking(move |dbs, keys| {
+            let chart = dbs
+                .cache
+                .read(|c| catalog_chart::get(c, md5))?
+                .ok_or_else(|| not_found(md5))?;
+            let vkey = Raters::current(keys.parse)?
+                .vkey(chart.keymode)
+                .ok_or_else(|| not_found(md5))?;
+            let msd = dbs.cache.read(|c| chart_msd::get(c, md5, vkey))?;
+            Ok(chart_msd_dto(md5, msd))
+        })
+        .await
     }
 
     pub async fn get(&self, md5: &str) -> Result<ChartDetailDto, AppError> {
@@ -493,8 +519,11 @@ impl<'a> LibraryService<'a> {
     /// Every parsed chart of a keymode with its labels, in md5 order: `list` without paging,
     /// read from the stored summaries so no blob is loaded.
     pub async fn overview(&self, keymode: Keymode) -> Result<Vec<LibraryChartDto>, AppError> {
-        self.blocking(move |dbs, keys| Ok(dbs.cache.read(|c| overview(c, keys, keymode))?))
-            .await
+        self.blocking(move |dbs, keys| {
+            let msd = Raters::current(keys.parse)?.vkey(keymode.columns());
+            Ok(dbs.cache.read(|c| overview(c, keys, msd, keymode))?)
+        })
+        .await
     }
 
     /// The chart's keymode and the ascending times of its rows (one per distinct event time).
@@ -742,6 +771,62 @@ fn nps(p: &ParsedSummary) -> f64 {
     }
 }
 
+fn chart_msd_dto(md5: ChartMd5, msd: Option<ChartMsd>) -> ChartMsdDto {
+    let (status, hold_share_permille, rows) = match msd {
+        None => (MsdStatusDto::Pending, 0, Vec::new()),
+        Some(m) => (
+            match m.status {
+                MsdStatusRow::Rated => MsdStatusDto::Rated,
+                MsdStatusRow::LnHeavy => MsdStatusDto::LnHeavy,
+                MsdStatusRow::CalcRejected => MsdStatusDto::CalcRejected,
+            },
+            m.hold_share_permille,
+            m.rows,
+        ),
+    };
+    ChartMsdDto {
+        md5: md5.to_string(),
+        status,
+        hold_share_permille,
+        calc_version: CALC_VERSION,
+        skillsets: SKILLSET_IDS.map(str::to_owned).to_vec(),
+        rates: rows
+            .into_iter()
+            .map(|r| MsdRateDto {
+                rate_milli: r.rate_milli,
+                centi: r.centi.to_vec(),
+            })
+            .collect(),
+    }
+}
+
+/// Overall MSD at 1.0x of the rated charts among `md5s`; `msd` is the `difficulty` key of their
+/// keymode, if it has one.
+fn overall_msd(
+    conn: Conn<'_>,
+    msd: Option<VersionKey>,
+    md5s: &[ChartMd5],
+) -> Result<BTreeMap<ChartMd5, i32>, StoreError> {
+    match msd {
+        Some(vkey) => chart_msd::overall_at(conn, vkey, RATE_1X_MILLI, md5s),
+        None => Ok(BTreeMap::new()),
+    }
+}
+
+/// `page` holds the charts of `md5s`, in the same order.
+fn with_overall_msd(
+    conn: Conn<'_>,
+    msd: Option<VersionKey>,
+    md5s: &[ChartMd5],
+    mut page: Vec<LibraryChartDto>,
+) -> Result<Vec<LibraryChartDto>, StoreError> {
+    let overall = overall_msd(conn, msd, md5s)?;
+    for (dto, md5) in page.iter_mut().zip(md5s) {
+        dto.msd_overall_centi = overall.get(md5).copied();
+    }
+    Ok(page)
+}
+
 fn chart_dto(
     chart: &CatalogChart,
     parsed: &ParsedSummary,
@@ -761,6 +846,7 @@ fn chart_dto(
         nps: nps(parsed),
         // Display only: f32 keeps far more precision than the two decimals shown.
         stars: chart.stars.map(|s| s as f32),
+        msd_overall_centi: None,
         labels: labels.into_iter().map(label_dto).collect(),
     }
 }
@@ -774,6 +860,7 @@ fn matches_text(chart: &CatalogChart, needle: &str) -> bool {
 fn list(
     conn: Conn<'_>,
     keys: Keys,
+    msd: Option<VersionKey>,
     keymode: Keymode,
     filter: &LibraryFilterDto,
 ) -> Result<Vec<LibraryChartDto>, StoreError> {
@@ -810,6 +897,7 @@ fn list(
     let limit = usize::try_from(filter.limit).unwrap_or(usize::MAX);
     let mut skipped = 0_u32;
     let mut page = Vec::new();
+    let mut page_md5s = Vec::new();
     for md5 in candidates {
         if page.len() >= limit {
             break;
@@ -829,13 +917,15 @@ fn list(
         };
         let labels = label_repo::list_for(conn, md5, keys.label)?;
         page.push(chart_dto(chart, &parsed.summary(), labels));
+        page_md5s.push(md5);
     }
-    Ok(page)
+    with_overall_msd(conn, msd, &page_md5s, page)
 }
 
 fn overview(
     conn: Conn<'_>,
     keys: Keys,
+    msd: Option<VersionKey>,
     keymode: Keymode,
 ) -> Result<Vec<LibraryChartDto>, StoreError> {
     let catalog: BTreeMap<ChartMd5, CatalogChart> =
@@ -849,17 +939,16 @@ fn overview(
     {
         labels.entry(md5).or_default().push(label);
     }
-    Ok(chart_parsed::summaries(conn, keys.parse)?
-        .into_iter()
-        .filter_map(|p| {
-            let chart = catalog.get(&p.md5)?;
-            Some(chart_dto(
-                chart,
-                &p,
-                labels.remove(&p.md5).unwrap_or_default(),
-            ))
-        })
-        .collect())
+    let (md5s, page): (Vec<ChartMd5>, Vec<LibraryChartDto>) =
+        chart_parsed::summaries(conn, keys.parse)?
+            .into_iter()
+            .filter_map(|p| {
+                let chart = catalog.get(&p.md5)?;
+                let labels = labels.remove(&p.md5).unwrap_or_default();
+                Some((p.md5, chart_dto(chart, &p, labels)))
+            })
+            .unzip();
+    with_overall_msd(conn, msd, &md5s, page)
 }
 
 fn get(dbs: &Dbs, keys: Keys, md5: ChartMd5) -> Result<ChartDetailDto, AppError> {
@@ -874,13 +963,20 @@ fn get(dbs: &Dbs, keys: Keys, md5: ChartMd5) -> Result<ChartDetailDto, AppError>
         return Err(not_found(md5));
     };
     let segmenters = Segmenters::current()?;
-    let segments = dbs
-        .cache
-        .read(|c| segment_dtos(c, &segmenters, md5, chart.keymode))?;
+    let msd = Raters::current(keys.parse)?.vkey(chart.keymode);
+    let (segments, overall) = dbs.cache.read(|c| {
+        Ok((
+            segment_dtos(c, &segmenters, md5, chart.keymode)?,
+            overall_msd(c, msd, &[md5])?.remove(&md5),
+        ))
+    })?;
     Ok(ChartDetailDto {
         segments,
         diagnostics: diagnostics(dbs, &chart)?,
-        chart: chart_dto(&chart, &parsed.summary(), labels),
+        chart: LibraryChartDto {
+            msd_overall_centi: overall,
+            ..chart_dto(&chart, &parsed.summary(), labels)
+        },
     })
 }
 
@@ -927,11 +1023,12 @@ mod tests {
     use crate::features::library::LibraryParams;
     use crate::features::library::dto::{
         ChartAudioDto, ChartDetailsDto, ChartSpanDto, ChartWindowDto, FingerDto, HandDto,
-        HintAgreementDto, LibraryFilterDto, NoteDto, PatternCountDto, ScaleCountDto, SegmentDto,
-        TimingDto, TimingKindDto,
+        HintAgreementDto, LibraryFilterDto, MsdStatusDto, NoteDto, PatternCountDto, ScaleCountDto,
+        SegmentDto, TimingDto, TimingKindDto,
     };
     use crate::features::library::testkit::{Map, osu_text, osu_text_timed, synced};
     use crate::jobs::dto::{JobKindDto, JobStartDto, JobStatusDto};
+    use wolluf_engine::stage::difficulty::{CALC_VERSION, MinaCalcParams, SKILLSET_IDS};
 
     const REGULAR_DAN: &str = "1 7K Dan Course - Regular Dan Phase";
     const WILD_DAN: &str = "2 Wild 7K Dan Course";
@@ -1779,6 +1876,79 @@ mod tests {
         assert_eq!(rows.notes, [2, 1, 0], "taps and LN heads, never tails");
         let unknown = f.ctx.library().row_times(ChartMd5([0; 16])).await;
         assert_eq!(unknown.unwrap_err().code, ErrorCode::NotFound);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn chart_msd_is_rated_after_indexing_and_pending_without_a_parse() {
+        let rice = Map::rice4("rice four");
+        let lost = Map::rice4("lost four").missing();
+        let ln = Map::ln4("ln four");
+        let (f, _) = synced(&[rice.clone(), lost.clone(), ln.clone()], &[]).await;
+        let svc = f.ctx.library();
+
+        let rated = svc.chart_msd(&rice.md5).await.unwrap();
+        assert_eq!(rated.md5, rice.md5);
+        assert_eq!(rated.status, MsdStatusDto::Rated);
+        assert_eq!(rated.calc_version, CALC_VERSION);
+        assert_eq!(rated.skillsets, SKILLSET_IDS.map(str::to_owned).to_vec());
+        let rates: Vec<u16> = rated.rates.iter().map(|r| r.rate_milli).collect();
+        assert_eq!(rates, MinaCalcParams::default().rate_grid_milli);
+        assert!(rated.rates.iter().all(|r| r.centi.len() == 8));
+        let at = |rate: u16| rated.rates.iter().find(|r| r.rate_milli == rate).unwrap();
+        assert!(at(1_500).centi[0] > at(700).centi[0], "{rated:?}");
+
+        let pending = svc.chart_msd(&lost.md5).await.unwrap();
+        assert_eq!(pending.status, MsdStatusDto::Pending);
+        assert_eq!(pending.hold_share_permille, 0);
+        assert!(pending.rates.is_empty());
+        assert_eq!(pending.skillsets.len(), 8);
+
+        let heavy = svc.chart_msd(&ln.md5).await.unwrap();
+        assert_eq!(heavy.status, MsdStatusDto::LnHeavy);
+        assert!(heavy.rates.is_empty());
+        assert!(heavy.hold_share_permille > 0);
+
+        let unknown = svc.chart_msd(&"0".repeat(32)).await.unwrap_err();
+        assert_eq!(unknown.code, ErrorCode::NotFound);
+        let bad = svc.chart_msd("nope").await.unwrap_err();
+        assert_eq!(bad.code, ErrorCode::InvalidInput);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn listed_charts_carry_overall_msd_at_1x_when_rated() {
+        let rice = Map::rice4("rice four");
+        let ln = Map::ln4("ln four");
+        let (f, _) = synced(&[rice.clone(), ln.clone()], &[]).await;
+        let svc = f.ctx.library();
+        let at_1x = svc
+            .chart_msd(&rice.md5)
+            .await
+            .unwrap()
+            .rates
+            .into_iter()
+            .find(|r| r.rate_milli == 1_000)
+            .unwrap()
+            .centi[0];
+        let listed = svc
+            .list(LibraryFilterDto {
+                keymode: 4,
+                ..filter()
+            })
+            .await
+            .unwrap();
+        let of = |m: &Map| {
+            listed
+                .iter()
+                .find(|c| c.md5 == m.md5)
+                .unwrap()
+                .msd_overall_centi
+        };
+        assert_eq!(of(&rice), Some(at_1x));
+        assert_eq!(of(&ln), None, "unrated");
+        let overview = svc.overview(Keymode::K4).await.unwrap();
+        assert_eq!(overview, listed, "the overview carries it too");
+        let detail = svc.get(&rice.md5).await.unwrap();
+        assert_eq!(detail.chart.msd_overall_centi, Some(at_1x));
     }
 
     #[tokio::test(flavor = "multi_thread")]

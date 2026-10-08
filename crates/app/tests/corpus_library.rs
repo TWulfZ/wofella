@@ -6,7 +6,7 @@
 
 mod common;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -14,10 +14,14 @@ use wolluf_app::clock::SystemClock;
 use wolluf_app::context::{AppContext, AppPaths};
 use wolluf_app::jobs::JobStatusDto;
 use wolluf_app::jobs::dto::{IndexLibrarySummaryDto, JobDto, JobKindDto, JobSummaryDto};
+use wolluf_core::ChartMd5;
 use wolluf_core::Clock;
 use wolluf_engine::labels::source;
+use wolluf_engine::profile::Registry;
+use wolluf_engine::stage::difficulty::{self, MinaCalcParams};
 use wolluf_engine::stage::{chart_label, chart_parse};
 use wolluf_store::open_cache_db;
+use wolluf_store::repo::cache::chart_msd::{self, MsdStatusRow};
 use wolluf_store::repo::cache::{
     ChartLabel, DerivationStatus, catalog_chart, chart_label as label_repo, chart_parsed,
     derivation,
@@ -149,6 +153,16 @@ async fn corpus_library_index() {
     let catalog = cache
         .read(|c| catalog_chart::list_by_keymode(c, K7))
         .unwrap();
+    let profiles = Registry::builtin().profiles();
+    let indexed = cache
+        .read(|c| {
+            let mut n = 0_u64;
+            for p in profiles {
+                n += catalog_chart::list_by_keymode(c, p.keymode.columns())?.len() as u64;
+            }
+            Ok(n)
+        })
+        .unwrap();
     let parsed_rows = cache.read(|c| chart_parsed::count(c, parse_key)).unwrap();
     let parse_memo: Vec<_> = cache
         .read(derivation::list_all)
@@ -156,6 +170,48 @@ async fn corpus_library_index() {
         .into_iter()
         .filter(|d| d.stage == chart_parse::STAGE && d.vkey == parse_key)
         .collect();
+    let parsed_ok: BTreeSet<ChartMd5> = parse_memo
+        .iter()
+        .filter(|d| d.status == DerivationStatus::Ok)
+        .map(|d| d.input_key.parse().unwrap())
+        .collect();
+    let parsed_k7 = catalog
+        .iter()
+        .filter(|c| parsed_ok.contains(&c.md5))
+        .count() as u64;
+    // Report only (ADR 0023 acceptance): a chart without a status row should be one without a
+    // parse, so "parsed, no status" is the number to watch.
+    let msd_report: Vec<String> = cache
+        .read(|c| {
+            let mut lines = Vec::new();
+            for p in profiles.iter().filter(|p| !p.calculators.is_empty()) {
+                let keymode = p.keymode.columns();
+                let vkey =
+                    difficulty::vkey(parse_key, p.keymode, &MinaCalcParams::default()).unwrap();
+                let charts = catalog_chart::list_by_keymode(c, keymode)?;
+                let mut by_status: BTreeMap<&str, u64> = BTreeMap::new();
+                let mut parsed_unrated = 0_u64;
+                for chart in &charts {
+                    match chart_msd::get(c, chart.md5, vkey)? {
+                        Some(m) => *by_status.entry(m.status.as_str()).or_default() += 1,
+                        None => parsed_unrated += u64::from(parsed_ok.contains(&chart.md5)),
+                    }
+                }
+                let with_status: u64 = by_status.values().sum();
+                let rated = by_status
+                    .get(MsdStatusRow::Rated.as_str())
+                    .copied()
+                    .unwrap_or(0);
+                lines.push(format!(
+                    "  {keymode}K catalog {}, status rows {with_status} (rated {rated}, \
+                     {by_status:?}), missing {} of which parsed {parsed_unrated}",
+                    charts.len(),
+                    charts.len() as u64 - with_status,
+                ));
+            }
+            Ok(lines)
+        })
+        .unwrap();
     // Name hints are no audit labels; `corpus_name_hints` measures them.
     let labels: Vec<Vec<ChartLabel>> = cache
         .read(|c| {
@@ -174,13 +230,18 @@ async fn corpus_library_index() {
     let k7 = catalog.len() as u64;
     let parsed = u64::from(first.parsed_new);
     println!(
-        "corpus_library_index: 7K catalog {k7}, parsed {parsed} (audit {AUDIT_UNIQUE_7K} unique \
-         md5 on disk), chart_parsed rows {parsed_rows}"
+        "corpus_library_index: catalog {indexed} over every profile, 7K catalog {k7}, parsed \
+         {parsed} ({parsed_k7} 7K; audit {AUDIT_UNIQUE_7K} unique md5 on disk), chart_parsed \
+         rows {parsed_rows}"
     );
     println!(
         "first index {first_time:?} (sync follow-ups {follow_ups:?}): {first:?}\n\
          second index {second_time:?}: {second:?}"
     );
+    println!("difficulty (MinaCalc) status rows per keymode:");
+    for line in &msd_report {
+        println!("{line}");
+    }
 
     println!("not parsed, by status and reason:");
     let mut by_reason: BTreeMap<(&str, String), (u64, Vec<&str>)> = BTreeMap::new();
@@ -247,21 +308,21 @@ async fn corpus_library_index() {
     );
 
     // The catalog, not the audit, is what the index accounts for, chart by chart.
-    assert_eq!(u64::from(first.charts_total), k7);
+    assert_eq!(u64::from(first.charts_total), indexed);
     let failed = u64::from(first.failed_items);
     let unavailable = u64::from(first.skipped_unavailable);
     assert_eq!(
         parsed + unavailable + failed,
-        k7,
+        indexed,
         "every catalog chart is parsed, unavailable or failed"
     );
     assert_eq!(parsed, parsed_rows);
     assert_eq!(first.skipped_memoized, 0, "a fresh data dir has no memo");
     assert!(
-        share(failed, k7) < MAX_FAILED_SHARE,
-        "{failed} parse failures in {k7} charts"
+        share(failed, indexed) < MAX_FAILED_SHARE,
+        "{failed} parse failures in {indexed} charts"
     );
-    for (what, n) in [("7K catalog", k7), ("parsed", parsed)] {
+    for (what, n) in [("7K catalog", k7), ("7K parsed", parsed_k7)] {
         assert!(
             share(n.abs_diff(AUDIT_UNIQUE_7K), AUDIT_UNIQUE_7K) < CATALOG_DRIFT,
             "{what} {n} vs audit {AUDIT_UNIQUE_7K}"

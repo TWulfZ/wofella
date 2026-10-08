@@ -3,6 +3,7 @@
 
 pub mod labeling;
 pub mod library;
+pub mod meta;
 pub mod players;
 pub mod plays;
 pub mod session;
