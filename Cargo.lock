@@ -6119,7 +6119,6 @@ dependencies = [
  "postcard",
  "proptest",
  "serde",
- "thiserror 2.0.21",
  "wolluf-chart",
  "wolluf-core",
  "wolluf-minacalc",
@@ -6146,6 +6145,7 @@ name = "wolluf-minacalc"
 version = "0.1.0"
 dependencies = [
  "cc",
+ "proptest",
 ]
 
 [[package]]
