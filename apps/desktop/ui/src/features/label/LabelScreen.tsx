@@ -21,6 +21,7 @@ import {
   useLoadedSkin,
 } from "@/features/playfield";
 import { handLayoutQuery, selectedSkinFolder, skinOptions } from "@/features/preferences";
+import { RateCopyAction } from "@/features/rateCopies";
 import type { PatternDefDto } from "@/ipc/bindings";
 import { useErrorText } from "@/ipc/errorText";
 import { cn } from "@/shared/lib/utils";
@@ -909,7 +910,15 @@ function LabelSession(props: LabelSessionProps) {
               origin={entry.origin}
               background={backgroundDataUrl(background.data)}
               details={details.data}
-              difficulty={<ChartMsd md5={entry.window.anchor.md5} />}
+              difficulty={
+                <>
+                  <ChartMsd md5={entry.window.anchor.md5} />
+                  <RateCopyAction
+                    md5={entry.window.anchor.md5}
+                    chartLabel={`${details.data?.artist ?? entry.window.artist} - ${details.data?.title ?? entry.window.title} [${details.data?.version ?? entry.window.version}]`}
+                  />
+                </>
+              }
               nav={nav}
               counters={{
                 labelled: state.counts.labelled,

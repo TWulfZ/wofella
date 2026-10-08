@@ -38,7 +38,7 @@ The user wants recommendations at any rate and wofella to generate the rates (20
 - [x] T2 — `wolluf-drills` rewriter. Route: delegated. Tier: medium. Commit: `feat(drills): rewrite .osu files to a rate`
 - [x] T3 — `wolluf-signalsmith` vendored + `wolluf-audio` decode/stretch/encode. Route: delegated. Tier: high (unsafe, licensing). Commit: `feat(audio): time-stretch chart audio to Ogg Vorbis`
 - [x] T4 — `app::export` + `ExportPermit` + rate-copy service and job; shells; CLI. Route: delegated. Tier: high (D9). Commit: `feat(app): export rate copies behind an ExportPermit`
-- [ ] T5 — UI dialog and wiring from recommendations and chart details. Route: delegated. Tier: medium. Commit: —
+- [x] T5 — UI dialog and wiring from recommendations and chart details. Route: delegated. Tier: medium. Commit: `feat(ui): generate rate copies from recommendations and chart details`
 
 ## Progress
 - 2026-10-08 T1: `cargo check` of the three skeletons ok (vorbis_rs 0.5.6 builds its C with cc, no bindgen); `cargo xtask check-layers` 15 members, 0 violations; `cargo deny check` ok.
@@ -48,5 +48,7 @@ The user wants recommendations at any rate and wofella to generate the rates (20
 
 - 2026-10-09 T4: RED → GREEN (CLI code before its test: no strict RED there). `app::export` is the only writer; `ExportPermit` private, minted by crate-private `confirm(preview_id)`; previews in memory (15 min, 32 max); trybuild compile-fail tests (private fields, private confirm). Refusal codes: unsupported_mode, keysounded, no_audio, audio_missing, malformed, rate_out_of_range, identity_rate, already_rate_copy, ln_heavy, same_column_collision, unsafe_name, already_exists. Job `rate_copy` (stages render_audio, write), reports `nextStep: refresh_osu_then_sync`. Shells `rate_copy_plan`, `rate_copy_confirm`; CLI `wolluf rate-copy plan|create --rate R [--yes]`. Verifier (high, D9): PASS — single writer, no overwrite, traversal closed. One scoped correction: temp + hard-link publish, all-or-nothing per copy, reused audio must be a non-empty Ogg Vorbis file, name limits, storyboard variable expansion, `already_exists`, tests for each. Known residual: a folder swapped for a symlink between the check and the open (needs openat-style IO, new dependency). app+drills 359 passed; parent: `cargo xtask bindings` (+52/−3), desktop+cli 139/139, `tsc` clean, layers and deny ok. Architecture D9 names the create-only exemption.
 
+- 2026-10-09 T5: RED (missing slice + wiring) → GREEN; tsc, lint, vitest 78 files / 1131. `RateCopyDialog` (plan → refusal or Generate → job progress via the tray → success with "press F5 in song select, then sync"), `RateCopyAction` (rate select 0.70–1.50 without 1.00x) in the Label chart details, recommendations card wired; i18n for all 12 refusal codes and the export/job errors. Closing the dialog does not cancel the job. Parent spot check: `tsc --noEmit` ok.
+
 ## Next step
-T5 UI: wire "Generate rate copy" (recommendations `onGenerateRateCopy`, chart details) to plan → confirm dialog → job progress → "press F5 in osu!, then sync"; i18n for refusal codes incl. `already_exists`, `export.error.target_not_a_file`, `rate_copy.error.audio_target_unusable`.
+Close: full gate block; Windows E2E by the pilot (copy appears after F5 and plays in sync; BASS vs Symphonia LAME delay).

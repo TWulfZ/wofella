@@ -2001,6 +2001,33 @@ describe("LabelScreen player layout", () => {
     expect(argsOf(calls, "chart_msd")).toEqual([{ md5: ANCHOR_A.md5 }]);
   });
 
+  it("generates a rate copy of the chart from the header dialog at the picked rate", async () => {
+    const calls = renderScreen(undefined, {
+      jobsList: () => [],
+      rateCopyPlan: (args) => ({
+        previewId: "01JPREVIEW",
+        md5: String(args["md5"]),
+        rateMilli: Number(args["rateMilli"]),
+        folder: "/songs/1 Artist - Alpha Song",
+        osuFilename: "Artist - Alpha Song (Mapper) [Insane 1.2x].osu",
+        version: "Insane 1.2x",
+        audioFilename: "audio 1.20x.ogg",
+        audioExists: false,
+        osuExists: false,
+        refusal: null,
+      }),
+    });
+    await roundLoaded();
+    await userEvent.click(screen.getByRole("button", { name: "Show the full image and map details" }));
+    const details = screen.getByRole("dialog", { name: "Alpha Song" });
+    await userEvent.selectOptions(within(details).getByRole("combobox", { name: "Rate" }), "1200");
+    await userEvent.click(within(details).getByRole("button", { name: "Generate rate copy" }));
+    const dialog = await screen.findByRole("dialog", { name: "Generate a rate copy" });
+    expect(await within(dialog).findByText("audio 1.20x.ogg")).toBeInTheDocument();
+    expect(dialog).toHaveTextContent("Artist - Alpha Song [Insane]");
+    expect(argsOf(calls, "rate_copy_plan")).toEqual([{ md5: ANCHOR_A.md5, rateMilli: 1200 }]);
+  });
+
   it("takes a clicked chip to its pattern card, opening the card's axis but leaving focus on the page", async () => {
     const scrollIntoView = vi.fn();
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { value: scrollIntoView, configurable: true, writable: true });

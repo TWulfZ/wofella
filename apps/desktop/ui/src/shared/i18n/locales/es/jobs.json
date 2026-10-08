@@ -13,6 +13,7 @@
       "refresh_identity": "Actualizar identidad",
       "index_library": "Indexar biblioteca",
       "compute_play_ssr": "Calcular ratings de jugadas",
+      "rate_copy": "Copia con rate",
       "unknown": "Tarea"
     },
     "stage": {
@@ -20,7 +21,9 @@
       "ingest": "Leyendo puntuaciones",
       "archive": "Archivando replays",
       "index": "Indexando mapas",
-      "play_ssr": "Calculando ratings"
+      "play_ssr": "Calculando ratings",
+      "render_audio": "Generando el audio",
+      "write": "Escribiendo archivos"
     },
     "status": {
       "queued": "En cola",

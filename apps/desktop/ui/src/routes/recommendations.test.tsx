@@ -75,6 +75,32 @@ describe("/recommendations preview", () => {
     expect(leafRouteId(router)).toBe("/recommendations");
   });
 
+  it("opens the rate-copy dialog for a card that needs one", async () => {
+    const { calls } = await bootApp("/recommendations", {
+      playersListProfiles: () => [SELF],
+      previewRecs: () => ({ ...RECS, items: [{ ...ITEM, rateMilli: 1150, needsRateCopy: true }] }),
+      rateCopyPlan: (args) => ({
+        previewId: "01JPREVIEW",
+        md5: String(args["md5"]),
+        rateMilli: Number(args["rateMilli"]),
+        folder: "/mnt/e/Games/osu!/Songs/292301 xi - Blue Zenith",
+        osuFilename: "xi - Blue Zenith (Skystar) [7K Insane 1.15x (230bpm)].osu",
+        version: "7K Insane 1.15x (230bpm)",
+        audioFilename: "audio 1.15x.ogg",
+        audioExists: false,
+        osuExists: false,
+        refusal: null,
+      }),
+    });
+    const generate = await screen.findByTestId("generate-rate-copy");
+    expect(generate).toBeEnabled();
+    await userEvent.click(generate);
+    const dialog = await screen.findByRole("dialog", { name: "Generate a rate copy" });
+    expect(dialog).toHaveTextContent("xi - Blue Zenith [7K Insane]");
+    expect(await within(dialog).findByText("audio 1.15x.ogg")).toBeInTheDocument();
+    expect(calls.filter((c) => c.cmd === "rate_copy_plan").map((c) => c.args)).toEqual([{ md5: ITEM.md5, rateMilli: 1150 }]);
+  });
+
   it("speaks Spanish", async () => {
     await i18n.changeLanguage("es");
     await bootRecs();

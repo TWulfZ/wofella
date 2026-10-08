@@ -1,0 +1,61 @@
+{
+  "rateCopy": {
+    "title": "Generar una copia con rate",
+    "description": "wofella añade una dificultad nueva a este rate, con su propio audio reescalado en el tiempo, junto al mapa original.",
+    "trigger": "Generar copia con rate",
+    "rate": "Rate",
+    "rateValue": "{{rate}}x",
+    "planning": "Revisando el mapa…",
+    "field": {
+      "chart": "Mapa",
+      "rate": "Rate",
+      "folder": "Carpeta del set",
+      "osuFile": "Archivo de dificultad",
+      "version": "Dificultad nueva",
+      "audio": "Archivo de audio"
+    },
+    "audio": {
+      "willGenerate": "Se generará",
+      "reused": "Ya existe, se reutiliza"
+    },
+    "osu": {
+      "exists": "Ya existe, no se toca"
+    },
+    "writes_one": "wofella escribe {{count}} archivo nuevo en esta carpeta del set; nunca sobrescribe ni borra nada.",
+    "writes_other": "wofella escribe {{count}} archivos nuevos en esta carpeta del set; nunca sobrescribe ni borra nada.",
+    "writesNothing": "Los dos archivos ya existen; wofella no escribe nada y nunca sobrescribe ni borra nada.",
+    "refused": "No se puede crear esta copia con rate",
+    "refusal": {
+      "unsupported_mode": "Solo los mapas de osu!mania admiten una copia con rate.",
+      "keysounded": "Este mapa usa keysounds o samples del storyboard, que una copia con rate no puede mantener a tiempo.",
+      "no_audio": "Este mapa no tiene archivo de audio.",
+      "audio_missing": "Falta el archivo de audio del mapa en la carpeta del set.",
+      "malformed": "No se pudo leer el archivo .osu del mapa.",
+      "rate_out_of_range": "Este rate está fuera del rango que wofella puede generar.",
+      "identity_rate": "1.00x es el propio mapa; elige otro rate.",
+      "already_rate_copy": "Este mapa ya es una copia con rate; créala desde el mapa original.",
+      "ln_heavy": "Este mapa es casi todo notas largas; todavía no se admiten copias con rate de mapas con muchas LN.",
+      "same_column_collision": "A este rate, dos notas de una misma columna quedarían demasiado juntas; prueba otro rate.",
+      "unsafe_name": "Los nombres de archivo de la copia no serían válidos para osu! stable.",
+      "already_exists": "Ya existe un archivo con el nombre de la copia y no es esta copia con rate; wofella nunca lo sobrescribe.",
+      "unknown": "No se puede crear esta copia con rate."
+    },
+    "progress": {
+      "title": "Generando…",
+      "queued": "Esperando para empezar…"
+    },
+    "done": "Listo. En osu!, pulsa F5 en la selección de canciones para ver la dificultad nueva y luego sincroniza wofella.",
+    "file": {
+      "written": "Escrito",
+      "kept": "Ya estaba, no se toca",
+      "reused": "Reutilizado"
+    },
+    "failed": "La copia con rate falló.",
+    "cancelled": "La copia con rate se canceló.",
+    "actions": {
+      "generate": "Generar",
+      "cancel": "Cancelar",
+      "close": "Cerrar"
+    }
+  }
+}

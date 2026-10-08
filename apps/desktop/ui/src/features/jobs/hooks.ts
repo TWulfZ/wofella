@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
-import type { JobKindDto } from "@/ipc/bindings";
+import type { JobId, JobKindDto } from "@/ipc/bindings";
 import { jobsListQuery } from "./queries";
 import { isFinished, type TrayJob } from "./store";
 import { jobTrayStore, useJobTray } from "./tray";
@@ -27,4 +27,9 @@ export function useRunningJobKinds(): ReadonlySet<JobKindDto> {
     }
     return kinds;
   }, [jobs]);
+}
+
+/** One job's live state from the progress events; undefined until its first event (or hydration) arrives. */
+export function useTrayJob(id: JobId | null): TrayJob | undefined {
+  return useJobTray((s) => (id === null ? undefined : s.jobs.get(id)));
 }

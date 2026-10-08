@@ -1,0 +1,8 @@
+{
+  "rate_copy": {
+    "error": {
+      "refused": "No se puede crear esta copia con rate ({{refusal}}).",
+      "audio_target_unusable": "El nombre del archivo de audio para este rate lo ocupa algo que wofella no puede reutilizar (una carpeta, un enlace o un archivo que no es Ogg Vorbis), así que no se escribió nada."
+    }
+  }
+}
