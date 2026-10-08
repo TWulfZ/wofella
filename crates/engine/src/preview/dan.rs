@@ -1,12 +1,40 @@
 //! 4K dan estimate from Overall MSD (ADR 0024). The table is fitted by wolluf on public dan
-//! courses (`docs/research/07-k4-dan-from-msd.md`); the default stays empty until it lands.
+//! courses (`docs/research/07-k4-dan-from-msd.md`).
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DanTable4k {
     /// Ascending by lower bound: `(label, lower_bound_centi)`.
     pub dans: Vec<(String, i32)>,
     /// The last dan has no upper neighbour, so its thirds use this span.
     pub top_span_centi: i32,
+}
+
+/// Fitted by `research/scripts/dan4k/fit.py` on MinaCalc 527 Overall at 1.0x; method, data and
+/// leave-one-pack-out error in `docs/research/07-k4-dan-from-msd.md`.
+impl Default for DanTable4k {
+    fn default() -> Self {
+        let dans = [
+            ("1st", 1320),
+            ("2nd", 1517),
+            ("3rd", 1616),
+            ("4th", 1748),
+            ("5th", 1965),
+            ("6th", 2143),
+            ("7th", 2278),
+            ("8th", 2378),
+            ("9th", 2488),
+            ("10th", 2582),
+            ("Alpha", 2681),
+            ("Beta", 2770),
+            ("Gamma", 2919),
+            ("Delta", 3137),
+            ("Epsilon", 3361),
+        ];
+        Self {
+            dans: dans.iter().map(|&(l, b)| (l.to_owned(), b)).collect(),
+            top_span_centi: 224,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,10 +132,34 @@ mod tests {
     }
 
     #[test]
-    fn the_default_table_is_empty_and_estimates_nothing() {
+    fn the_default_table_runs_from_1st_to_epsilon_with_rising_bounds() {
         let t = DanTable4k::default();
-        assert!(t.dans.is_empty());
-        assert_eq!(t.estimate(3000), None);
+        let labels: Vec<&str> = t.dans.iter().map(|(l, _)| l.as_str()).collect();
+        assert_eq!(
+            labels,
+            [
+                "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th", "10th", "Alpha",
+                "Beta", "Gamma", "Delta", "Epsilon"
+            ]
+        );
+        assert!(t.dans.windows(2).all(|w| w[0].1 < w[1].1));
+        assert!(t.top_span_centi > 0);
         assert_eq!(DanThird::High.as_str(), "high");
+    }
+
+    #[test]
+    fn the_default_table_maps_msd_to_the_fitted_dans() {
+        let est = |overall: i32| {
+            DanTable4k::default()
+                .estimate(overall)
+                .map(|e| (e.label, e.third, e.margin_centi))
+        };
+        assert_eq!(est(1319), None);
+        assert_eq!(est(1320), Some(("1st".into(), DanThird::Low, 0)));
+        assert_eq!(est(2600), Some(("10th".into(), DanThird::Low, 18)));
+        assert_eq!(est(2650), Some(("10th".into(), DanThird::High, 68)));
+        assert_eq!(est(3000), Some(("Gamma".into(), DanThird::Mid, 81)));
+        assert_eq!(est(3500), Some(("Epsilon".into(), DanThird::Mid, 139)));
+        assert_eq!(est(4000), Some(("Epsilon".into(), DanThird::High, 639)));
     }
 }

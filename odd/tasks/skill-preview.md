@@ -59,7 +59,7 @@ IPC (camelCase): `preview_skill(entry: EntryRefDto, keymode: u8, merge: Option<M
 ## Tasks
 - [x] T1 — ADR 0024 (NOTICE entries land with the T2 port). Route: inline. Tier: high (exception to binding docs). Commit: `docs: accept an uncalibrated skill and recs preview (ADR 0024)`
 - [x] T2 — Engine `preview` domain + `play_ssr` stage. Route: delegated (engine owner). Tier: high (stage-lock). Commit: `feat(engine): rate players with an Etterna-style preview`
-- [ ] T3 — 4K dan table: fit script, research note, params values. Route: delegated (research owner, after T2 and a corpus index). Tier: medium. Commit: —
+- [x] T3 — 4K dan table: fit script, research note, params values. Route: delegated (research owner, after T2 and a corpus index). Tier: medium. Commit: `feat(engine): estimate 4K dans from MinaCalc Overall`
 - [x] T4 — Store `play_ssr`. Route: delegated (store owner, parallel with T2). Tier: medium. Commit: `feat(store): cache per-play SSRs for the preview`
 - [ ] T5 — App: `ComputePlaySsr` job (follow-up of IndexLibrary and SyncPlays), `preview_skill` service. Route: delegated (app owner). Tier: high (identity scope). Commit: —
 - [ ] T6 — Shells: `preview_skill` command, CLI `wolluf preview skill`. Route: delegated. Tier: medium. Commit: —
@@ -70,5 +70,8 @@ IPC (camelCase): `preview_skill(entry: EntryRefDto, keymode: u8, merge: Option<M
 - 2026-10-08 T4: RED (11 failing) → GREEN, 102 store tests.
 - 2026-10-08 Verifier (high): FAIL — Simpson missing step width (σ=20 gave 0.9930 vs 0.9777), miss→50 could lower the goal, symmetric windows, `family_key` panic on U+3000/U+00A0, exclusion params outside the vkey, erf A2 1 ulp off, tie-break by index, loose store invariant, v6 dev caches without `play_ssr`. One scoped correction: all fixed; the Gaussian σ fit still failed the monotone proptest (EZ OD0 1850 MAX/18 miss: 9639 → 9632), so the goal became per-judgement uniform-mean Wife3 (ADR 0024 amended). Reference plays at OD 8: 1500/400/50/15/5/10 → 9396, 500/400/150/60/20/15 → 7333 (scipy match). `cargo nextest run -p wolluf-engine -p wolluf-store` 264 passed; stage-lock ok, lock diff adds only `play_ssr`; clippy ok. NOTICE entry for the rating/Wife3 ports added by the parent.
 
+- 2026-10-08 T3: RED (`ModuleNotFoundError: fit`; 2 Rust tests on the empty table) → GREEN (13 Python, 178 engine). Fit on 263 charts from 13 public packs (REFORM courses, 10th/Alpha practice, Journey β→γ, Gamma++); leave-one-pack-out exact 36.9%, within one dan 78.3%, MAE 0.886 (median-dan baseline MAE 1.829); jack packs read ~1 dan low, stamina/tech high. Table: 1st 13.20 … 10th 25.82, α 26.81, β 27.70, γ 29.19, δ 31.37, ε 33.61. Verifier caveat (carried into T5): the table maps a chart's Overall; a player's Overall is the mean of 7 skillset ratings, so the player-level input and its validation belong to T5. `stage-lock --check` clean.
+- 2026-10-08 T5 attempt 1 failed: the parent's SendMessage to the workflow's T5 agent resumed a second instance; both edited `crates/app` and both stopped. Leftovers (duplicate `ComputePlaySsrSummaryDto`, `JobStageDto::{PlaySsr,Ssr}`, `is_pending`/`is_active`, `difficulty_keys`, `preview/{dto,params,testkit}.rs` without `job`/`service`) leave `wolluf-app` uncompilable. Shell `preview_skill` and CLI `wolluf preview skill` are written against `ctx.preview().skill(EntryRef, Keymode, Option<MergeMode>)` but unverified in the tree.
+
 ## Next step
-Commit T1, then T2 ∥ T4.
+Redo T5 with one owner: reconcile the leftovers, finish job + service, then verify the shells in the tree.
