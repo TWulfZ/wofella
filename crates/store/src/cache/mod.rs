@@ -8,7 +8,7 @@ use crate::db::{DbHandle, DbKind};
 use crate::error::StoreError;
 
 /// Bumped on any schema change; a mismatch deletes and rebuilds the file.
-pub const CACHE_SCHEMA_VERSION: u32 = 5;
+pub const CACHE_SCHEMA_VERSION: u32 = 6;
 
 const SCHEMA: &str = include_str!("schema.sql");
 const SIDECARS: [&str; 2] = ["-wal", "-shm"];
@@ -83,10 +83,12 @@ mod tests {
     use super::*;
     use crate::user::open_user_db;
 
-    const TABLES: [&str; 8] = [
+    const TABLES: [&str; 10] = [
         "alias_stats",
         "catalog_chart",
         "chart_label",
+        "chart_msd",
+        "chart_msd_status",
         "chart_parsed",
         "derivation",
         "item_failure",
@@ -188,8 +190,8 @@ mod tests {
         assert_eq!(tables(&db), TABLES);
         assert_eq!(job_rows(&db), 0);
         drop(db);
-        assert_eq!(CACHE_SCHEMA_VERSION, 5);
-        assert_eq!(version(&path), 5);
+        assert_eq!(CACHE_SCHEMA_VERSION, 6);
+        assert_eq!(version(&path), 6);
     }
 
     #[test]
