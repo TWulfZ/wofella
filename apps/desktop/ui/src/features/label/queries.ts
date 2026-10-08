@@ -22,15 +22,16 @@ export const labelKeys = {
   all: qk("labels"),
   taxonomy: (keymode: number) => qk("labels", "taxonomy", keymode),
   /** Keyed by the hand layout they are drawn with, so a changed preference fetches them again. */
-  patternExamples: (keymode: number, layoutId: string | null) => qk("labels", "patternExamples", keymode, layoutId),
+  patternExamples: (keymode: number, layoutId: string | null) => qk("library", "patternExamples", keymode, layoutId),
   stats: () => qk("labels", "stats"),
   chartWindow: (md5: string, fromMs: number, toMs: number, layoutId: string | null) =>
-    qk("labels", "chartWindow", md5, fromMs, toMs, layoutId),
+    qk("library", "chartWindow", md5, fromMs, toMs, layoutId),
   chartAudio: (md5: string) => qk("labels", "chartAudio", md5),
   chartBackground: (md5: string) => qk("labels", "chartBackground", md5),
-  chartDetails: (md5: string) => qk("labels", "chartDetails", md5),
-  chartTimelines: () => qk("labels", "chartTimeline"),
-  chartTimeline: (keymode: number, md5: string, buckets: number) => qk("labels", "chartTimeline", keymode, md5, buckets),
+  chartDetails: (md5: string) => qk("library", "chartDetails", md5),
+  /** Gold spans over the parsed notes: label saves invalidate it explicitly, and DataChanged{library} by its root. */
+  chartTimelines: () => qk("library", "chartTimeline"),
+  chartTimeline: (keymode: number, md5: string, buckets: number) => qk("library", "chartTimeline", keymode, md5, buckets),
 };
 
 export const SKIN_QUERY_PARAMS = {
