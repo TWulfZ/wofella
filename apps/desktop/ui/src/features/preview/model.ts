@@ -1,5 +1,5 @@
 // Presentation geometry only: every rating comes from the DTO, the UI derives no domain value (§8).
-import type { AliasRowDto, MergeModeDto, ProfileEntryDto, SkillPreviewDto, TrendPointDto } from "@/ipc/bindings";
+import type { AliasRowDto, MergeModeDto, ProfileEntryDto, RecItemDto, SkillPreviewDto, TrendPointDto } from "@/ipc/bindings";
 
 export const PREVIEW_PARAMS = {
   /** Radar rings every 5 rating points, a scale players already read Etterna ratings on. */
@@ -112,4 +112,44 @@ export function trendGeometry(
       y: span === 0 ? height / 2 : height - ((p.overallCenti - lo) / span) * height,
     })),
   };
+}
+
+export type RateKind = "nm" | "ht" | "dt" | "custom";
+
+/** The rates osu! stable plays without a rate copy: its NM, HT and DT mods. */
+const STABLE_MOD_RATES: Readonly<Record<number, RateKind>> = { 1000: "nm", 750: "ht", 1500: "dt" };
+
+export function rateKind(rateMilli: number): RateKind {
+  return STABLE_MOD_RATES[rateMilli] ?? "custom";
+}
+
+/** Pasted into song select, this narrows the list to the one difficulty. */
+export function osuSearchText(item: Pick<RecItemDto, "artist" | "title" | "version">): string {
+  return `${item.artist} - ${item.title} [${item.version}]`;
+}
+
+export function bandFraction(valueCenti: number, [lo, hi]: readonly [number, number]): number {
+  if (hi <= lo) {
+    return 0.5;
+  }
+  return Math.min(1, Math.max(0, (valueCenti - lo) / (hi - lo)));
+}
+
+/** MinaCalc's skillsets after Overall, in `SKILLSET_IDS` order. */
+const SKILLSET_IDS = ["stream", "jumpstream", "handstream", "stamina", "jackspeed", "chordjack", "technical"] as const;
+
+// Mirrors the engine's `RecsParams::for_keymode` excluded focus on 7K; the DTO does not carry it, and a pick there
+// would read MinaCalc's ≈0.18 Technical (ADR 0024).
+const UNPICKABLE_BY_KEYMODE: Readonly<Record<number, readonly string[]>> = {
+  7: ["stamina", "technical"],
+};
+
+export interface PickableSkillset {
+  id: string;
+  enabled: boolean;
+}
+
+export function pickableSkillsets(keymode: number): PickableSkillset[] {
+  const off = new Set(UNPICKABLE_BY_KEYMODE[keymode] ?? []);
+  return SKILLSET_IDS.map((id) => ({ id, enabled: !off.has(id) }));
 }

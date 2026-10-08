@@ -15,6 +15,7 @@ import {
   writeSkinChoice,
 } from "@/features/preferences";
 import { DEFAULT_KEYMODE } from "@/features/players";
+import { RecsAnyRateCard } from "@/features/preview";
 import { setupStatusQuery } from "@/features/setup";
 import { commands } from "@/ipc/bindings";
 import { call } from "@/ipc/client";
@@ -138,6 +139,7 @@ function SettingsPage() {
           </CardContent>
         </Card>
         <SessionNotifyCard />
+        <RecsAnyRateCard />
         <HandLayoutCard keymode={keymode} />
         <DefaultSkinSection keymode={keymode} />
       </div>

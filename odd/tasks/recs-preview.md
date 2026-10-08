@@ -41,12 +41,14 @@ IPC (camelCase): `preview_recs(entry: EntryRefDto, keymode: u8, mode: "deficit" 
 ## Tasks
 - [x] T1 — Engine `preview::recs`. Route: delegated (engine owner). Tier: medium. Commit: `feat(engine): recommend charts in a band around the preview rating`
 - [x] T2 — App recs service + setting; shells (`preview_recs`, CLI `wolluf preview recs`); bindings. Route: delegated (app, desktop, cli owners). Tier: medium. Commit: `feat(app): serve band recommendations and the any-rate setting`
-- [ ] T3 — UI Recommended page + Settings toggle. Route: delegated (ui owner). Tier: medium. Commit: —
+- [x] T3 — UI Recommended page + Settings toggle. Route: delegated (ui owner). Tier: medium. Commit: `feat(ui): show the recommendations preview and the any-rate switch`
 
 ## Progress
 - 2026-10-08 T1: RED (13 of 14 failing on an empty `recommend`) → GREEN, engine 177/177 at the time; clippy and fmt clean. `RecsParams` has no `Default`: `RecsParams::for_keymode(k)` (7K excludes stamina and technical, others stamina) because `recommend` takes no keymode.
 
 - 2026-10-09 T2: RED (compile on the new API) → GREEN. `PreviewService::recs(entry, keymode, mode, skillset, merge, any_rate_override)` (None reads `preview.recs.any_rate`); candidates from `chart_msd::rated_at` per allowed rate; one pick per `set:<id>` or `folder:<folder>`; Separate uses the first resolved scope; recs start the SSR job when plays are pending. Tauri `preview_recs`, `settings_get/set_recs_any_rate`; CLI `wolluf preview recs [--keys N] [--mode …] [--skillset ID] [--any-rate]`. Verifier (ADR 0005): scope isolation holds; one scoped correction (job-wiring test through the public API, single override entry point, `PreviewServiceParams.recs` injection, stronger Separate test; each new test proven by a deliberate break). app+cli+desktop 418/419 before bindings; parent: `cargo xtask bindings`, desktop tests, `tsc --noEmit`. Played is per chart md5 (a rate copy does not mark its original), as contracted.
+
+- 2026-10-09 T3: RED (11 failing + missing page) → GREEN; tsc, lint, vitest 77 files / 1105. Deficit/Push/Skillset tabs (7K Technical/Stamina disabled; the list is a UI copy of `RecsParams::for_keymode`), rate badges, localized reasons, "Copy name", "Generate rate copy" via `onGenerateRateCopy` (wired by rate-copies T5), states, Settings "Recommendations" switch. `features/roadmap` removed. Parent spot check: `tsc --noEmit` ok.
 
 ## Next step
 Start after `skill-preview` T5 (the rating service it reads).

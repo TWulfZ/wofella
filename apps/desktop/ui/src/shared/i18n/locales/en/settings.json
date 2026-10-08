@@ -46,6 +46,11 @@
     "sessionNotify": {
       "title": "Notify when a song ends",
       "description": "When a map you finished joins this session's list waiting for a label, wofella's taskbar entry flashes. No system notification is sent."
+    },
+    "recs": {
+      "title": "Recommendations",
+      "anyRate": "Enable any rate (0.70–1.50x)",
+      "anyRateHelp": "Without it, recommendations use NM, HT, DT and rate copies already in your library. With it, any rate can be suggested and wofella can generate the copy."
     }
   }
 }

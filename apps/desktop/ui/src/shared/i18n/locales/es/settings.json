@@ -46,6 +46,11 @@
     "sessionNotify": {
       "title": "Avisar cuando termine una canción",
       "description": "Cuando un mapa que terminaste entra en la lista de esta sesión a la espera de etiqueta, el icono de wofella en la barra de tareas parpadea. No se envía ninguna notificación del sistema."
+    },
+    "recs": {
+      "title": "Recomendaciones",
+      "anyRate": "Permitir cualquier rate (0,70–1,50x)",
+      "anyRateHelp": "Sin esto, las recomendaciones usan NM, HT, DT y las copias con rate que ya tienes en tu biblioteca. Con esto, se puede sugerir cualquier rate y wofella puede generar la copia."
     }
   }
 }

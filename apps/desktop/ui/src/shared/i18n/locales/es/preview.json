@@ -113,6 +113,73 @@
     "scope": {
       "noName": "(sin nombre)",
       "unnamed": "Nombres {{n}} de {{total}}"
+    },
+    "recs": {
+      "title": "Recomendados",
+      "subtitle": "Mapas y rates alrededor de tu rating, para lo que elijas entrenar",
+      "method": {
+        "title": "Cómo se eligen",
+        "band": "Cada sugerencia es un mapa y un rate cuya dificultad de MinaCalc en el skillset elegido cae en una banda alrededor de tu rating, que llega más arriba que abajo.",
+        "dominant": "Ese skillset tiene que ser el que domina el mapa, para que la sugerencia entrene lo que dice.",
+        "sets": "Recibes un mapa por beatmapset, primero los que no has jugado.",
+        "rates": "Los rates son NM, HT, DT y las copias con rate que ya tienes en tu biblioteca. Si activas cualquier rate en Ajustes, se puede sugerir cualquier rate de 0,70x a 1,50x.",
+        "differ": "Sin calibrar: tu rating y la dificultad de los mapas salen de MinaCalc y todavía no se han contrastado con jugadores reales de osu!."
+      },
+      "modes": {
+        "label": "Modo de recomendación",
+        "deficit": "Déficit",
+        "deficitHint": "Tu skillset más débil",
+        "push": "Subir",
+        "pushHint": "Overall, un paso por encima",
+        "skillset": "Skillset",
+        "skillsetHint": "El que elijas"
+      },
+      "picker": {
+        "label": "Skillset",
+        "notMeasured": "No se mide en {{keymode}}K"
+      },
+      "summary": {
+        "focus": "Foco: {{skillset}}",
+        "rating": "Tu rating {{value}}",
+        "band": "Banda {{lo}}–{{hi}}"
+      },
+      "list": "Mapas recomendados",
+      "by": "mapeado por {{creator}}",
+      "rate": {
+        "label": "Rate",
+        "ht": "HT",
+        "dt": "DT"
+      },
+      "rateCopy": "Copia con rate",
+      "played": "Jugado",
+      "unplayed": "Nuevo",
+      "focusValue": "{{skillset}} {{value}}",
+      "reasons": {
+        "label": "Por qué",
+        "deficit": "Entrena {{skillset}}, tu skillset más débil ({{rating}})",
+        "push": "Apunta un poco por encima de tu Overall, alrededor de {{target}}",
+        "skillset": "{{skillset}} domina este mapa",
+        "unplayed": "Todavía no lo has jugado",
+        "played_before": "Ya lo has jugado",
+        "needs_rate_copy": "Necesita una copia a {{rate}}: osu! stable solo juega NM, HT y DT",
+        "rate_copy_in_library": "Usa una copia con rate que ya está en tu biblioteca"
+      },
+      "actions": {
+        "copyName": "Copiar nombre",
+        "copied": "Copiado",
+        "copyFailed": "No se pudo copiar",
+        "generate": "Generar copia con rate",
+        "generateSoon": "Llega en esta beta"
+      },
+      "state": {
+        "noRatingTitle": "Todavía no tienes rating de {{keymode}}K",
+        "noRatingBody": "Las sugerencias se sitúan alrededor de tu rating. Juega y completa algunos mapas de {{keymode}}K en osu! stable y luego sincroniza desde Inicio.",
+        "emptyTitle": "Ningún mapa cae en tu banda todavía",
+        "emptyBody": "Ningún mapa de tu biblioteca tiene {{skillset}} entre {{lo}} y {{hi}} como skillset dominante en los rates disponibles.",
+        "emptyAnyRate": "Si activas cualquier rate, wofella puede sugerir todos los rates de 0,70x a 1,50x.",
+        "enableAnyRate": "Activar cualquier rate en Ajustes",
+        "emptyTryMode": "Prueba otro modo o añade a tu biblioteca mapas de esta dificultad."
+      }
     }
   }
 }

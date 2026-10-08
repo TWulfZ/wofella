@@ -54,6 +54,8 @@ export async function bootApp(path: string, handlers: CommandHandlers = {}, plug
       sessionPlays: () => ({ startedAt: "2026-10-07T10:00:00.000Z", plays: [] }),
       // Settings always shows the opt-in switch; it is off until the user turns it on.
       settingsGetSessionNotify: () => false,
+      // And the recommendations card, off until the user widens the rates.
+      settingsGetRecsAnyRate: () => false,
       // The header's keymode switcher asks on every route; two keymodes so it shows.
       metaKeymodes: () => TEST_KEYMODES,
       chartMsd: (args) => ({ ...TEST_CHART_MSD, md5: String(args["md5"]) }),

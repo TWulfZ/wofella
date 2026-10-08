@@ -1,5 +1,5 @@
 // Test-only typed fixtures: pilot-shaped preview DTOs (ADR 0024) and the entries that resolve to them.
-import type { AliasListDto, ProfileEntryDto, SkillPreviewDto } from "@/ipc/bindings";
+import type { AliasListDto, ProfileEntryDto, RecItemDto, RecsPreviewDto, SkillPreviewDto } from "@/ipc/bindings";
 
 export const SELF_4K: ProfileEntryDto = {
   ref: { kind: "profile", id: 1 },
@@ -124,6 +124,108 @@ export function ready7k(overrides: Partial<SkillPreviewDto> = {}): SkillPreviewD
       { id: "technical", ratingCenti: 18 },
     ],
     dan: null,
+    warnings: ["uncalibrated", "goal_estimated", "k7_less_validated", "ln_not_measured", "k7_tech_not_measured"],
+    ...overrides,
+  });
+}
+
+export function recItem(overrides: Partial<RecItemDto> = {}): RecItemDto {
+  return {
+    md5: "f".repeat(32),
+    title: "Blue Zenith",
+    artist: "xi",
+    version: "4K Insane",
+    creator: "Skystar",
+    setId: 292301,
+    beatmapId: 658127,
+    rateMilli: 1500,
+    needsRateCopy: false,
+    isRateCopy: false,
+    focusCenti: 2180,
+    overallCenti: 2140,
+    skillsetsCenti: [2050, 2180, 2010, 1990, 1920, 1880, 2001],
+    played: false,
+    reasons: [
+      { code: "deficit", args: ["jumpstream", "2105"] },
+      { code: "unplayed", args: [] },
+    ],
+    ...overrides,
+  };
+}
+
+/** One pick per rate kind: DT, HT (played), a custom rate that needs a copy, and a rate copy already in the library. */
+export function recs4k(overrides: Partial<RecsPreviewDto> = {}): RecsPreviewDto {
+  return {
+    scopeHash: "a".repeat(64),
+    keymode: 4,
+    method: "preview.band_recs@1",
+    calcVersion: 527,
+    state: "ready",
+    anyRate: true,
+    focus: "jumpstream",
+    ratingCenti: 2105,
+    bandCenti: [2055, 2255],
+    items: [
+      recItem(),
+      recItem({
+        md5: "1".repeat(32),
+        title: "Galaxy Collapse",
+        artist: "Kurokotei",
+        version: "Hard",
+        creator: "Arch",
+        rateMilli: 750,
+        focusCenti: 2090,
+        overallCenti: 2001,
+        played: true,
+        reasons: [
+          { code: "deficit", args: ["jumpstream", "2105"] },
+          { code: "played_before", args: [] },
+        ],
+      }),
+      recItem({
+        md5: "2".repeat(32),
+        title: "Freedom Dive",
+        artist: "xi",
+        version: "Another",
+        creator: "Nakagawa-Kanon",
+        rateMilli: 1150,
+        needsRateCopy: true,
+        focusCenti: 2230,
+        overallCenti: 2190,
+        reasons: [
+          { code: "deficit", args: ["jumpstream", "2105"] },
+          { code: "unplayed", args: [] },
+          { code: "needs_rate_copy", args: ["1150"] },
+        ],
+      }),
+      recItem({
+        md5: "3".repeat(32),
+        title: "Kamui",
+        artist: "Camellia",
+        version: "Insane 1.2x",
+        creator: "Evening",
+        rateMilli: 1000,
+        isRateCopy: true,
+        focusCenti: 2120,
+        overallCenti: 2080,
+        reasons: [
+          { code: "deficit", args: ["jumpstream", "2105"] },
+          { code: "unplayed", args: [] },
+          { code: "rate_copy_in_library", args: [] },
+        ],
+      }),
+    ],
+    warnings: ["uncalibrated", "goal_estimated"],
+    ...overrides,
+  };
+}
+
+export function recs7k(overrides: Partial<RecsPreviewDto> = {}): RecsPreviewDto {
+  return recs4k({
+    keymode: 7,
+    focus: "stream",
+    ratingCenti: 2190,
+    bandCenti: [2140, 2340],
     warnings: ["uncalibrated", "goal_estimated", "k7_less_validated", "ln_not_measured", "k7_tech_not_measured"],
     ...overrides,
   });

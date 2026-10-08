@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { ProfileEntryDto } from "@/ipc/bindings";
-import { ALIASES, ready4k, ready7k, SELF_4K } from "./fixtures";
-import { axisAngle, radarScale, scopeAliasNames, trendGeometry, unmeasuredSkillsets } from "./model";
+import { ALIASES, ready4k, ready7k, recItem, SELF_4K } from "./fixtures";
+import {
+  axisAngle,
+  bandFraction,
+  osuSearchText,
+  pickableSkillsets,
+  radarScale,
+  rateKind,
+  scopeAliasNames,
+  trendGeometry,
+  unmeasuredSkillsets,
+} from "./model";
 
 describe("radarScale", () => {
   it("brackets the measured values on whole 5-point rings, with one ring of headroom below", () => {
@@ -71,5 +81,46 @@ describe("trendGeometry", () => {
   it("centres a single month and a flat series", () => {
     const g = trendGeometry([{ month: "2026-09", overallCenti: 2000 }], { width: 200, height: 100 });
     expect(g.points).toEqual([{ x: 100, y: 50, month: "2026-09", overallCenti: 2000 }]);
+  });
+});
+
+describe("rateKind", () => {
+  it("names stable's own mod rates and leaves the rest custom", () => {
+    expect(rateKind(1000)).toBe("nm");
+    expect(rateKind(750)).toBe("ht");
+    expect(rateKind(1500)).toBe("dt");
+    expect(rateKind(1150)).toBe("custom");
+    expect(rateKind(700)).toBe("custom");
+  });
+});
+
+describe("osuSearchText", () => {
+  it("writes artist, title and version the way osu!'s song select search reads them", () => {
+    expect(osuSearchText(recItem())).toBe("xi - Blue Zenith [4K Insane]");
+  });
+});
+
+describe("bandFraction", () => {
+  it("places a value inside the band and clamps outside it", () => {
+    expect(bandFraction(2155, [2055, 2255])).toBeCloseTo(0.5);
+    expect(bandFraction(2000, [2055, 2255])).toBe(0);
+    expect(bandFraction(2400, [2055, 2255])).toBe(1);
+    expect(bandFraction(2100, [2100, 2100])).toBe(0.5);
+  });
+});
+
+describe("pickableSkillsets", () => {
+  it("lists the seven skillsets and disables 7K Technical and Stamina only", () => {
+    expect(pickableSkillsets(7).filter((s) => !s.enabled).map((s) => s.id)).toEqual(["stamina", "technical"]);
+    expect(pickableSkillsets(4).every((s) => s.enabled)).toBe(true);
+    expect(pickableSkillsets(4).map((s) => s.id)).toEqual([
+      "stream",
+      "jumpstream",
+      "handstream",
+      "stamina",
+      "jackspeed",
+      "chordjack",
+      "technical",
+    ]);
   });
 });

@@ -518,3 +518,63 @@ describe("/settings/ session notification", () => {
     expect(await screen.findByRole("switch", { name: "Avisar cuando termine una canción" })).toBeInTheDocument();
   });
 });
+
+describe("/settings/ recommendations", () => {
+  function anyRateHandlers(initial: boolean): CommandHandlers {
+    let current = initial;
+    return {
+      ...handLayoutHandlers(),
+      settingsGetRecsAnyRate: () => current,
+      settingsSetRecsAnyRate: (args) => {
+        current = Boolean(args["on"]);
+        return null;
+      },
+    };
+  }
+
+  async function anyRateSwitch(): Promise<HTMLElement> {
+    const toggle = await screen.findByRole("switch", { name: "Enable any rate (0.70–1.50x)" });
+    await waitFor(() => {
+      expect(toggle).toBeEnabled();
+    });
+    return toggle;
+  }
+
+  it("is off by default, sits in a Recommendations card and explains both settings", async () => {
+    await bootApp("/settings/", anyRateHandlers(false));
+    const toggle = await anyRateSwitch();
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(within(screen.getByRole("region", { name: "Recommendations" })).getByRole("switch")).toBe(toggle);
+    expect(toggle).toHaveAccessibleDescription(/NM, HT, DT and rate copies already in your library/);
+    expect(toggle).toHaveAccessibleDescription(/any rate can be suggested and wofella can generate the copy/);
+  });
+
+  it("stores each change and refreshes the recommendations", async () => {
+    const { calls, queryClient } = await bootApp("/settings/", anyRateHandlers(false));
+    const recsKey = ["preview", "recs", "probe"];
+    queryClient.setQueryData(recsKey, "cached");
+    const toggle = await anyRateSwitch();
+    await userEvent.click(toggle);
+    await waitFor(() => {
+      expect(toggle).toHaveAttribute("aria-checked", "true");
+    });
+    expect(queryClient.getQueryState(recsKey)?.isInvalidated).toBe(true);
+    await userEvent.click(toggle);
+    await waitFor(() => {
+      expect(toggle).toHaveAttribute("aria-checked", "false");
+    });
+    expect(calls.filter((c) => c.cmd === "settings_set_recs_any_rate").map((c) => c.args)).toEqual([{ on: true }, { on: false }]);
+  });
+
+  it("shows a stored on", async () => {
+    await bootApp("/settings/", anyRateHandlers(true));
+    expect(await anyRateSwitch()).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("speaks Spanish", async () => {
+    await i18n.changeLanguage("es");
+    await bootApp("/settings/", anyRateHandlers(false));
+    expect(await screen.findByRole("switch", { name: "Permitir cualquier rate (0,70–1,50x)" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Recomendaciones" })).toBeInTheDocument();
+  });
+});

@@ -113,6 +113,73 @@
     "scope": {
       "noName": "(no name)",
       "unnamed": "Names {{n}} of {{total}}"
+    },
+    "recs": {
+      "title": "Recommended",
+      "subtitle": "Charts and rates around your rating, for what you choose to train",
+      "method": {
+        "title": "How these picks are made",
+        "band": "Each pick is a chart and rate whose MinaCalc difficulty on the focus skillset sits in a band around your rating, reaching further above it than below.",
+        "dominant": "The focus skillset has to be the one that leads the chart, so a pick trains what it says.",
+        "sets": "You get one map per beatmap set, with charts you have not played first.",
+        "rates": "Rates are NM, HT, DT and rate copies already in your library. With any rate enabled in Settings, every rate from 0.70x to 1.50x can be suggested.",
+        "differ": "Uncalibrated: your rating and the chart difficulty come from MinaCalc and are not checked against real osu! players yet."
+      },
+      "modes": {
+        "label": "Recommendation mode",
+        "deficit": "Deficit",
+        "deficitHint": "Your weakest skillset",
+        "push": "Push",
+        "pushHint": "Overall, a step above you",
+        "skillset": "Skillset",
+        "skillsetHint": "One you choose"
+      },
+      "picker": {
+        "label": "Skillset",
+        "notMeasured": "Not measured on {{keymode}}K"
+      },
+      "summary": {
+        "focus": "Focus: {{skillset}}",
+        "rating": "Your rating {{value}}",
+        "band": "Band {{lo}}–{{hi}}"
+      },
+      "list": "Recommended charts",
+      "by": "mapped by {{creator}}",
+      "rate": {
+        "label": "Rate",
+        "ht": "HT",
+        "dt": "DT"
+      },
+      "rateCopy": "Rate copy",
+      "played": "Played",
+      "unplayed": "New",
+      "focusValue": "{{skillset}} {{value}}",
+      "reasons": {
+        "label": "Why this pick",
+        "deficit": "Trains {{skillset}}, your weakest skillset ({{rating}})",
+        "push": "Aims a little above your Overall, around {{target}}",
+        "skillset": "{{skillset}} leads this chart",
+        "unplayed": "You have not played it yet",
+        "played_before": "You have played it before",
+        "needs_rate_copy": "Needs a {{rate}} rate copy: osu! stable only plays NM, HT and DT",
+        "rate_copy_in_library": "Uses a rate copy already in your library"
+      },
+      "actions": {
+        "copyName": "Copy name",
+        "copied": "Copied",
+        "copyFailed": "Could not copy",
+        "generate": "Generate rate copy",
+        "generateSoon": "Coming in this beta"
+      },
+      "state": {
+        "noRatingTitle": "No {{keymode}}K rating yet",
+        "noRatingBody": "Picks sit around your rating. Play and complete some {{keymode}}K charts in osu! stable, then sync from Home.",
+        "emptyTitle": "No chart fits your band yet",
+        "emptyBody": "No chart in your library has {{skillset}} between {{lo}} and {{hi}} as its leading skillset at the rates in use.",
+        "emptyAnyRate": "Enabling any rate lets wofella suggest every rate from 0.70x to 1.50x.",
+        "enableAnyRate": "Enable any rate in Settings",
+        "emptyTryMode": "Try another mode, or add charts around this difficulty to your library."
+      }
     }
   }
 }
