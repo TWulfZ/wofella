@@ -57,9 +57,53 @@ pub(crate) enum Command {
     /// Uncalibrated previews (ADR 0024); `wolluf library index` refreshes their per-play cache.
     #[command(subcommand)]
     Preview(PreviewCmd),
+    /// Rate-edited copies written into the chart's set folder (ADR 0025).
+    #[command(subcommand)]
+    RateCopy(RateCopyCmd),
     /// `.osg` spike tools: they only read the given files and never open the data dir.
     #[command(subcommand)]
     Osg(OsgCmd),
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum RateCopyCmd {
+    /// Names, existing files and refusals of a copy; writes nothing.
+    Plan(RateCopyArgs),
+    /// Plan, confirm and wait for the job that writes the copy's .osu and .ogg.
+    Create(RateCopyCreateArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct RateCopyArgs {
+    #[arg(value_name = "MD5")]
+    pub(crate) md5: String,
+    /// Music rate, e.g. 1.15 (at most three decimals).
+    #[arg(long, value_name = "RATE", value_parser = parse_rate_milli)]
+    pub(crate) rate: u16,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct RateCopyCreateArgs {
+    #[command(flatten)]
+    pub(crate) copy: RateCopyArgs,
+    /// Confirms the write into the osu! Songs folder.
+    #[arg(long, required = true)]
+    pub(crate) yes: bool,
+}
+
+/// `1.15` -> 1150, in decimal so no float rounding picks the neighbouring rate.
+fn parse_rate_milli(text: &str) -> Result<u16, String> {
+    const MILLI_DIGITS: usize = 3;
+    let invalid = || format!("`{text}` is not a rate like 1.15");
+    let (int, frac) = text.trim().split_once('.').unwrap_or((text.trim(), ""));
+    if int.is_empty()
+        || frac.len() > MILLI_DIGITS
+        || !int.bytes().chain(frac.bytes()).all(|b| b.is_ascii_digit())
+    {
+        return Err(invalid());
+    }
+    let digits = format!("{int}{frac:0<MILLI_DIGITS$}");
+    digits.parse::<u16>().map_err(|_| invalid())
 }
 
 #[derive(Debug, Subcommand)]
@@ -398,6 +442,32 @@ mod tests {
 
     use super::*;
     use crate::exit;
+
+    #[test]
+    fn rates_parse_in_thousandths() {
+        for (text, milli) in [("1.15", 1150), ("1", 1000), ("0.7", 700), ("1.155", 1155)] {
+            assert_eq!(parse_rate_milli(text), Ok(milli), "{text}");
+        }
+        for bad in ["", ".5", "1.1555", "1,15", "-1.1", "x", "70.000"] {
+            assert!(parse_rate_milli(bad).is_err(), "{bad:?}");
+        }
+        let cli = Cli::try_parse_from(["wolluf", "rate-copy", "create", "abc", "--rate", "1.1"]);
+        assert!(cli.is_err(), "create needs --yes");
+        let cli = Cli::try_parse_from([
+            "wolluf",
+            "rate-copy",
+            "create",
+            "abc",
+            "--rate",
+            "1.1",
+            "--yes",
+        ])
+        .unwrap();
+        let Command::RateCopy(RateCopyCmd::Create(args)) = cli.command else {
+            panic!("{:?}", cli.command);
+        };
+        assert_eq!((args.copy.md5.as_str(), args.copy.rate), ("abc", 1100));
+    }
 
     #[test]
     fn clap_tree_is_consistent() {

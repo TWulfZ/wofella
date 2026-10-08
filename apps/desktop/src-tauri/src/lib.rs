@@ -91,6 +91,8 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::preview::preview_recs,
             commands::settings::settings_get_recs_any_rate,
             commands::settings::settings_set_recs_any_rate,
+            commands::rate_copy::rate_copy_plan,
+            commands::rate_copy::rate_copy_confirm,
         ])
 }
 

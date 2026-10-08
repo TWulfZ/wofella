@@ -661,7 +661,8 @@ proptest! {
             (-5_000i64..=900_000, prop::option::of(1i64..=20_000)),
             1..40,
         ),
-        rate in 700u16..=1500,
+        // 1.00x is refused as `IdentityRate`.
+        rate in (700u16..=1500).prop_filter("identity rate", |r| *r != 1000),
     ) {
         let objects: Vec<(i64, Option<i64>)> =
             objects.into_iter().map(|(t, len)| (t, len.map(|l| t + l))).collect();

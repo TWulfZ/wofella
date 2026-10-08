@@ -24,10 +24,12 @@ ADR 0008 keeps F4 audio permissive and in-process.
 - **`wolluf-signalsmith` (domain leaf)** vendors Signalsmith Stretch (MIT, header-only C++) behind a hand-written C ABI built with `cc`, the same pattern as `wolluf-minacalc` (ADR 0022). It is the second crate allowed `unsafe`. The crates.io wrapper is rejected because its build runs bindgen and needs libclang.
 - **`wolluf-audio` (adapter)** decodes with Symphonia (MPL-2.0), time-stretches with pitch kept (the DT default; the pilot keeps pitch on 76% of its copies), and encodes Ogg Vorbis at quality ≈ 0.5 with `vorbis_rs` (BSD-3). There is no mp3 encoder, no ffmpeg and no SoundTouch. New edge: `wolluf-audio → wolluf-signalsmith`. `wolluf-engine → wolluf-drills` and `wolluf-app → wolluf-audio` already exist in `xtask/layers.toml`.
 - **Writing into osu!** goes only through `app::export`, behind an `ExportPermit` minted by `confirm(preview_id)` after the user confirms a recorded preview (D9).
-  - Files land in the source set folder and never overwrite: an existing audio file at that rate is reused, and an existing `.osu` of the same name is skipped.
+  - Files land in the source set folder and never overwrite. Each file is written to a temp name, synced, then published with a hard link (never replaces; a reserve-then-rename fallback for volumes without hard links). A copy is all-or-nothing: if the `.osu` cannot be published, the audio this run published is removed.
+  - An existing audio file at that rate is reused only if it is a non-empty Ogg Vorbis file; an existing `.osu` of the same name is skipped only if it names that audio, otherwise the plan refuses with `already_exists`.
+  - Names are refused (`unsafe_name`) when they hold path separators, `:<>"|?*`, exceed 255 bytes, or make a path over 259 characters (stable is a .NET Framework app).
   - No collection.db write, so the osu!-not-running check and the backup are not needed.
   - The user presses F5 in song select. Copies are found again by the `wofella` tag, so no manifest table is needed.
-- Keysounded maps (storyboard `Sample` layers) and LN-heavy maps are refused for now.
+- Keysounded maps (`Sample` events in the `.osu` or any `.osb` of the set, after storyboard `[Variables]` expansion; custom hit-sample files) and LN-heavy maps are refused for now.
 
 ## Alternatives considered
 - ffmpeg sidecar: GPL redistribution and source-offer duties (research 03 l.193).

@@ -19,12 +19,14 @@ use wolluf_store::{DbHandle, InstanceLock, Vault, open_cache_db, open_user_db};
 
 use crate::errors::{AppError, keys};
 use crate::events::AppEvent;
+use crate::export::{ExportParams, PreviewRegistry};
 use crate::features::labeling::LabelingService;
 use crate::features::library::LibraryService;
 use crate::features::meta::MetaService;
 use crate::features::players::PlayersService;
 use crate::features::plays::PlaysService;
 use crate::features::preview::PreviewService;
+use crate::features::rate_copies::{RateCopiesService, RateCopyPreview};
 use crate::features::session::{SessionService, SessionState};
 use crate::features::settings::SettingsService;
 use crate::features::setup::SetupService;
@@ -236,6 +238,7 @@ pub struct AppContext {
     events: broadcast::Sender<AppEvent>,
     install: InstallRow,
     session: SessionState,
+    rate_copy_previews: PreviewRegistry<RateCopyPreview>,
     runtime: RuntimeHolder,
     // Taken after the stores close, so a reopen never races a closing writer.
     lock: Mutex<Option<InstanceLock>>,
@@ -322,6 +325,7 @@ impl AppContext {
             events,
             install,
             session,
+            rate_copy_previews: PreviewRegistry::new(ExportParams::default()),
             runtime,
             lock: Mutex::new(Some(lock)),
         })
@@ -386,6 +390,14 @@ impl AppContext {
 
     pub fn preview(&self) -> PreviewService<'_> {
         PreviewService::new(self)
+    }
+
+    pub fn rate_copies(&self) -> RateCopiesService<'_> {
+        RateCopiesService::new(self)
+    }
+
+    pub(crate) fn rate_copy_previews(&self) -> &PreviewRegistry<RateCopyPreview> {
+        &self.rate_copy_previews
     }
 
     pub fn skins(&self) -> SkinsService<'_> {

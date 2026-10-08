@@ -40,6 +40,10 @@ fn result(job: &JobDto) -> String {
             "computed={} counted={} failed={}",
             s.computed, s.counted, s.failed_items
         ),
+        Some(JobSummaryDto::RateCopy(s)) => format!(
+            "osu_written={} audio_written={} failed={}",
+            s.osu_written, s.audio_written, s.failed_items
+        ),
         None => "-".to_owned(),
     }
 }

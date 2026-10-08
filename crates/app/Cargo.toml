@@ -14,6 +14,7 @@ wolluf-core.workspace = true
 wolluf-store.workspace = true
 wolluf-source-osu.workspace = true
 wolluf-engine.workspace = true
+wolluf-audio.workspace = true
 thiserror.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -40,3 +41,5 @@ wolluf-source-osu = { workspace = true, features = ["test-support"] }
 tempfile.workspace = true
 # Fixture charts need their real md5 so the Songs verification path is exercised.
 md-5.workspace = true
+# D9: `ExportPermit` cannot be built outside `app::export`.
+trybuild.workspace = true

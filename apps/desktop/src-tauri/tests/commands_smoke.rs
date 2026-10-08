@@ -836,4 +836,26 @@ mod commands_smoke {
         assert_eq!(err["code"], json!("INVALID_INPUT"), "{err}");
         assert_eq!(err["messageKey"], json!("players.error.duplicate_alias"));
     }
+
+    /// The fixture set holds no audio file, so the plan is refused and records nothing.
+    #[test]
+    fn rate_copy_commands_answer() {
+        let h = synced();
+        let plan = h
+            .invoke(
+                "rate_copy_plan",
+                json!({ "md5": CHART_MD5, "rateMilli": 1100 }),
+            )
+            .unwrap();
+        assert_eq!(plan["md5"], json!(CHART_MD5), "{plan}");
+        assert_eq!(plan["rateMilli"], json!(1100), "{plan}");
+        assert_eq!(plan["audioFilename"], json!("audio 1.10x.ogg"), "{plan}");
+        assert_eq!(plan["refusal"], json!("audio_missing"), "{plan}");
+        assert_eq!(plan["previewId"], json!(""), "{plan}");
+        let err = h
+            .invoke("rate_copy_confirm", json!({ "previewId": "01JNOPREVIEW" }))
+            .unwrap_err();
+        assert_eq!(err["code"], json!("NOT_FOUND"), "{err}");
+        assert_eq!(err["messageKey"], json!("export.error.preview_unknown"));
+    }
 }

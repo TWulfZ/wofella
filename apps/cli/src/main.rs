@@ -89,6 +89,12 @@ async fn run(cli: Cli) -> anyhow::Result<ExitCode> {
             })
             .await
         }
+        Command::RateCopy(cmd) => {
+            with_session(data_dir, log, async |ctx| {
+                cmd::rate_copy::run(ctx, cmd, json).await
+            })
+            .await
+        }
         Command::Label(args) => {
             with_session(data_dir, log, async |ctx| {
                 cmd::label::run(ctx, args, json).await

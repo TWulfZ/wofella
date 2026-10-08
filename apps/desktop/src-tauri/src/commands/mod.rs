@@ -7,6 +7,7 @@ pub mod label;
 pub mod meta;
 pub mod players;
 pub mod preview;
+pub mod rate_copy;
 pub mod session;
 pub mod settings;
 pub mod setup;

@@ -142,6 +142,10 @@ export const commands = {
 	/**  "Enable rates" on the Recommended page; off until the user turns it on. */
 	settingsGetRecsAnyRate: () => typedError<boolean, IpcError>(__TAURI_INVOKE("settings_get_recs_any_rate")),
 	settingsSetRecsAnyRate: (on: boolean) => typedError<null, IpcError>(__TAURI_INVOKE("settings_set_recs_any_rate", { on })),
+	/**  Previews a rate copy of the chart (ADR 0025); writes nothing. */
+	rateCopyPlan: (md5: string, rateMilli: number) => typedError<RateCopyPlanDto, IpcError>(__TAURI_INVOKE("rate_copy_plan", { md5, rateMilli })),
+	/**  The only path that mints an `ExportPermit` (D9): starts the `rate_copy` job. */
+	rateCopyConfirm: (previewId: string) => typedError<JobId, IpcError>(__TAURI_INVOKE("rate_copy_confirm", { previewId })),
 };
 
 /** Events */
@@ -492,7 +496,9 @@ export type JobKindDto = "sync_plays" |
 /**  Chained after every `SyncPlays` too, and startable on its own. */
 "index_library" | 
 /**  Chained after every `IndexLibrary` (ADR 0024); never started from IPC. */
-"compute_play_ssr";
+"compute_play_ssr" | 
+/**  Started only by `rate_copy_confirm`, which mints its `ExportPermit` (ADR 0025, D9). */
+"rate_copy";
 
 export type JobProgress = JobProgressDto;
 
@@ -508,7 +514,11 @@ export type JobProgressDto = {
 /**  The step a job is in; the UI localises it (`jobs.stage.<id>`). */
 export type JobStageDto = "catalog" | "ingest" | "archive" | "index" | 
 /**  Per-play goals and SSRs for the skill preview. */
-"play_ssr";
+"play_ssr" | 
+/**  Time-stretching the chart audio for a rate copy. */
+"render_audio" | 
+/**  Writing a rate copy's files into the set folder. */
+"write";
 
 /**  `JobService::start` input, tagged on `kind` (spec 003 IPC). */
 export type JobStartDto = {
@@ -520,7 +530,7 @@ export type JobStartDto = {
 export type JobStatusDto = "queued" | "running" | "ok" | "failed" | "cancelled";
 
 /**  Per-kind result, stored as `job_run.summary_json`. */
-export type JobSummaryDto = { kind: "sync_plays"; counters: SyncSummaryDto } | { kind: "index_library"; counters: IndexLibrarySummaryDto } | { kind: "compute_play_ssr"; counters: ComputePlaySsrSummaryDto };
+export type JobSummaryDto = { kind: "sync_plays"; counters: SyncSummaryDto } | { kind: "index_library"; counters: IndexLibrarySummaryDto } | { kind: "compute_play_ssr"; counters: ComputePlaySsrSummaryDto } | { kind: "rate_copy"; counters: RateCopySummaryDto };
 
 export type KeymodeCountDto = {
 	/**  `k1`..`k16` or `unknown` (`KeymodeBucket`). */
@@ -768,6 +778,45 @@ export type RandomRequestDto = {
 	round: number,
 	windowMs: number | null,
 	exclude: AnchorDto[],
+};
+
+/**
+ *  What `confirm(previewId)` would write. `refusal` set means nothing can be written: the
+ *  `previewId` is then empty and the names are empty when the chart could not be rewritten.
+ */
+export type RateCopyPlanDto = {
+	previewId: string,
+	md5: string,
+	rateMilli: number,
+	/**  The set folder the files go into. */
+	folder: string,
+	osuFilename: string,
+	version: string,
+	audioFilename: string,
+	/**  Reused instead of rendered again. */
+	audioExists: boolean,
+	/**  Skipped: an existing file is never replaced. */
+	osuExists: boolean,
+	/**  One of [`refusal`]; the UI localises it (`rateCopy.refusal.<id>`). */
+	refusal: string | null,
+};
+
+/**  What a rate copy wrote into its set folder (ADR 0025). */
+export type RateCopySummaryDto = {
+	folder: string,
+	osuFilename: string,
+	audioFilename: string,
+	/**  `false`: a file of that name was already there and was left untouched. */
+	osuWritten: boolean,
+	audioWritten: boolean,
+	/**  The audio at that rate already existed, so none was rendered. */
+	audioReused: boolean,
+	/**
+	 *  [`RATE_COPY_NEXT_STEP`]: the catalog comes from osu!.db, so the copy shows up in wofella
+	 *  only after stable refreshes (F5 in song select) and a sync reads it back.
+	 */
+	nextStep: string,
+	failedItems: number,
 };
 
 export type ReasonDto = {
