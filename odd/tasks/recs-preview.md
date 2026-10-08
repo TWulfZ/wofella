@@ -50,5 +50,7 @@ IPC (camelCase): `preview_recs(entry: EntryRefDto, keymode: u8, mode: "deficit" 
 
 - 2026-10-09 T3: RED (11 failing + missing page) → GREEN; tsc, lint, vitest 77 files / 1105. Deficit/Push/Skillset tabs (7K Technical/Stamina disabled; the list is a UI copy of `RecsParams::for_keymode`), rate badges, localized reasons, "Copy name", "Generate rate copy" via `onGenerateRateCopy` (wired by rate-copies T5), states, Settings "Recommendations" switch. `features/roadmap` removed. Parent spot check: `tsc --noEmit` ok.
 
+- 2026-10-09 Pilot (copy of the pilot data dir, release CLI): 4K Deficit focus jackspeed ≈17.33, band 16.83–18.83, 9 picks (jack-dominant, unplayed, NM/HT/DT or rate copies); 4K Push ≈22.86, band 22.86–24.86, 30 picks; 7K Deficit jackspeed ≈15.09, 30 picks (mostly BMS conversions); `--any-rate` adds grid rates (1.15x, 0.80x, …) flagged `needs_rate_copy`. Caveat for testers: MinaCalc JackSpeed sits below the other skillsets for most players, so Deficit tends to pick jackspeed.
+
 ## Next step
 Start after `skill-preview` T5 (the rating service it reads).
