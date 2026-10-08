@@ -17,7 +17,8 @@
       "progress": "Progress",
       "withPending_one": "{{label}}, {{count}} map to label",
       "withPending_other": "{{label}}, {{count}} maps to label",
-      "sections": "{{label}} pages"
+      "sections": "{{label}} pages",
+      "labellingUnavailable": "Pattern labelling for {{keymode}}K is coming; MinaCalc ratings are available"
     },
     "home": {
       "title": "Home",

@@ -31,6 +31,8 @@ interface AnswerBarProps {
   onRemove: (id: string) => void;
   onNoPattern: () => void;
   onFlag: (toggle: FlagToggle) => void;
+  /** Whether the active hand layout has a thumb column, so the thumb-side flags apply. */
+  thumbs: boolean;
   onSave: () => void;
   onClear: () => void;
   onUndo: () => void;
@@ -151,6 +153,7 @@ export function AnswerBar(props: AnswerBarProps) {
     onRemove,
     onNoPattern,
     onFlag,
+    thumbs,
     onSave,
     onClear,
     onUndo,
@@ -350,7 +353,7 @@ export function AnswerBar(props: AnswerBarProps) {
               {t("label.answer.noPattern")}
             </Button>
             <span aria-hidden className="bg-border mx-1 h-5 w-px" />
-            <FlagToggles flags={answer} disabled={locked} onToggle={onFlag} />
+            <FlagToggles flags={answer} disabled={locked} thumbs={thumbs} onToggle={onFlag} />
             {mode.kind !== "saved" && (
               <Button
                 type="button"

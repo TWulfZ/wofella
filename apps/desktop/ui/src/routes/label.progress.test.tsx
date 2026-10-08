@@ -139,6 +139,31 @@ describe("/label/progress", () => {
     expect(within(labelGroup()).queryByTestId("pending-badge")).not.toBeInTheDocument();
   });
 
+  it("disables the Label entry for a keymode without patterns and says why", async () => {
+    await bootApp("/?keymode=4", progressHandlers());
+    await waitFor(() => {
+      expect(labelGroup()).toHaveAttribute("aria-disabled", "true");
+    });
+    expect(labelGroup()).toHaveAccessibleDescription("Pattern labelling for 4K is coming; MinaCalc ratings are available");
+    await userEvent.click(labelGroup());
+    expect(labelGroup()).toHaveAttribute("aria-expanded", "false");
+    expect(within(nav()).queryByRole("link", { name: /^Progress/ })).not.toBeInTheDocument();
+  });
+
+  it("keeps the Label entry enabled for a keymode with patterns", async () => {
+    await bootApp("/?keymode=7", progressHandlers());
+    await screen.findByRole("group", { name: "Keymode" });
+    expect(labelGroup()).not.toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(labelGroup());
+    expect(labelGroup()).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("shows the empty state instead of the progress page for a keymode without patterns", async () => {
+    const { calls } = await bootApp("/label/progress?keymode=4", progressHandlers());
+    expect(await screen.findByRole("heading", { level: 1, name: "Pattern labelling for 4K is coming" })).toBeInTheDocument();
+    expect(calls.filter((c) => c.cmd === "label_taxonomy" || c.cmd === "label_progress")).toEqual([]);
+  });
+
   it("adds a newly played map to the list and the badge when the session event arrives", async () => {
     let plays = [play("a", "Alpha Song")];
     await bootApp("/label/progress", progressHandlers(() => session(plays)));

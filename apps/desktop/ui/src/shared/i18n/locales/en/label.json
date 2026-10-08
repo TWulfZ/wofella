@@ -221,6 +221,44 @@
       "closeSettings": "Close playback settings",
       "seed": "Seed {{seed}}",
       "hint": "Playback settings live here: offset, speed, skin and more"
+    },
+    "msd": {
+      "title": "Difficulty",
+      "calculator": "MinaCalc {{version}}",
+      "status": {
+        "rated": "Rated",
+        "ln_heavy": "LN-heavy: not rated",
+        "calc_rejected": "Rejected",
+        "pending": "Pending"
+      },
+      "note": {
+        "ln_heavy": "{{percent}}% long notes",
+        "calc_rejected": "MinaCalc could not rate this chart.",
+        "pending": "Index the library to rate this chart."
+      },
+      "approx": "≈{{value}}",
+      "overall": "Overall at 1.0×",
+      "showRates": "Show every rate",
+      "hideRates": "Hide the rates",
+      "table": "MSD per rate and skillset",
+      "rate": "Rate",
+      "rateValue": "{{rate}}×",
+      "skillset": {
+        "overall": "Overall",
+        "stream": "Stream",
+        "jumpstream": "Jumpstream",
+        "handstream": "Handstream",
+        "stamina": "Stamina",
+        "jackspeed": "JackSpeed",
+        "chordjack": "Chordjack",
+        "technical": "Technical"
+      }
+    },
+    "unavailable": {
+      "title": "Pattern labelling for {{keymode}}K is coming",
+      "body": "MinaCalc ratings for {{keymode}}K charts are already available.",
+      "hint": "Patterns are labelled per keymode; switch to one that has them.",
+      "switchTo": "Label {{keymode}}K"
     }
   }
 }

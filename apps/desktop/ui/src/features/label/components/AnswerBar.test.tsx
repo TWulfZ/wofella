@@ -61,6 +61,7 @@ function renderBar(answer: Answer, overrides: Overrides = {}) {
       onRemove={overrides.onRemove ?? vi.fn()}
       onNoPattern={vi.fn()}
       onFlag={vi.fn()}
+      thumbs
       onSave={overrides.onSave ?? vi.fn()}
       onClear={vi.fn()}
       onUndo={vi.fn()}
@@ -185,6 +186,7 @@ describe("AnswerBar hold-to-confirm actions", () => {
         onRemove={vi.fn()}
         onNoPattern={vi.fn()}
         onFlag={vi.fn()}
+        thumbs
         onSave={vi.fn()}
         onClear={vi.fn()}
         onUndo={onUndo}
@@ -288,6 +290,7 @@ describe("AnswerBar chips", () => {
         onRemove={vi.fn()}
         onNoPattern={vi.fn()}
         onFlag={vi.fn()}
+        thumbs
         onSave={onSave}
         onClear={vi.fn()}
         onUndo={vi.fn()}

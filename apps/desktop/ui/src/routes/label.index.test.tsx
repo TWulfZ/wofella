@@ -112,6 +112,34 @@ describe("/label", () => {
     expect(leafRouteId(router)).toBe("/label/");
   });
 
+  it("shows an empty state for a keymode without patterns and never asks for its taxonomy", async () => {
+    const { calls } = await bootApp("/label/?keymode=4", HANDLERS);
+    expect(await screen.findByRole("heading", { level: 1, name: "Pattern labelling for 4K is coming" })).toBeInTheDocument();
+    expect(screen.getByText("MinaCalc ratings for 4K charts are already available.")).toBeInTheDocument();
+    expect(argsOf(calls, "label_taxonomy")).toEqual([]);
+    expect(argsOf(calls, "label_sample")).toEqual([]);
+  });
+
+  it("still loads the taxonomy when the keymode list cannot be read", async () => {
+    const { mockIpcError } = await import("@/ipc/mocks");
+    const { calls, router } = await bootApp("/label", {
+      ...HANDLERS,
+      metaKeymodes: () => mockIpcError("INTERNAL", {}),
+    });
+    expect(leafRouteId(router)).toBe("/label/");
+    expect(argsOf(calls, "label_taxonomy")).toEqual([{ keymode: 7 }]);
+    expect(screen.queryByRole("heading", { name: /Pattern labelling/ })).not.toBeInTheDocument();
+  });
+
+  it("offers to label a keymode that has patterns from the empty state", async () => {
+    const { router } = await bootApp("/label/?keymode=4", HANDLERS);
+    await userEvent.click(await screen.findByRole("link", { name: "Label 7K" }));
+    await waitFor(() => {
+      expect(router.state.matches[0]?.search).toEqual({ keymode: 7 });
+    });
+    expect(leafRouteId(router)).toBe("/label/");
+  });
+
   it("opens the chart named by ?chart= and drops the parameter from the address", async () => {
     const { calls, router } = await bootApp(`/label?chart=${MD5}`, HANDLERS);
     expect(await screen.findByRole("heading", { name: "Gamma Song" })).toBeInTheDocument();

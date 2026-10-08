@@ -7,14 +7,16 @@ import type { ThumbSide } from "../types";
 interface FlagTogglesProps {
   flags: { mixed: boolean; unsure: boolean; thumb: ThumbSide | null };
   disabled: boolean;
+  /** Whether the active hand layout has a thumb column; a thumb side means nothing without one. */
+  thumbs: boolean;
   onToggle: (toggle: FlagToggle) => void;
 }
 
-const TOGGLES: readonly { toggle: FlagToggle; labelKey: string }[] = [
-  { toggle: "mixed", labelKey: "label.flags.mixed" },
-  { toggle: "unsure", labelKey: "label.flags.unsure" },
-  { toggle: "thumbLeft", labelKey: "label.flags.thumbLeft" },
-  { toggle: "thumbRight", labelKey: "label.flags.thumbRight" },
+const TOGGLES: readonly { toggle: FlagToggle; labelKey: string; thumb: boolean }[] = [
+  { toggle: "mixed", labelKey: "label.flags.mixed", thumb: false },
+  { toggle: "unsure", labelKey: "label.flags.unsure", thumb: false },
+  { toggle: "thumbLeft", labelKey: "label.flags.thumbLeft", thumb: true },
+  { toggle: "thumbRight", labelKey: "label.flags.thumbRight", thumb: true },
 ];
 
 function pressed(flags: FlagTogglesProps["flags"], toggle: FlagToggle): boolean {
@@ -30,11 +32,11 @@ function pressed(flags: FlagTogglesProps["flags"], toggle: FlagToggle): boolean 
   }
 }
 
-export function FlagToggles({ flags, disabled, onToggle }: FlagTogglesProps) {
+export function FlagToggles({ flags, disabled, thumbs, onToggle }: FlagTogglesProps) {
   const { t } = useTranslation();
   return (
     <div role="group" aria-label={t("label.flags.title")} className="flex flex-wrap gap-1">
-      {TOGGLES.map(({ toggle, labelKey }) => {
+      {TOGGLES.filter(({ thumb }) => thumbs || !thumb).map(({ toggle, labelKey }) => {
         const on = pressed(flags, toggle);
         return (
           <Button

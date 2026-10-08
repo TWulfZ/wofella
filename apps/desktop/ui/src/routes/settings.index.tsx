@@ -14,6 +14,7 @@ import {
   skinOptions,
   writeSkinChoice,
 } from "@/features/preferences";
+import { DEFAULT_KEYMODE } from "@/features/players";
 import { setupStatusQuery } from "@/features/setup";
 import { commands } from "@/ipc/bindings";
 import { call } from "@/ipc/client";
@@ -38,9 +39,6 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     </div>
   );
 }
-
-// The MVP keymode; 4K adds its own cards once its profile has layout presets.
-const KEYMODE = 7;
 
 function DefaultSkinSection({ keymode }: { keymode: number }) {
   const skinList = useQuery(skinListQuery());
@@ -69,6 +67,7 @@ function SettingsPage() {
   const { t, i18n } = useTranslation();
   const errorText = useErrorText();
   const { data: status } = useSuspenseQuery(setupStatusQuery());
+  const keymode = Route.useSearch({ select: (search) => search.keymode ?? DEFAULT_KEYMODE });
   const openLogs = useMutation({ mutationFn: () => call(commands.appOpenLogsDir()) });
   return (
     <>
@@ -139,8 +138,8 @@ function SettingsPage() {
           </CardContent>
         </Card>
         <SessionNotifyCard />
-        <HandLayoutCard keymode={KEYMODE} />
-        <DefaultSkinSection keymode={KEYMODE} />
+        <HandLayoutCard keymode={keymode} />
+        <DefaultSkinSection keymode={keymode} />
       </div>
     </>
   );

@@ -17,7 +17,8 @@
       "progress": "Progreso",
       "withPending_one": "{{label}}, {{count}} mapa por etiquetar",
       "withPending_other": "{{label}}, {{count}} mapas por etiquetar",
-      "sections": "Páginas de {{label}}"
+      "sections": "Páginas de {{label}}",
+      "labellingUnavailable": "El etiquetado de patrones para {{keymode}}K está en camino; las puntuaciones de MinaCalc ya están disponibles"
     },
     "home": {
       "title": "Inicio",

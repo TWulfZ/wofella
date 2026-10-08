@@ -68,6 +68,10 @@
       "other": "Viendo {{label}}: no es tu perfil. Nada de aquí afecta a tu habilidad."
     },
     "selected_one": "{{count}} nombre seleccionado",
-    "selected_other": "{{count}} nombres seleccionados"
+    "selected_other": "{{count}} nombres seleccionados",
+    "keymodeSwitcher": {
+      "label": "Modo de teclas",
+      "option": "{{keymode}}K"
+    }
   }
 }

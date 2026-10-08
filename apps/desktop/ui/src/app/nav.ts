@@ -4,6 +4,9 @@ import { ChartColumnBig, Compass, House, type LucideIcon, Radar, Settings, Tags,
 /** A count the shell shows next to an entry; each kind maps to one query in the shell. */
 export type NavBadge = "sessionPending";
 
+/** A capability of the active keymode an area needs; without it the shell disables the entry and says why. */
+export type NavRequirement = "patterns";
+
 export interface NavLinkEntry {
   kind: "link";
   to: NonNullable<LinkProps["to"]>;
@@ -20,6 +23,7 @@ export interface NavGroupEntry {
   labelKey: string;
   icon: LucideIcon;
   badge?: NavBadge;
+  requires?: NavRequirement;
   items: readonly NavLinkEntry[];
 }
 
@@ -39,6 +43,7 @@ export const NAV: readonly NavEntry[] = [
     labelKey: "common.nav.labelling",
     icon: Tags,
     badge: "sessionPending",
+    requires: "patterns",
     items: [
       { kind: "link", to: "/label", labelKey: "common.nav.labelling", icon: Tags },
       { kind: "link", to: "/label/progress", labelKey: "common.nav.progress", icon: ChartColumnBig, badge: "sessionPending" },

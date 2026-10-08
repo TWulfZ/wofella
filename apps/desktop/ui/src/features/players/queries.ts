@@ -19,3 +19,16 @@ export function profilesQuery(keymode: number) {
     queryFn: () => call(commands.playersListProfiles(keymode)),
   });
 }
+
+export const metaKeys = {
+  keymodes: () => qk("meta", "keymodes"),
+};
+
+export function keymodesQuery() {
+  return queryOptions({
+    queryKey: metaKeys.keymodes(),
+    queryFn: () => call(commands.metaKeymodes()),
+    // The engine registry is compiled in, so the list cannot change while the app runs.
+    staleTime: Infinity,
+  });
+}

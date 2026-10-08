@@ -29,6 +29,8 @@ export const labelKeys = {
   chartAudio: (md5: string) => qk("labels", "chartAudio", md5),
   chartBackground: (md5: string) => qk("labels", "chartBackground", md5),
   chartDetails: (md5: string) => qk("library", "chartDetails", md5),
+  /** Under `library`, so the DataChanged an index run emits turns a pending chart into its rating. */
+  chartMsd: (md5: string) => qk("library", "chartMsd", md5),
   /** Gold spans over the parsed notes: label saves invalidate it explicitly, and DataChanged{library} by its root. */
   chartTimelines: () => qk("library", "chartTimeline"),
   chartTimeline: (keymode: number, md5: string, buckets: number) => qk("library", "chartTimeline", keymode, md5, buckets),
@@ -174,6 +176,14 @@ export function chartDetailsQuery(md5: string | null) {
   return queryOptions({
     queryKey: labelKeys.chartDetails(md5 ?? ""),
     queryFn: md5 === null ? skipToken : () => call(commands.chartDetails(md5)),
+    staleTime: Infinity,
+  });
+}
+
+export function chartMsdQuery(md5: string) {
+  return queryOptions({
+    queryKey: labelKeys.chartMsd(md5),
+    queryFn: () => call(commands.chartMsd(md5)),
     staleTime: Infinity,
   });
 }

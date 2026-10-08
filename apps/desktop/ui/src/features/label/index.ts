@@ -23,6 +23,7 @@ export type { Anchor, LabelWindow, Span, ThumbSide } from "./types";
 export { AxisIcon } from "./components/axisIcons";
 export { familyAccent } from "./components/PatternGrid";
 export { PatternGridPicker } from "./components/PatternGridPicker";
+export { PatternsUnavailable, type PatternsUnavailableProps } from "./components/PatternsUnavailable";
 export { StarRating } from "./components/StarRating";
 export { backgroundDataUrl } from "./components/ChartHeader";
 export { difficultyColour } from "./starColour";
@@ -40,6 +41,7 @@ export {
   chartAudioQuery,
   chartBackgroundQuery,
   chartDetailsQuery,
+  chartMsdQuery,
   chartTimelineQuery,
   chartWindowQuery,
   labelKeys,

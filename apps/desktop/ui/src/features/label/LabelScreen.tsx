@@ -27,6 +27,7 @@ import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { AnswerBar, type AnswerFeedback, type AnswerMode } from "./components/AnswerBar";
 import { backgroundDataUrl, CHART_HEADER_PARAMS, ChartHeader } from "./components/ChartHeader";
+import { ChartMsd } from "./components/ChartMsd";
 import { ChartTimeline } from "./components/ChartTimeline";
 import { ExportLabels } from "./components/ExportLabels";
 import { HeaderNav, type NavAction, type NavState } from "./components/HeaderNav";
@@ -294,6 +295,14 @@ function LabelSession(props: LabelSessionProps) {
   const background = useQuery(chartBackgroundQuery(anchor?.md5 ?? null));
   const details = useQuery(chartDetailsQuery(anchor?.md5 ?? null));
   const timeline = useQuery(chartTimelineQuery(keymode, anchor?.md5 ?? null, params.timelineBuckets));
+  const layoutThumbs = chart.data?.layout.columns.some((column) => column.finger === "thumb");
+  // A new chart's window is undefined while it loads; holding the last layout's answer keeps the flag row from
+  // jumping on every window. Before the first window it shows them, as it did before layouts were consulted.
+  const [lastThumbs, setLastThumbs] = useState(true);
+  if (layoutThumbs !== undefined && layoutThumbs !== lastThumbs) {
+    setLastThumbs(layoutThumbs);
+  }
+  const thumbs = layoutThumbs ?? lastThumbs;
   const sampling = isSampling(state);
 
   // The plan waits for the handed-over chart, so it is the session's first window either way.
@@ -900,6 +909,7 @@ function LabelSession(props: LabelSessionProps) {
               origin={entry.origin}
               background={backgroundDataUrl(background.data)}
               details={details.data}
+              difficulty={<ChartMsd md5={entry.window.anchor.md5} />}
               nav={nav}
               counters={{
                 labelled: state.counts.labelled,
@@ -966,6 +976,7 @@ function LabelSession(props: LabelSessionProps) {
               onFlag={(toggle) => {
                 dispatch({ type: "flagsToggled", toggle });
               }}
+              thumbs={thumbs}
               onSave={() => {
                 void save();
               }}

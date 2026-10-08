@@ -241,6 +241,21 @@ describe("/settings/ hand layout", () => {
     expect(screen.getByText("0.1.0")).toBeInTheDocument();
   });
 
+  it("shows the presets of the URL keymode", async () => {
+    const k4 = preset("k4.generic", "L L R R");
+    const { calls } = await bootApp("/settings/?keymode=4", {
+      ...handLayoutHandlers("k4.generic"),
+      settingsHandLayouts: (args) => (args["keymode"] === 4 ? [k4] : K7_LAYOUTS),
+    });
+    const group = await screen.findByRole("radiogroup", { name: "Hand layout (4K)" });
+    const radios = await within(group).findAllByRole("radio");
+    expect(radios).toHaveLength(1);
+    expect(within(group).getByRole("radio", { name: "2 | 2" })).toBeChecked();
+    expect(calls.filter((c) => c.cmd === "settings_hand_layouts").map((c) => c.args)).toEqual([{ keymode: 4 }]);
+    expect(calls.filter((c) => c.cmd === "settings_get_hand_layout").map((c) => c.args)).toEqual([{ keymode: 4 }]);
+    expect(screen.queryByRole("radiogroup", { name: "Hand layout (7K)" })).not.toBeInTheDocument();
+  });
+
   it("speaks Spanish", async () => {
     await i18n.changeLanguage("es");
     await bootApp("/settings/", handLayoutHandlers());

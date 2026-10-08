@@ -68,6 +68,10 @@
       "other": "Viewing {{label}}: not your profile. Nothing here affects your skill."
     },
     "selected_one": "{{count}} name selected",
-    "selected_other": "{{count}} names selected"
+    "selected_other": "{{count}} names selected",
+    "keymodeSwitcher": {
+      "label": "Keymode",
+      "option": "{{keymode}}K"
+    }
   }
 }

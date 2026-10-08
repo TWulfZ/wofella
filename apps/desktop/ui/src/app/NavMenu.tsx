@@ -3,9 +3,13 @@ import { ChevronDown } from "lucide-react";
 import { type FocusEvent, type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/shared/lib/utils";
-import { NAV_PARAMS, type NavBadge, type NavGroupEntry, type NavLinkEntry } from "./nav";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
+import { NAV_PARAMS, type NavBadge, type NavGroupEntry, type NavLinkEntry, type NavRequirement } from "./nav";
 
 export type NavBadgeCounts = Partial<Record<NavBadge, number>>;
+
+/** Why each unmet requirement disables its entries; a met one is absent. */
+export type NavUnmet = Partial<Record<NavRequirement, string>>;
 
 const NAV_ITEM_CLASS =
   "text-muted-foreground hover:text-foreground focus-visible:ring-ring data-[status=active]:text-foreground data-[status=active]:after:bg-primary relative inline-flex h-14 items-center gap-2 rounded-sm px-3 text-sm font-medium transition-colors duration-200 after:absolute after:inset-x-2 after:bottom-0 after:hidden after:h-[3px] after:rounded-full focus-visible:ring-2 focus-visible:outline-none data-[status=active]:after:block";
@@ -59,20 +63,33 @@ export function NavLinkItem({ entry, counts }: { entry: NavLinkEntry; counts: Na
  * The W3C disclosure navigation pattern rather than an ARIA menu: the entries are plain links reached with Tab, and
  * Escape, a click outside or focus leaving the group closes it.
  */
-export function NavGroupMenu({ entry, counts }: { entry: NavGroupEntry; counts: NavBadgeCounts }) {
+export function NavGroupMenu({
+  entry,
+  counts,
+  unmet = {},
+}: {
+  entry: NavGroupEntry;
+  counts: NavBadgeCounts;
+  unmet?: NavUnmet;
+}) {
   const { t } = useTranslation();
-  const { labelKey, icon: Icon, badge, items, pathPrefix } = entry;
+  const { labelKey, icon: Icon, badge, items, pathPrefix, requires } = entry;
   const [open, setOpen] = useState(false);
   const listId = useId();
+  const reasonId = useId();
   const root = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const pathname = useLocation({ select: (l) => l.pathname });
   const active = pathname === pathPrefix || pathname.startsWith(`${pathPrefix}/`);
-  const count = badgeCount(badge, counts);
+  const reason = requires === undefined ? undefined : unmet[requires];
+  const disabled = reason !== undefined;
+  // A pending count invites work the disabled area cannot take.
+  const count = disabled ? 0 : badgeCount(badge, counts);
   const { label, name } = useEntryName(labelKey, count);
+  const expanded = open && !disabled;
 
   useEffect(() => {
-    if (!open) {
+    if (!expanded) {
       return;
     }
     const onPointerDown = (e: PointerEvent): void => {
@@ -84,10 +101,10 @@ export function NavGroupMenu({ entry, counts }: { entry: NavGroupEntry; counts: 
     return () => {
       document.removeEventListener("pointerdown", onPointerDown);
     };
-  }, [open]);
+  }, [expanded]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
-    if (e.key === "Escape" && open) {
+    if (e.key === "Escape" && expanded) {
       e.preventDefault();
       setOpen(false);
       button.current?.focus();
@@ -101,28 +118,44 @@ export function NavGroupMenu({ entry, counts }: { entry: NavGroupEntry; counts: 
 
   return (
     <div ref={root} onKeyDown={onKeyDown} onBlur={onBlur} className="relative h-full">
-      <button
-        ref={button}
-        type="button"
-        aria-expanded={open}
-        aria-controls={listId}
-        aria-label={name}
-        data-active={active}
-        data-status={active ? "active" : undefined}
-        onClick={() => {
-          setOpen((o) => !o);
-        }}
-        className={cn(NAV_ITEM_CLASS, "cursor-pointer")}
-      >
-        <Icon className="size-4" aria-hidden="true" />
-        {label}
-        <PendingBadge count={count} />
-        <ChevronDown
-          aria-hidden="true"
-          className={cn("size-3.5 motion-safe:transition-transform motion-safe:duration-200", open && "rotate-180")}
-        />
-      </button>
-      {open && (
+      {/* aria-disabled rather than disabled, so the entry stays focusable and hoverable and its reason can be read. */}
+      {/* Always wrapped, so an entry that becomes disabled keeps its node and focus. */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            ref={button}
+            type="button"
+            aria-expanded={expanded}
+            aria-controls={listId}
+            aria-label={name}
+            aria-disabled={disabled || undefined}
+            aria-describedby={disabled ? reasonId : undefined}
+            data-active={active}
+            data-status={active ? "active" : undefined}
+            onClick={() => {
+              if (!disabled) {
+                setOpen((o) => !o);
+              }
+            }}
+            className={cn(NAV_ITEM_CLASS, disabled ? "cursor-not-allowed opacity-45 hover:text-muted-foreground" : "cursor-pointer")}
+          >
+            <Icon className="size-4" aria-hidden="true" />
+            {label}
+            <PendingBadge count={count} />
+            <ChevronDown
+              aria-hidden="true"
+              className={cn("size-3.5 motion-safe:transition-transform motion-safe:duration-200", expanded && "rotate-180")}
+            />
+            {disabled && (
+              <span id={reasonId} hidden>
+                {reason}
+              </span>
+            )}
+          </button>
+        </TooltipTrigger>
+        {disabled && <TooltipContent side="bottom">{reason}</TooltipContent>}
+      </Tooltip>
+      {expanded && (
         <ul
           id={listId}
           aria-label={t("common.nav.sections", { label })}
