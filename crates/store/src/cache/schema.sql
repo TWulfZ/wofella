@@ -128,3 +128,13 @@ CREATE TABLE chart_msd (
 CREATE TABLE chart_msd_status (
   md5 TEXT NOT NULL, vkey BLOB NOT NULL CHECK (length(vkey) = 32), status TEXT NOT NULL CHECK (status IN ('rated','ln_heavy','calc_rejected')),
   hold_share_permille INTEGER NOT NULL, PRIMARY KEY (md5, vkey)) STRICT, WITHOUT ROWID;
+
+-- Per-play SSRs per `play_ssr` key (ADR 0024), in centi. Every processed play has a row; it is
+-- 'counted' exactly when it carries both a goal and the skillsets (enforced by the writer).
+CREATE TABLE play_ssr (
+  play_id BLOB NOT NULL CHECK (length(play_id) = 32), vkey BLOB NOT NULL CHECK (length(vkey) = 32),
+  status TEXT NOT NULL CHECK (status IN ('counted','incomplete','score_v2','unsupported_mods','ln_heavy','calc_rejected','no_chart')),
+  rate_milli INTEGER NOT NULL, goal_permyriad INTEGER NULL,
+  overall INTEGER NULL, stream INTEGER NULL, jumpstream INTEGER NULL, handstream INTEGER NULL,
+  stamina INTEGER NULL, jackspeed INTEGER NULL, chordjack INTEGER NULL, technical INTEGER NULL,
+  PRIMARY KEY (play_id, vkey)) STRICT, WITHOUT ROWID;

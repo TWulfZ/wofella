@@ -201,6 +201,7 @@ fn prune_vkeys_except(tx: &Tx<'_>, table: &str, keep: &[VersionKey]) -> Result<u
 }
 
 pub mod chart_msd;
+pub mod play_ssr;
 
 pub mod catalog_chart {
     use super::*;
