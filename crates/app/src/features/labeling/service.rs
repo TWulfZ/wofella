@@ -143,6 +143,7 @@ impl<'a> LabelingService<'a> {
     pub fn taxonomy(&self, keymode: u8) -> Result<Vec<PatternDefDto>, AppError> {
         Ok(labelled_profile(keymode)?
             .taxonomy
+            .unwrap_or_default()
             .iter()
             .map(|p| PatternDefDto {
                 id: p.id.to_string(),
@@ -344,11 +345,12 @@ impl<'a> LabelingService<'a> {
         let mut out: Vec<PatternId> = Vec::new();
         for token in tokens {
             let def =
-                taxonomy::resolve(profile.taxonomy, &token.to_lowercase()).ok_or_else(|| {
-                    AppError::invalid_input()
-                        .with_key(keys::UNKNOWN_PATTERN)
-                        .with_arg("pattern", token.clone())
-                })?;
+                taxonomy::resolve(profile.taxonomy.unwrap_or_default(), &token.to_lowercase())
+                    .ok_or_else(|| {
+                        AppError::invalid_input()
+                            .with_key(keys::UNKNOWN_PATTERN)
+                            .with_arg("pattern", token.clone())
+                    })?;
             if !out.contains(&def.id) {
                 out.push(def.id.clone());
             }
@@ -499,7 +501,7 @@ impl<'a> LabelingService<'a> {
                 req.patterns
                     .iter()
                     .map(|p| {
-                        taxonomy::by_id(profile.taxonomy, p)
+                        taxonomy::by_id(profile.taxonomy.unwrap_or_default(), p)
                             .map(|def| def.id.clone())
                             .ok_or_else(|| AppError::invalid_input().with_arg("pattern", p.clone()))
                     })
@@ -592,7 +594,10 @@ impl<'a> LabelingService<'a> {
         }
         let registry = Registry::builtin();
         for l in &labels {
-            let defs = registry.profile(l.keymode).map_or(&[][..], |p| p.taxonomy);
+            let defs = registry
+                .profile(l.keymode)
+                .and_then(|p| p.taxonomy)
+                .unwrap_or_default();
             let patterns = patterns_of(l);
             let axes: BTreeSet<String> = patterns
                 .iter()
@@ -861,7 +866,7 @@ fn labelled_profile(keymode: u8) -> Result<&'static KeymodeProfile, AppError> {
     Keymode::new(keymode)
         .ok()
         .and_then(|k| Registry::builtin().profile(k))
-        .filter(|p| !p.taxonomy.is_empty())
+        .filter(|p| p.taxonomy.is_some_and(|t| !t.is_empty()))
         .ok_or_else(|| AppError::invalid_input().with_arg("keymode", keymode.to_string()))
 }
 

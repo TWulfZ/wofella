@@ -82,8 +82,8 @@ impl Keys {
     }
 }
 
-/// The `patterns` stage per keymode profile. The layout is the profile's default; a
-/// user-selected layout is future work.
+/// The `patterns` stage per keymode profile with a taxonomy (ADR 0023). The layout is the
+/// profile's default; a user-selected layout is future work.
 pub(super) struct Segmenters(Vec<(u8, Segmenter)>);
 
 impl Segmenters {
@@ -91,6 +91,7 @@ impl Segmenters {
         Registry::builtin()
             .profiles()
             .iter()
+            .filter(|p| p.taxonomy.is_some())
             .map(|p| {
                 let segmenter = Segmenter::new(p.layout())
                     .map_err(|e| AppError::internal(format!("patterns vkey: {e}")))?;
@@ -616,12 +617,13 @@ mod tests {
             Map::k7("beta"),
             Map::k7("gamma"),
             Map::new("four keys", 4, osu_text(4, "four keys", &[(0, 0)], &[])),
+            Map::new("five keys", 5, osu_text(5, "five keys", &[(0, 0)], &[])),
         ];
         let (f, first) = synced(&maps, &[]).await;
-        assert_eq!(first.charts_total, 3, "4K has no engine profile");
-        assert_eq!(first.parsed_new, 3);
+        assert_eq!(first.charts_total, 4, "5K has no engine profile");
+        assert_eq!(first.parsed_new, 4);
         assert_eq!((first.skipped_memoized, first.failed_items), (0, 0));
-        assert_eq!(parsed_count(&f), 3);
+        assert_eq!(parsed_count(&f), 4);
         let vkey = chart_parse::vkey().unwrap();
         let row = f
             .ctx
@@ -632,13 +634,19 @@ mod tests {
         assert_eq!((row.n_notes, row.n_ln, row.length_ms), (8, 0, 1_750));
         let d = parse_row(&f, &maps[0]).unwrap();
         assert_eq!(d.status, DerivationStatus::Ok);
-        assert!(parse_row(&f, &maps[3]).is_none());
+        assert_eq!(
+            parse_row(&f, &maps[3]).unwrap().status,
+            DerivationStatus::Ok
+        );
+        let k4_segments = f.ctx.library().segments(&maps[3].md5).await.unwrap();
+        assert!(k4_segments.is_empty(), "4K has no taxonomy (ADR 0023)");
+        assert!(parse_row(&f, &maps[4]).is_none());
 
         let (_, second) = reindex(&f).await;
-        assert_eq!(second.charts_total, 3);
+        assert_eq!(second.charts_total, 4);
         assert_eq!((second.parsed_new, second.labels_written), (0, 0));
-        assert_eq!(second.skipped_memoized, 3);
-        assert_eq!(parsed_count(&f), 3);
+        assert_eq!(second.skipped_memoized, 4);
+        assert_eq!(parsed_count(&f), 4);
     }
 
     #[tokio::test(flavor = "multi_thread")]

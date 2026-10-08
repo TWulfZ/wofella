@@ -46,6 +46,9 @@ impl Finger {
 /// The pilot's layout (`3|1+3`, right thumb on the middle key).
 pub const DEFAULT_K7: &str = "k7.313_right_thumb";
 
+/// 4K splits the hands 2|2 with no thumb (ADR 0023), so the generic split is the whole preset.
+pub const DEFAULT_K4: &str = "k4.generic";
+
 const GENERIC_SUFFIX: &str = ".generic";
 
 struct Preset {
@@ -330,6 +333,25 @@ mod tests {
     fn default_k7_is_the_pilot_right_thumb_layout() {
         assert_eq!(Layout::default_for(Keymode::K7).id(), "k7.313_right_thumb");
         assert_eq!(DEFAULT_K7, "k7.313_right_thumb");
+    }
+
+    #[test]
+    fn default_k4_is_the_thumbless_generic_split() {
+        assert_eq!(DEFAULT_K4, "k4.generic");
+        let layout = Layout::by_id(DEFAULT_K4).unwrap();
+        assert_eq!(layout.id(), DEFAULT_K4);
+        assert_eq!(layout.keymode(), Keymode::K4);
+        assert_eq!(
+            layout.columns(),
+            [
+                (Left, Middle),
+                (Left, Index),
+                (Right, Index),
+                (Right, Middle)
+            ]
+        );
+        assert!(layout.columns().iter().all(|(_, f)| *f != Thumb));
+        assert_eq!(Layout::default_for(Keymode::K4).id(), DEFAULT_K4);
     }
 
     #[test]

@@ -3,6 +3,7 @@
 
 pub mod chart_label;
 pub mod chart_parse;
+pub mod difficulty;
 #[cfg(any(test, feature = "test-support"))]
 mod golden;
 pub mod patterns;
@@ -26,6 +27,10 @@ pub const REGISTERED: &[StageInfo] = &[
         version: chart_parse::VERSION,
     },
     StageInfo {
+        id: difficulty::STAGE,
+        version: difficulty::VERSION,
+    },
+    StageInfo {
         id: patterns::STAGE,
         version: patterns::VERSION,
     },
@@ -33,6 +38,12 @@ pub const REGISTERED: &[StageInfo] = &[
 
 pub fn registered() -> &'static [StageInfo] {
     REGISTERED
+}
+
+/// ADR 0006 byte-string field of a stage config hash: `u32` little-endian length, then the bytes.
+pub(crate) fn hash_field(hasher: &mut blake3::Hasher, bytes: &[u8]) {
+    hasher.update(&u32::try_from(bytes.len()).unwrap_or(u32::MAX).to_le_bytes());
+    hasher.update(bytes);
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,6 +69,11 @@ pub fn goldens() -> Vec<StageGolden> {
             golden: golden::chart_parse(),
         },
         StageGolden {
+            id: difficulty::STAGE,
+            version: difficulty::VERSION,
+            golden: golden::difficulty(),
+        },
+        StageGolden {
             id: patterns::STAGE,
             version: patterns::VERSION,
             golden: golden::patterns(),
@@ -77,7 +93,12 @@ mod tests {
             .collect();
         assert_eq!(
             ids,
-            [("chart_label", 4), ("chart_parse", 1), ("patterns", 5)]
+            [
+                ("chart_label", 4),
+                ("chart_parse", 1),
+                ("difficulty", 1),
+                ("patterns", 5)
+            ]
         );
     }
 
@@ -106,5 +127,6 @@ mod tests {
         }
         assert_ne!(first[0].golden, first[1].golden);
         assert_ne!(first[1].golden, first[2].golden);
+        assert_ne!(first[2].golden, first[3].golden);
     }
 }

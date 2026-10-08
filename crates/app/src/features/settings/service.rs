@@ -139,7 +139,7 @@ mod tests {
                 finger: FingerDto::Thumb
             }
         );
-        let err = ctx.settings().hand_layouts(4).unwrap_err();
+        let err = ctx.settings().hand_layouts(5).unwrap_err();
         assert_eq!(err.code, ErrorCode::InvalidInput);
     }
 
@@ -175,7 +175,7 @@ mod tests {
         }
         assert_eq!(
             settings
-                .set_hand_layout(4, "k4.generic")
+                .set_hand_layout(5, "k5.generic")
                 .await
                 .unwrap_err()
                 .code,

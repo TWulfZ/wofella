@@ -200,7 +200,7 @@ impl<'a> LibraryService<'a> {
             } else {
                 Vec::new()
             };
-            let taxonomy = profile.taxonomy;
+            let taxonomy = profile.taxonomy.unwrap_or_default();
             let marks = rows
                 .iter()
                 .map(|r| RowMark {
@@ -452,7 +452,8 @@ impl<'a> LibraryService<'a> {
                     .cache
                     .read(|c| segment_repo::counts_by_pattern(c, vkey))?;
                 out.extend(counts.into_iter().map(|(pattern, n)| {
-                    let def = taxonomy::by_id(profile.taxonomy, pattern.as_str());
+                    let def =
+                        taxonomy::by_id(profile.taxonomy.unwrap_or_default(), pattern.as_str());
                     PatternCountDto {
                         keymode,
                         key: def.map_or(UNKNOWN_KEY, |d| d.key).to_owned(),
@@ -655,7 +656,8 @@ fn segment_dtos(
     let taxonomy = Keymode::new(keymode)
         .ok()
         .and_then(|k| Registry::builtin().profile(k))
-        .map_or(&[][..], |p| p.taxonomy);
+        .and_then(|p| p.taxonomy)
+        .unwrap_or_default();
     let rows = segment_rows(c, segmenters, md5, keymode)?;
     Ok(rows
         .into_iter()
@@ -1058,7 +1060,7 @@ mod tests {
             })
             .await
             .unwrap();
-        assert!(four_keys.is_empty(), "4K is not indexed");
+        assert_eq!(four_keys.len(), 1, "4K is indexed (ADR 0023)");
         let err = svc
             .list(LibraryFilterDto {
                 keymode: 0,
@@ -1755,7 +1757,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(overview, listed, "same rows as an unbounded listing");
-        assert!(svc.overview(Keymode::K4).await.unwrap().is_empty());
+        assert_eq!(svc.overview(Keymode::K4).await.unwrap().len(), 1);
     }
 
     #[tokio::test(flavor = "multi_thread")]

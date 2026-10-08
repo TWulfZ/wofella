@@ -24,20 +24,20 @@ The skill and recommendation preview reads per-chart skillsets from cache.db. 4K
 Engine:
 - `pub enum CalcId { MinaCalc }` with `as_str() = "minacalc"`.
 - `KeymodeProfile { keymode, default_layout, label_sources, taxonomy: Option<&'static [PatternDef]>, calculators: &'static [CalcId] }`.
-- `stage::difficulty`: `STAGE = "difficulty"`, `VERSION = 1`, `vkey(chart_parse_vkey, keymode, &MinaCalcParams) -> VersionKey`, `run(calc, chart, params) -> MsdTable`.
+- `stage::difficulty`: `STAGE = "difficulty"`, `VERSION = 1`, `vkey(chart_parse_vkey, keymode, &MinaCalcParams) -> Result<VersionKey, EngineError>` (like `patterns::vkey`; amended 2026-10-08), `run(calc, chart, params) -> MsdTable`.
 
 Store (cache.db):
 ```sql
 CREATE TABLE chart_msd (
-  md5 TEXT NOT NULL, vkey TEXT NOT NULL, rate_milli INTEGER NOT NULL,
+  md5 TEXT NOT NULL, vkey BLOB NOT NULL CHECK (length(vkey) = 32), rate_milli INTEGER NOT NULL,
   overall INTEGER NOT NULL, stream INTEGER NOT NULL, jumpstream INTEGER NOT NULL, handstream INTEGER NOT NULL,
   stamina INTEGER NOT NULL, jackspeed INTEGER NOT NULL, chordjack INTEGER NOT NULL, technical INTEGER NOT NULL,
   PRIMARY KEY (md5, vkey, rate_milli)) STRICT, WITHOUT ROWID;
 CREATE TABLE chart_msd_status (
-  md5 TEXT NOT NULL, vkey TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('rated','ln_heavy','calc_rejected')),
+  md5 TEXT NOT NULL, vkey BLOB NOT NULL CHECK (length(vkey) = 32), status TEXT NOT NULL CHECK (status IN ('rated','ln_heavy','calc_rejected')),
   hold_share_permille INTEGER NOT NULL, PRIMARY KEY (md5, vkey)) STRICT, WITHOUT ROWID;
 ```
-(columns in centi-MSD; `status` row exists for every processed chart, rate rows only when `rated`).
+(vkey as a 32-byte BLOB like every other derived table, amended 2026-10-08; columns in centi-MSD; `status` row exists for every processed chart, rate rows only when `rated`).
 
 App/IPC DTOs (camelCase):
 - `KeymodeDto { keymode: u8, hasPatterns: bool, calculators: Vec<String>, defaultLayout: String, hasThumb: bool }`; command `meta_keymodes() -> Vec<KeymodeDto>`.
@@ -54,12 +54,16 @@ App/IPC DTOs (camelCase):
 
 ## Tasks
 - [x] T1 — ADR 0023 + architecture §9.1/§12 amendments. Route: inline. Tier: high (re-litigable, cross-crate). Commit: `docs: enable 4K through a calculator-only profile (ADR 0023)`
-- [ ] T2 — Engine: profile `Option` taxonomy + calculators, K4 profile, `DEFAULT_K4`, `difficulty` stage + golden + lock. Route: delegated (engine owner). Tier: high (stage-lock, persisted key). Commit: —
-- [ ] T3 — Store: `chart_msd` tables, repo, cache v6. Route: delegated (store owner, parallel with T2). Tier: medium. Commit: —
+- [x] T2 — Engine: profile `Option` taxonomy + calculators, K4 profile, `DEFAULT_K4`, `difficulty` stage + golden + lock. Route: delegated (engine owner). Tier: high (stage-lock, persisted key). Commit: `feat(engine): enable 4K and rate charts in a difficulty stage`
+- [x] T3 — Store: `chart_msd` tables, repo, cache v6. Route: delegated (store owner, parallel with T2). Tier: medium. Commit: `feat(store): cache MinaCalc skillsets per chart and rate`
 - [ ] T4 — App: index runs the difficulty stage, skips segmentation without a taxonomy, played charts first; meta keymodes; chart MSD query; library list MSD. Route: delegated (app owner). Tier: medium. Commit: —
 - [ ] T5 — Shells + UI: `meta_keymodes`, `chart_msd` commands; CLI MSD; UI keymode switcher, settings keymode from URL, thumb flags prop, MSD block; bindings. Route: delegated (desktop, cli, ui owners). Tier: medium (additive IPC). Commit: —
 
 ## Progress
+- 2026-10-08 T2: RED (E0425 `DEFAULT_K4`; 9 profile errors; 28 unresolved stage names; 5 app tests pinning "4K disabled") → GREEN. Frozen keys: difficulty K7 `25087453…`, K4 `37e2514d…`; lock diff +4/−0 (`difficulty` v1 only); 7K patterns key test untouched and green.
+- 2026-10-08 T3: RED → GREEN, `cargo nextest run -p wolluf-store` 93/93. Store API: `repo::cache::chart_msd::{replace_for, get, overall_at, rated_at, missing_for_keymode, prune_except}`.
+- 2026-10-08 Verifier (high): PASS; `cargo nextest run --workspace` 1108 passed, 20 skipped; stage-lock, clippy, fmt, layers, deny, lint-canary ok. Scoped correction applied: vkey BLOB(32) like other cache tables (contract amended), `Rated` without rows rejected (RED observed), shared `hash_field` helper (no key moved). Re-run: store+engine+app 446 passed, 6 skipped; stage-lock ok; clippy ok. Spot check by parent: `cargo xtask stage-lock --check` ok.
+- Note for T4: `missing_for_keymode` lists catalog charts, including ones that never parse; plan difficulty work from the parse memo, not from that list.
 
 ## Next step
 T1 inline, then T2 ∥ T3.

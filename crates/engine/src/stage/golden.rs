@@ -12,7 +12,10 @@ use wolluf_chart::Layout;
 use wolluf_chart::testkit::chart_from_rows;
 use wolluf_patterns::PatternsError;
 
+use wolluf_difficulty::minacalc::note_rows;
+
 use super::chart_parse::{parse_chart, summarize};
+use super::difficulty::{Calc, MinaCalcParams, MsdStatus, UnratedReason};
 use crate::error::EngineError;
 use crate::labels::LabelInput;
 use crate::rows_blob::{decode_rows, encode_rows};
@@ -114,6 +117,83 @@ fn patterns_dump() -> String {
         }
     }
     dump
+}
+
+pub(super) fn difficulty() -> String {
+    hex(&difficulty_dump())
+}
+
+const US_PER_SECOND: f64 = 1_000_000.0;
+
+/// What MinaCalc is fed and whether it is asked, never its answer: calculator values can differ
+/// by a centi across platforms (ADR 0022). `CalcRejected` is the calculator's own verdict, so it
+/// folds into `rate` with `Rated`.
+fn difficulty_dump() -> String {
+    let params = MinaCalcParams::default();
+    let mut dump = String::new();
+    let _ = writeln!(dump, "params {}", hex_bytes(&params.params_hash()));
+    let rates: Vec<String> = params.rate_grid_milli.iter().map(u16::to_string).collect();
+    let _ = writeln!(dump, "rates {}", rates.join(" "));
+    let _ = writeln!(
+        dump,
+        "ln_unrated_hold_share_permille {}",
+        params.ln_unrated_hold_share_permille
+    );
+    let Ok(mut calc) = Calc::new() else {
+        let _ = writeln!(dump, "error calc");
+        return dump;
+    };
+    for (name, chart) in difficulty_fixtures() {
+        let Some(chart) = chart else {
+            let _ = writeln!(dump, "fixture {name}\nerror fixture");
+            continue;
+        };
+        let _ = writeln!(dump, "fixture {name} keys={}", chart.keymode().columns());
+        let table = super::difficulty::run(&mut calc, &chart, &params);
+        let decision = match table.status {
+            MsdStatus::Unrated(UnratedReason::LnHeavy) => "ln_heavy",
+            MsdStatus::Rated | MsdStatus::Unrated(UnratedReason::CalcRejected) => "rate",
+        };
+        let _ = writeln!(dump, "hold_share_permille {}", table.hold_share_permille);
+        let _ = writeln!(dump, "decision {decision}");
+        let rows = note_rows(&chart).rows;
+        let _ = writeln!(dump, "rows {}", rows.len());
+        for r in rows {
+            // f32 seconds are IEEE-exact on every platform; whole µs keep the dump integer-only.
+            let time_us = (f64::from(r.time_s) * US_PER_SECOND).round() as i64;
+            let _ = writeln!(dump, "row {time_us} {}", r.notes);
+        }
+    }
+    dump
+}
+
+/// 4K and 7K rice (chords, a light LN, a late start so times are taken from the first row),
+/// an LN-heavy chart past the cut-off, and a chart without notes.
+fn difficulty_fixtures() -> Vec<(&'static str, Option<Chart>)> {
+    let k4_rice = chart![step = 120, start = 1500;
+        "x..[", ".x.|", "..x]", "xx..", "..xx", "x.x.", ".x.x", "xxx.", "...x", "x..x", ".xx.",
+        "x...",
+    ];
+    let k7_rice = chart![step = 90;
+        "x..x...", ".x...x.", "..x.x..", "x.....x", "xxx.xxx", "...x...", ".x.x.x.", "xx...xx",
+        "..xxx..", "x.x.x.x",
+    ];
+    let k7_ln_heavy = chart![step = 100;
+        "[[[....", "|||x...", "]]]....", "...[[[.", "x..|||.", "...]]]x", "x......",
+    ];
+    let empty = parse_chart(OsuText::mania(7).build().as_bytes())
+        .ok()
+        .map(|p| p.chart);
+    vec![
+        ("k4_rice", Some(k4_rice)),
+        ("k7_rice", Some(k7_rice)),
+        ("k7_ln_heavy", Some(k7_ln_heavy)),
+        ("k7_empty", empty),
+    ]
+}
+
+fn hex_bytes(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 const PATTERNS_STEP_MS: i32 = 100;
@@ -514,6 +594,28 @@ mod tests {
                 "missing {expected:?} in\n{labels}"
             );
         }
+    }
+
+    #[test]
+    fn difficulty_golden_pins_the_adapter_output_and_no_calculator_value() {
+        let dump = difficulty_dump();
+        assert_eq!(dump, difficulty_dump());
+        let params = wolluf_difficulty::minacalc::MinaCalcParams::default();
+        for expected in [
+            format!("params {}\n", hex_bytes(&params.params_hash())),
+            "rates 700 750 800 850 900 950 1000 1050 1100 1150 1200 1250 1300 1350 1400 1450 1500\n"
+                .to_owned(),
+            "ln_unrated_hold_share_permille 400\n".to_owned(),
+            "fixture k4_rice keys=4\nhold_share_permille 47\ndecision rate\nrows 12\nrow 0 9\nrow 120000 2\n"
+                .to_owned(),
+            "fixture k7_rice keys=7\nhold_share_permille 0\ndecision rate\nrows 10\n".to_owned(),
+            "fixture k7_ln_heavy keys=7\nhold_share_permille 600\ndecision ln_heavy\n".to_owned(),
+            "fixture k7_empty keys=7\nhold_share_permille 0\ndecision rate\nrows 0\n".to_owned(),
+        ] {
+            assert!(dump.contains(&expected), "missing {expected:?} in\n{dump}");
+        }
+        assert!(!dump.contains("error"), "{dump}");
+        assert!(!dump.contains("centi") && !dump.contains('.'), "{dump}");
     }
 
     #[test]

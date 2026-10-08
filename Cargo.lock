@@ -6136,6 +6136,7 @@ dependencies = [
  "thiserror 2.0.21",
  "wolluf-chart",
  "wolluf-core",
+ "wolluf-difficulty",
  "wolluf-patterns",
  "zstd",
 ]
