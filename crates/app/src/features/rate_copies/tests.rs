@@ -39,8 +39,10 @@ impl Set {
         Self { f, map }
     }
 
+    /// The folder as the plan shows it: the install path, not its canonical form (which is
+    /// `\\?\`-prefixed and long-named on Windows).
     fn folder(&self) -> PathBuf {
-        std::fs::canonicalize(self.f.root.join("Songs").join(&self.map.folder)).unwrap()
+        self.f.root.join("Songs").join(&self.map.folder)
     }
 
     async fn plan(&self, rate_milli: u16) -> RateCopyPlanDto {

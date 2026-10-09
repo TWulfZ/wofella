@@ -325,6 +325,8 @@ fn publish(
     match OpenOptions::new().write(true).create_new(true).open(target) {
         Ok(placeholder) => drop(placeholder),
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => return existing(target),
+        // Windows answers CREATE_NEW on a folder with ERROR_ACCESS_DENIED, not ALREADY_EXISTS.
+        Err(_) if std::fs::symlink_metadata(target).is_ok() => return existing(target),
         Err(e) => return Err(failed("reserve", e)),
     }
     if let Err(e) = std::fs::rename(&tmp.path, target) {
