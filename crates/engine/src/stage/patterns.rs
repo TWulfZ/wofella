@@ -8,7 +8,7 @@ use wolluf_chart::Layout;
 use wolluf_core::{PatternId, StageId, VersionKey, VersionKeyBuilder};
 use wolluf_patterns::{ChartView, PatternParams, rules, segment};
 
-use super::chart_parse;
+use super::{chart_parse, hash_field};
 use crate::error::EngineError;
 
 /// Re-exported so callers above the engine (app may not depend on chart or patterns, D1) can
@@ -64,8 +64,8 @@ fn config_hash(upstream: VersionKey, layout: &Layout, rules: &[(PatternId, u32)]
     sorted.sort();
     let mut hasher = blake3::Hasher::new();
     hasher.update(CONFIG_TAG);
-    field(&mut hasher, &upstream.0);
-    field(&mut hasher, layout.id().as_bytes());
+    hash_field(&mut hasher, &upstream.0);
+    hash_field(&mut hasher, layout.id().as_bytes());
     hasher.update(&u32::from(layout.is_mirrored()).to_le_bytes());
     hasher.update(
         &u32::try_from(sorted.len())
@@ -73,16 +73,10 @@ fn config_hash(upstream: VersionKey, layout: &Layout, rules: &[(PatternId, u32)]
             .to_le_bytes(),
     );
     for (id, version) in sorted {
-        field(&mut hasher, id.as_str().as_bytes());
+        hash_field(&mut hasher, id.as_str().as_bytes());
         hasher.update(&version.to_le_bytes());
     }
     *hasher.finalize().as_bytes()
-}
-
-/// ADR 0006 byte-string field: `u32` little-endian length, then the bytes.
-fn field(hasher: &mut blake3::Hasher, bytes: &[u8]) {
-    hasher.update(&u32::try_from(bytes.len()).unwrap_or(u32::MAX).to_le_bytes());
-    hasher.update(bytes);
 }
 
 /// One keymode profile's patterns stage: its layout and key, computed once per job.

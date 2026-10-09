@@ -117,3 +117,24 @@ CREATE TABLE segment (
 ) STRICT;
 
 CREATE INDEX segment_pattern ON segment (vkey, pattern_id);
+
+-- MinaCalc skillsets per `difficulty` key (ADR 0023), in centi-MSD. A status row exists for every
+-- processed chart; rate rows only when it is 'rated'.
+CREATE TABLE chart_msd (
+  md5 TEXT NOT NULL, vkey BLOB NOT NULL CHECK (length(vkey) = 32), rate_milli INTEGER NOT NULL,
+  overall INTEGER NOT NULL, stream INTEGER NOT NULL, jumpstream INTEGER NOT NULL, handstream INTEGER NOT NULL,
+  stamina INTEGER NOT NULL, jackspeed INTEGER NOT NULL, chordjack INTEGER NOT NULL, technical INTEGER NOT NULL,
+  PRIMARY KEY (md5, vkey, rate_milli)) STRICT, WITHOUT ROWID;
+CREATE TABLE chart_msd_status (
+  md5 TEXT NOT NULL, vkey BLOB NOT NULL CHECK (length(vkey) = 32), status TEXT NOT NULL CHECK (status IN ('rated','ln_heavy','calc_rejected')),
+  hold_share_permille INTEGER NOT NULL, PRIMARY KEY (md5, vkey)) STRICT, WITHOUT ROWID;
+
+-- Per-play SSRs per `play_ssr` key (ADR 0024), in centi. Every processed play has a row; it is
+-- 'counted' exactly when it carries both a goal and the skillsets (enforced by the writer).
+CREATE TABLE play_ssr (
+  play_id BLOB NOT NULL CHECK (length(play_id) = 32), vkey BLOB NOT NULL CHECK (length(vkey) = 32),
+  status TEXT NOT NULL CHECK (status IN ('counted','incomplete','score_v2','unsupported_mods','ln_heavy','calc_rejected','no_chart')),
+  rate_milli INTEGER NOT NULL, goal_permyriad INTEGER NULL,
+  overall INTEGER NULL, stream INTEGER NULL, jumpstream INTEGER NULL, handstream INTEGER NULL,
+  stamina INTEGER NULL, jackspeed INTEGER NULL, chordjack INTEGER NULL, technical INTEGER NULL,
+  PRIMARY KEY (play_id, vkey)) STRICT, WITHOUT ROWID;

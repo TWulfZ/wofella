@@ -75,6 +75,7 @@ mod tests {
             length_ms: 1,
             nps: 1.0,
             stars: None,
+            msd_overall_centi: None,
             labels: Vec::new(),
         }
     }

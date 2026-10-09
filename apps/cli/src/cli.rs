@@ -54,9 +54,59 @@ pub(crate) enum Command {
     Chart(ChartCmd),
     /// Blind gold-set labelling: label sampled chart windows by pattern (interactive, stdin).
     Label(LabelArgs),
+    /// Uncalibrated previews (ADR 0024); `wolluf library index` refreshes their per-play cache.
+    #[command(subcommand)]
+    Preview(PreviewCmd),
+    /// Rate-edited copies written into the chart's set folder (ADR 0025).
+    #[command(subcommand)]
+    RateCopy(RateCopyCmd),
     /// `.osg` spike tools: they only read the given files and never open the data dir.
     #[command(subcommand)]
     Osg(OsgCmd),
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum RateCopyCmd {
+    /// Names, existing files and refusals of a copy; writes nothing.
+    Plan(RateCopyArgs),
+    /// Plan, confirm and wait for the job that writes the copy's .osu and .ogg.
+    Create(RateCopyCreateArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct RateCopyArgs {
+    #[arg(value_name = "MD5")]
+    pub(crate) md5: String,
+    /// Music rate, e.g. 1.15 (at most three decimals).
+    #[arg(long, value_name = "RATE", value_parser = parse_rate_milli)]
+    pub(crate) rate: u16,
+    /// Raise or lower the pitch with the rate, like osu!'s NC; by default it is kept, like DT.
+    #[arg(long)]
+    pub(crate) nc: bool,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct RateCopyCreateArgs {
+    #[command(flatten)]
+    pub(crate) copy: RateCopyArgs,
+    /// Confirms the write into the osu! Songs folder.
+    #[arg(long, required = true)]
+    pub(crate) yes: bool,
+}
+
+/// `1.15` -> 1150, in decimal so no float rounding picks the neighbouring rate.
+fn parse_rate_milli(text: &str) -> Result<u16, String> {
+    const MILLI_DIGITS: usize = 3;
+    let invalid = || format!("`{text}` is not a rate like 1.15");
+    let (int, frac) = text.trim().split_once('.').unwrap_or((text.trim(), ""));
+    if int.is_empty()
+        || frac.len() > MILLI_DIGITS
+        || !int.bytes().chain(frac.bytes()).all(|b| b.is_ascii_digit())
+    {
+        return Err(invalid());
+    }
+    let digits = format!("{int}{frac:0<MILLI_DIGITS$}");
+    digits.parse::<u16>().map_err(|_| invalid())
 }
 
 #[derive(Debug, Subcommand)]
@@ -92,7 +142,8 @@ pub(crate) enum JobsCmd {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum LibraryCmd {
-    /// Parse and label the catalog's charts and wait for the job; Ctrl-C cancels.
+    /// Parse and label the catalog's charts and wait for it and the jobs it chains (the skill
+    /// preview's per-play SSRs); Ctrl-C cancels.
     Index,
     /// Indexed charts of one keymode, filtered by label or text.
     List(LibraryListArgs),
@@ -130,10 +181,89 @@ pub(crate) struct LibraryListArgs {
 }
 
 #[derive(Debug, Subcommand)]
+pub(crate) enum PreviewCmd {
+    /// Overall, skillsets, dan (4K), evidence, top plays and trend of one player scope.
+    Skill(PreviewSkillArgs),
+    /// Charts × rate in a band around the scope's preview rating, with a reason per pick.
+    Recs(PreviewRecsArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct PreviewRecsArgs {
+    #[arg(long, value_name = "N", default_value_t = 4)]
+    pub(crate) keys: u8,
+    #[arg(long, value_enum, value_name = "MODE", default_value = "deficit")]
+    pub(crate) mode: RecsModeArg,
+    /// A MinaCalc skillset id (`stream`, `jumpstream`, …); required by `--mode skillset`.
+    #[arg(long, value_name = "ID", required_if_eq("mode", "skillset"))]
+    pub(crate) skillset: Option<String>,
+    /// `self`, `all` (every player) or `p:<profile id>`. Separate merge lists the first scope.
+    #[arg(long, value_name = "SCOPE", default_value = "self", value_parser = parse_scope)]
+    pub(crate) scope: ScopeArg,
+    /// Overrides the profile's stored merge mode.
+    #[arg(long, value_enum, value_name = "MODE")]
+    pub(crate) merge: Option<MergeArg>,
+    /// Every grid rate for this call only; the stored `preview.recs.any_rate` setting is neither
+    /// read nor changed. Without it the setting decides.
+    #[arg(long)]
+    pub(crate) any_rate: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum RecsModeArg {
+    /// The weakest skillset the keymode lets Deficit pick.
+    Deficit,
+    /// Overall, aimed above the player.
+    Push,
+    /// The skillset `--skillset` names.
+    Skillset,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct PreviewSkillArgs {
+    /// 4K is the keymode the preview is validated on and the only one with a dan table.
+    #[arg(long, value_name = "N", default_value_t = 4)]
+    pub(crate) keys: u8,
+    /// `self`, `all` (every player) or `p:<profile id>`.
+    #[arg(long, value_name = "SCOPE", default_value = "self", value_parser = parse_scope)]
+    pub(crate) scope: ScopeArg,
+    /// Overrides the profile's stored merge mode.
+    #[arg(long, value_enum, value_name = "MODE")]
+    pub(crate) merge: Option<MergeArg>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ScopeArg {
+    SelfProfile,
+    AllPlayers,
+    Profile(u32),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum MergeArg {
+    Merged,
+    Separate,
+}
+
+const PROFILE_SCOPE_PREFIX: &str = "p:";
+
+fn parse_scope(s: &str) -> Result<ScopeArg, String> {
+    match s {
+        "self" => Ok(ScopeArg::SelfProfile),
+        "all" => Ok(ScopeArg::AllPlayers),
+        _ => s
+            .strip_prefix(PROFILE_SCOPE_PREFIX)
+            .and_then(|id| id.parse::<u32>().ok())
+            .map(ScopeArg::Profile)
+            .ok_or_else(|| format!("`{s}` is not a scope: use `self`, `all` or `p:<profile id>`")),
+    }
+}
+
+#[derive(Debug, Subcommand)]
 pub(crate) enum ChartCmd {
     /// Print an ASCII playfield of one time window.
     Show(ChartShowArgs),
-    /// Print the chart's metadata, summary, labels and pattern segments.
+    /// Print the chart's metadata, summary, labels, pattern segments and MinaCalc MSD per rate.
     Info {
         #[arg(value_name = "MD5")]
         md5: String,
@@ -315,6 +445,32 @@ mod tests {
 
     use super::*;
     use crate::exit;
+
+    #[test]
+    fn rates_parse_in_thousandths() {
+        for (text, milli) in [("1.15", 1150), ("1", 1000), ("0.7", 700), ("1.155", 1155)] {
+            assert_eq!(parse_rate_milli(text), Ok(milli), "{text}");
+        }
+        for bad in ["", ".5", "1.1555", "1,15", "-1.1", "x", "70.000"] {
+            assert!(parse_rate_milli(bad).is_err(), "{bad:?}");
+        }
+        let cli = Cli::try_parse_from(["wolluf", "rate-copy", "create", "abc", "--rate", "1.1"]);
+        assert!(cli.is_err(), "create needs --yes");
+        let cli = Cli::try_parse_from([
+            "wolluf",
+            "rate-copy",
+            "create",
+            "abc",
+            "--rate",
+            "1.1",
+            "--yes",
+        ])
+        .unwrap();
+        let Command::RateCopy(RateCopyCmd::Create(args)) = cli.command else {
+            panic!("{:?}", cli.command);
+        };
+        assert_eq!((args.copy.md5.as_str(), args.copy.rate), ("abc", 1100));
+    }
 
     #[test]
     fn clap_tree_is_consistent() {
@@ -555,6 +711,126 @@ mod tests {
         };
         assert_eq!(out, PathBuf::from("/x.jsonl"));
         assert!(Cli::try_parse_from(["wolluf", "label", "--seed", "1", "stats"]).is_err());
+    }
+
+    #[test]
+    fn preview_skill_defaults_to_self_4k() {
+        let cli = Cli::try_parse_from(["wolluf", "preview", "skill"]).unwrap();
+        let Command::Preview(PreviewCmd::Skill(args)) = cli.command else {
+            panic!("{:?}", cli.command);
+        };
+        assert_eq!(
+            (args.keys, args.scope, args.merge),
+            (4, ScopeArg::SelfProfile, None)
+        );
+    }
+
+    #[test]
+    fn preview_skill_flags() {
+        for (scope, want) in [
+            ("self", ScopeArg::SelfProfile),
+            ("all", ScopeArg::AllPlayers),
+            ("p:12", ScopeArg::Profile(12)),
+        ] {
+            let cli = Cli::try_parse_from([
+                "wolluf", "preview", "skill", "--keys", "7", "--scope", scope, "--merge",
+                "separate",
+            ])
+            .unwrap();
+            let Command::Preview(PreviewCmd::Skill(args)) = cli.command else {
+                panic!("{:?}", cli.command);
+            };
+            assert_eq!(
+                (args.keys, args.scope, args.merge),
+                (7, want, Some(MergeArg::Separate))
+            );
+        }
+        for bad in ["", "me", "p:", "p:x", "p:-1", "P:1", "12"] {
+            let err =
+                Cli::try_parse_from(["wolluf", "preview", "skill", "--scope", bad]).unwrap_err();
+            assert_eq!(err.exit_code(), i32::from(exit::USAGE), "{bad:?}");
+        }
+        assert!(Cli::try_parse_from(["wolluf", "preview", "skill", "--merge", "x"]).is_err());
+    }
+
+    #[test]
+    fn preview_recs_defaults_to_self_4k_deficit_with_stored_rates() {
+        let cli = Cli::try_parse_from(["wolluf", "preview", "recs"]).unwrap();
+        let Command::Preview(PreviewCmd::Recs(args)) = cli.command else {
+            panic!("{:?}", cli.command);
+        };
+        assert_eq!(
+            (
+                args.keys,
+                args.mode,
+                args.skillset,
+                args.scope,
+                args.merge,
+                args.any_rate
+            ),
+            (
+                4,
+                RecsModeArg::Deficit,
+                None,
+                ScopeArg::SelfProfile,
+                None,
+                false
+            )
+        );
+    }
+
+    #[test]
+    fn preview_recs_flags() {
+        let cli = Cli::try_parse_from([
+            "wolluf",
+            "preview",
+            "recs",
+            "--keys",
+            "7",
+            "--mode",
+            "skillset",
+            "--skillset",
+            "stream",
+            "--scope",
+            "all",
+            "--merge",
+            "separate",
+            "--any-rate",
+        ])
+        .unwrap();
+        let Command::Preview(PreviewCmd::Recs(args)) = cli.command else {
+            panic!("{:?}", cli.command);
+        };
+        assert_eq!(
+            (
+                args.keys,
+                args.mode,
+                args.skillset.as_deref(),
+                args.scope,
+                args.merge,
+                args.any_rate
+            ),
+            (
+                7,
+                RecsModeArg::Skillset,
+                Some("stream"),
+                ScopeArg::AllPlayers,
+                Some(MergeArg::Separate),
+                true
+            )
+        );
+        for mode in ["deficit", "push"] {
+            assert!(Cli::try_parse_from(["wolluf", "preview", "recs", "--mode", mode]).is_ok());
+        }
+        for bad in [
+            &["--mode", "x"][..],
+            &["--mode", "skillset"],
+            &["--scope", "me"],
+        ] {
+            let err =
+                Cli::try_parse_from(["wolluf", "preview", "recs"].iter().chain(bad)).unwrap_err();
+            assert_eq!(err.exit_code(), i32::from(exit::USAGE), "{bad:?}");
+        }
     }
 
     #[test]

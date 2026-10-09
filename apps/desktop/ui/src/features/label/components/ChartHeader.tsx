@@ -97,6 +97,8 @@ export interface ChartHeaderProps {
   onBlockSize?: ((px: number) => void) | undefined;
   /** Labelling progress shown from the counters; without it the counters stay a plain list. */
   countersDetails?: ReactNode;
+  /** Rendered inside the details dialog, so whatever it fetches waits until the dialog opens. */
+  difficulty?: ReactNode;
 }
 
 /** Drops float noise from the f32 IPC values (7.5 stays 7.5, 7.4999 becomes 7.5). */
@@ -412,7 +414,12 @@ function OpenOnOsu({ url }: { url: string }) {
   );
 }
 
-function DetailsDialog({ window, background, details }: Pick<ChartHeaderProps, "window" | "background" | "details">) {
+function DetailsDialog({
+  window,
+  background,
+  details,
+  difficulty,
+}: Pick<ChartHeaderProps, "window" | "background" | "details" | "difficulty">) {
   const { t } = useTranslation();
   const title = details?.title ?? window.title;
   const stars = details?.stars ?? window.stars;
@@ -447,6 +454,7 @@ function DetailsDialog({ window, background, details }: Pick<ChartHeaderProps, "
           />
         )}
         {details !== undefined && <StatRow details={details} />}
+        {difficulty}
         {url !== null && <OpenOnOsu url={url} />}
         <dl className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
           <DetailRow term={t("label.header.field.mapper")}>{details?.creator ?? window.creator}</DetailRow>
@@ -557,10 +565,11 @@ interface CompactBarProps {
   origin: WindowOrigin | undefined;
   background: string | null;
   details: ChartDetails | undefined;
+  difficulty: ReactNode;
   nav: ReactNode;
 }
 
-function CompactBar({ window, origin, background, details, nav }: CompactBarProps) {
+function CompactBar({ window, origin, background, details, difficulty, nav }: CompactBarProps) {
   const { t } = useTranslation();
   return (
     <div
@@ -590,13 +599,14 @@ function CompactBar({ window, origin, background, details, nav }: CompactBarProp
       {window.stars !== null && <StarRating stars={window.stars} />}
       {origin !== undefined && <OriginBadge origin={origin} />}
       <div className="shrink-0">{nav}</div>
-      <DetailsDialog window={window} background={background} details={details} />
+      <DetailsDialog window={window} background={background} details={details} difficulty={difficulty} />
     </div>
   );
 }
 
 export function ChartHeader(props: ChartHeaderProps) {
-  const { window, origin, background = null, details, nav, counters, scrollRoot, onBlockSize, countersDetails } = props;
+  const { window, origin, background = null, details, difficulty, nav, counters, scrollRoot, onBlockSize, countersDetails } =
+    props;
   const { t } = useTranslation();
   const sentinel = useRef<HTMLDivElement>(null);
   const collapsed = useScrolledAway(sentinel, scrollRoot);
@@ -605,7 +615,16 @@ export function ChartHeader(props: ChartHeaderProps) {
     <>
       {/* Zero height, so it takes no room while the card shows; it only anchors the bar to the panel's top edge. */}
       <div className="sticky top-0 z-20 h-0">
-        {collapsed && <CompactBar window={window} origin={origin} background={background} details={details} nav={nav} />}
+        {collapsed && (
+          <CompactBar
+            window={window}
+            origin={origin}
+            background={background}
+            details={details}
+            difficulty={difficulty}
+            nav={nav}
+          />
+        )}
       </div>
       {/* Full-bleed: the image is the panel's top background, so the card adds no frame or inset of its own. */}
       <header ref={headerRef} className="relative isolate flex w-full shrink-0 flex-col overflow-hidden rounded-t-xl border-b">
@@ -643,7 +662,7 @@ export function ChartHeader(props: ChartHeaderProps) {
         {/* Inert while the bar carries these, so each control exists once for the keyboard and assistive tech. */}
         <div inert={collapsed} className="flex items-start justify-between gap-2 p-2">
           {origin === undefined ? <span /> : <OriginBadge origin={origin} />}
-          <DetailsDialog window={window} background={background} details={details} />
+          <DetailsDialog window={window} background={background} details={details} difficulty={difficulty} />
         </div>
 
         <div className="flex min-w-0 flex-col gap-1 px-3 pt-12 pb-2">

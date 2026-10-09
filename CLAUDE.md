@@ -46,6 +46,7 @@ Gates, from the repo root (per change, the ones `wolluf-odd` §6 marks as applic
 - `cargo nextest run --workspace`
 - `cargo xtask bindings && git diff --exit-code apps/desktop/ui/src/ipc/bindings.ts`
 - `pnpm -C apps/desktop/ui exec tsc --noEmit && pnpm -C apps/desktop/ui lint && pnpm -C apps/desktop/ui test` (`pnpm -C apps/desktop/ui build` for `dist/`)
+  Non-interactive shells pick up the Windows Node; put the fnm Node first: `export PATH="$HOME/.local/share/fnm/aliases/default/bin:$PATH"`.
 
 Corpus harnesses (`#[ignore]`, read-only; do not run while osu! is running, the tests fail if the corpus changes):
 - All: `WOLLUF_CORPUS="/mnt/e/Games/osu!" cargo nextest run --workspace --run-ignored only`
@@ -60,8 +61,10 @@ CLI (`cargo run -p wolluf-cli -- …`, binary `wolluf`; global `--data-dir <DIR>
 - `wolluf setup detect`, `wolluf setup set <path>`, `wolluf setup status`
 - `wolluf sync` (Ctrl-C cancels, exit 130), `wolluf players list`, `wolluf jobs list [--limit N]`
 - `wolluf library index` (also chained after `sync`), `wolluf library list [--keys N] [--scale S] [--level-min X] [--level-max Y] [--source SRC] [--text T] [--limit N] [--offset N]`, `wolluf library scales`
-- `wolluf chart show <md5> [--from <s|mm:ss>] [--to <s|mm:ss>] [--layout <preset id>] [--segments]` (ASCII playfield, earliest row at the bottom; default window 20 s; `--segments` marks engine pattern segments), `wolluf chart info <md5>`, `wolluf library patterns`, `wolluf library hints` (name-hint lift per axis and pattern; method and the v1→v4 numbers in `docs/research/05-pattern-engine-hint-lift.md`; measure on a copy of the data dir, since `library index` rewrites the cache)
+- `wolluf chart show <md5> [--from <s|mm:ss>] [--to <s|mm:ss>] [--layout <preset id>] [--segments]` (ASCII playfield, earliest row at the bottom; default window 20 s; `--segments` marks engine pattern segments), `wolluf chart info <md5>` (also MinaCalc v527 MSD per rate; `library list` shows Overall MSD at 1.0x; 4K charts are rated but not segmented, ADR 0023), `wolluf library patterns`, `wolluf library hints` (name-hint lift per axis and pattern; method and the v1→v4 numbers in `docs/research/05-pattern-engine-hint-lift.md`; measure on a copy of the data dir, since `library index` rewrites the cache)
 - `wolluf label [--seed N] [--window SECS] [--keys N] [--scale S] [--level-min X] [--level-max Y]` (blind gold-set labelling REPL: pattern keys, `x` no pattern, `s` skip, `u` undo, `m`/`?` flags, `tl`/`tr` thumb side, `w+`/`w-`/`n`/`p` reshape, `q` quit), `wolluf label stats [--json]`, `wolluf label export [--out PATH]` (default `fixtures/labels/gold-7k.jsonl`)
+- `wolluf preview skill [--keys N] [--scope self|all|p:<id>] [--merge merged|separate]` and `wolluf preview recs [--keys N] [--mode deficit|push|skillset] [--skillset ID] [--any-rate]` (uncalibrated beta preview, ADR 0024; ratings come from the ComputePlaySsr job chained after `library index`)
+- `wolluf rate-copy plan <md5> --rate 1.15`, `wolluf rate-copy create <md5> --rate 1.15 --yes` (writes a new `.osu` + `.ogg` into the chart's set folder through `app::export`, ADR 0025; never against the pilot corpus)
 - `wolluf osg dump <file> [--format table|json|csv] [--events] [--limit N]`
 - `wolluf osg survey --corpus <root> [--json] [--strict] [--max-files N]` (opens no data dir; use `--release` for timing)
 - Env: `WOLLUF_OSU_DIR` (install candidate checked first), `WOLLUF_DATA_DIR` (data dir), `WOLLUF_LOG` (log filter)

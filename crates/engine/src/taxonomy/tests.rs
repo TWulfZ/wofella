@@ -83,7 +83,7 @@ fn taxonomy_k7_profile_carries_it() {
     let k7_profile = crate::profile::Registry::builtin()
         .profile(wolluf_core::Keymode::K7)
         .unwrap();
-    assert_eq!(k7_profile.taxonomy, k7());
+    assert_eq!(k7_profile.taxonomy, Some(k7()));
 }
 
 // The pilot's vocabulary (2026-09-29): speed is a difficulty dimension, not a shape.

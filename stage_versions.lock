@@ -10,6 +10,14 @@ golden = "e572e79871f8111a594d1daac78f154f0d349e46e3bc889fd7e07b4661640379"
 version = 1
 golden = "ba3334e1f848735b9f7cdbfd9837aaa4c5557fb0a8c128ad56da83a6988e1c59"
 
+[stages."difficulty"]
+version = 2
+golden = "beb89ca8f1576de128f8b113289e9dd242954e05165c7c9c6eed0e5f01821919"
+
 [stages."patterns"]
 version = 5
 golden = "c15a66444b81b34d3aef1dac597e1dfaff57afa5a6dc797db57f91f9421a70dd"
+
+[stages."play_ssr"]
+version = 2
+golden = "cee8762cf84fe21efd3627f5425704fb28be6f593a007a79053636c81467d8c9"

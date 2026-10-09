@@ -48,6 +48,8 @@ pub struct LibraryChartDto {
     pub nps: f64,
     /// stable's cached no-mod star rating; `None` until stable has computed it.
     pub stars: Option<f32>,
+    /// MinaCalc Overall × 100 at rate 1.0; `None` unless the chart is rated (ADR 0023).
+    pub msd_overall_centi: Option<i32>,
     pub labels: Vec<ChartLabelDto>,
 }
 
@@ -85,6 +87,40 @@ pub struct ChartDetailsDto {
     pub n_ln: u32,
     pub set_id: Option<i32>,
     pub beatmap_id: Option<i32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum MsdStatusDto {
+    Rated,
+    /// MinaCalc ignores holds and releases, so from the LN cut-off on its numbers mean nothing.
+    LnHeavy,
+    CalcRejected,
+    /// Not rated yet under the current `difficulty` key: unindexed, unparsed or missing.
+    Pending,
+}
+
+/// A chart's MinaCalc skillsets per rate (ADR 0022, ADR 0023).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ChartMsdDto {
+    pub md5: String,
+    pub status: MsdStatusDto,
+    /// LN objects over all objects; 0 while pending.
+    pub hold_share_permille: u16,
+    pub calc_version: i32,
+    /// The order of every `MsdRateDto::centi`, Overall first.
+    pub skillsets: Vec<String>,
+    /// Ascending; empty unless rated.
+    pub rates: Vec<MsdRateDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MsdRateDto {
+    pub rate_milli: u16,
+    /// MSD × 100 per skillset, in `ChartMsdDto::skillsets` order.
+    pub centi: Vec<i32>,
 }
 
 /// One pattern segment under the keymode profile's default layout, rows `t0Ms..=t1Ms`.

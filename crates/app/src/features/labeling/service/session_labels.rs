@@ -62,7 +62,7 @@ impl LabelingService<'_> {
         let answer = match req.pattern.as_deref() {
             None => DominantAnswer::NoPattern,
             Some(p) => DominantAnswer::Pattern(
-                taxonomy::by_id(profile.taxonomy, p)
+                taxonomy::by_id(profile.taxonomy.unwrap_or_default(), p)
                     .map(|def| def.id.clone())
                     .ok_or_else(|| {
                         AppError::invalid_input()
@@ -188,7 +188,7 @@ impl LabelingService<'_> {
             let patterns = patterns_of(l);
             let axes: BTreeSet<String> = patterns
                 .iter()
-                .filter_map(|p| taxonomy::by_id(profile.taxonomy, p.as_str()))
+                .filter_map(|p| taxonomy::by_id(profile.taxonomy.unwrap_or_default(), p.as_str()))
                 .map(|d| d.axis.to_string())
                 .collect();
             for p in patterns {

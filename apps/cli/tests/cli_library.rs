@@ -325,3 +325,137 @@ fn library_patterns_counts_primary_segments() {
         "{table}"
     );
 }
+
+/// The cell `wolluf` prints for a centi-MSD, so the test does not restate the formatting.
+fn msd_cell(centi: &serde_json::Value) -> String {
+    format!("{:.2}", centi.as_f64().unwrap() / 100.0)
+}
+
+fn column(table: &str, header: &str, row: usize) -> String {
+    let lines: Vec<&str> = table.lines().collect();
+    let at = lines[0]
+        .find(header)
+        .unwrap_or_else(|| panic!("{header}: {table}"));
+    lines[row][at..]
+        .split_whitespace()
+        .next()
+        .unwrap_or_else(|| panic!("{table}"))
+        .to_owned()
+}
+
+#[test]
+fn list_shows_overall_msd_at_1x() {
+    let (env, _) = synced();
+    let list = env.json(&["library", "list"]);
+    let centi = &list[0]["msdOverallCenti"];
+    assert!(centi.as_i64().is_some_and(|c| c > 0), "{list}");
+    let table = stdout(&env, &["library", "list"]);
+    assert_eq!(column(&table, "MSD", 1), msd_cell(centi), "{table}");
+}
+
+/// Four LN columns and two taps: past MinaCalc's LN cut-off, so the chart is not rated.
+fn ln_heavy_synced() -> (Env, String) {
+    let env = Env::new();
+    let holds: Vec<(u8, i32, i32)> = (0..4).map(|c| (c, 1_000, 2_000)).collect();
+    let (root, md5) = env.install_with_chart(&osu_7k(&[(5, 500), (6, 2_500)], &holds));
+    env.set_install(&root);
+    env.json(&["sync"]);
+    (env, md5)
+}
+
+#[test]
+fn list_shows_a_dash_without_a_rating() {
+    let (env, _) = ln_heavy_synced();
+    let list = env.json(&["library", "list"]);
+    assert_eq!(
+        list[0]["msdOverallCenti"],
+        serde_json::Value::Null,
+        "{list}"
+    );
+    let table = stdout(&env, &["library", "list"]);
+    assert_eq!(column(&table, "MSD", 1), "-", "{table}");
+}
+
+#[test]
+fn chart_info_prints_the_msd_per_rate() {
+    let (env, md5) = synced();
+    let info = env.json(&["chart", "info", &md5]);
+    assert_eq!(
+        info["chart"]["md5"],
+        md5.as_str(),
+        "detail stays at the top: {info}"
+    );
+    let msd = &info["msd"];
+    assert_eq!(msd["status"], "rated", "{info}");
+    assert_eq!(msd["skillsets"][0], "overall", "{info}");
+    assert_eq!(msd["skillsets"].as_array().unwrap().len(), 8, "{info}");
+    let rates = msd["rates"].as_array().unwrap();
+    let at_1x = rates
+        .iter()
+        .position(|r| r["rateMilli"] == 1_000)
+        .unwrap_or_else(|| panic!("{info}"));
+
+    let text = stdout(&env, &["chart", "info", &md5]);
+    assert!(
+        text.lines()
+            .any(|l| l.starts_with("msd ") && l.ends_with("rated")),
+        "{text}"
+    );
+    let permille = msd["holdSharePermille"].as_f64().unwrap();
+    assert!(
+        text.lines().any(
+            |l| l.starts_with("hold share") && l.ends_with(&format!("{:.1}%", permille / 10.0))
+        ),
+        "{text}"
+    );
+    let table = &text[text.find("RATE").unwrap_or_else(|| panic!("{text}"))..];
+    assert_eq!(table.lines().count(), rates.len() + 1, "{text}");
+    assert_eq!(column(table, "RATE", at_1x + 1), "1.00", "{text}");
+    for id in ["overall", "stream", "technical"] {
+        let k = msd["skillsets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|s| s == id)
+            .unwrap();
+        assert_eq!(
+            column(table, &id.to_uppercase(), at_1x + 1),
+            msd_cell(&rates[at_1x]["centi"][k]),
+            "{id}: {text}"
+        );
+    }
+}
+
+#[test]
+fn chart_info_prints_an_unrated_status_without_a_table() {
+    let (env, md5) = ln_heavy_synced();
+    let msd = &env.json(&["chart", "info", &md5])["msd"];
+    assert_eq!(msd["status"], "ln_heavy", "{msd}");
+    assert_eq!(msd["rates"], serde_json::json!([]), "{msd}");
+    let text = stdout(&env, &["chart", "info", &md5]);
+    assert!(
+        text.lines()
+            .any(|l| l.starts_with("msd ") && l.ends_with("ln_heavy")),
+        "{text}"
+    );
+    assert!(!text.contains("RATE"), "{text}");
+}
+
+#[test]
+fn index_reports_msd_written() {
+    let (env, _) = synced();
+    let jobs = env.json(&["jobs", "list"]);
+    let index = jobs
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|j| j["kind"] == "index_library")
+        .unwrap_or_else(|| panic!("{jobs}"));
+    assert_eq!(index["summary"]["counters"]["msdWritten"], 1, "{index}");
+    let text = stdout(&env, &["library", "index"]);
+    assert!(
+        text.lines()
+            .any(|l| l.starts_with("msd written") && l.ends_with('0')),
+        "{text}"
+    );
+}

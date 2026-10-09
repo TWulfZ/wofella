@@ -1,0 +1,15 @@
+error[E0603]: function `confirm` is private
+ --> tests/ui/export_permit_confirm.rs:1:57
+  |
+1 | use wolluf_app::export::{ExportParams, PreviewRegistry, confirm};
+  |                                                         ^^^^^^^ private function
+  |
+note: the function `confirm` is defined here
+ --> src/export/mod.rs
+  |
+  | / pub(crate) fn confirm<T>(
+  | |     registry: &PreviewRegistry<T>,
+  | |     preview_id: &str,
+  | |     now: UnixUs,
+  | | ) -> Result<(ExportPermit, T), AppError> {
+  | |________________________________________^

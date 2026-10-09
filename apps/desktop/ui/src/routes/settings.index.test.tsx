@@ -241,6 +241,21 @@ describe("/settings/ hand layout", () => {
     expect(screen.getByText("0.1.0")).toBeInTheDocument();
   });
 
+  it("shows the presets of the URL keymode", async () => {
+    const k4 = preset("k4.generic", "L L R R");
+    const { calls } = await bootApp("/settings/?keymode=4", {
+      ...handLayoutHandlers("k4.generic"),
+      settingsHandLayouts: (args) => (args["keymode"] === 4 ? [k4] : K7_LAYOUTS),
+    });
+    const group = await screen.findByRole("radiogroup", { name: "Hand layout (4K)" });
+    const radios = await within(group).findAllByRole("radio");
+    expect(radios).toHaveLength(1);
+    expect(within(group).getByRole("radio", { name: "2 | 2" })).toBeChecked();
+    expect(calls.filter((c) => c.cmd === "settings_hand_layouts").map((c) => c.args)).toEqual([{ keymode: 4 }]);
+    expect(calls.filter((c) => c.cmd === "settings_get_hand_layout").map((c) => c.args)).toEqual([{ keymode: 4 }]);
+    expect(screen.queryByRole("radiogroup", { name: "Hand layout (7K)" })).not.toBeInTheDocument();
+  });
+
   it("speaks Spanish", async () => {
     await i18n.changeLanguage("es");
     await bootApp("/settings/", handLayoutHandlers());
@@ -501,5 +516,65 @@ describe("/settings/ session notification", () => {
     await i18n.changeLanguage("es");
     await bootApp("/settings/", notifyHandlers(false));
     expect(await screen.findByRole("switch", { name: "Avisar cuando termine una canción" })).toBeInTheDocument();
+  });
+});
+
+describe("/settings/ recommendations", () => {
+  function anyRateHandlers(initial: boolean): CommandHandlers {
+    let current = initial;
+    return {
+      ...handLayoutHandlers(),
+      settingsGetRecsAnyRate: () => current,
+      settingsSetRecsAnyRate: (args) => {
+        current = Boolean(args["on"]);
+        return null;
+      },
+    };
+  }
+
+  async function anyRateSwitch(): Promise<HTMLElement> {
+    const toggle = await screen.findByRole("switch", { name: "Enable any rate (0.70–1.50x)" });
+    await waitFor(() => {
+      expect(toggle).toBeEnabled();
+    });
+    return toggle;
+  }
+
+  it("is off by default, sits in a Recommendations card and explains both settings", async () => {
+    await bootApp("/settings/", anyRateHandlers(false));
+    const toggle = await anyRateSwitch();
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(within(screen.getByRole("region", { name: "Recommendations" })).getByRole("switch")).toBe(toggle);
+    expect(toggle).toHaveAccessibleDescription(/NM, HT, DT and rate copies already in your library/);
+    expect(toggle).toHaveAccessibleDescription(/any rate can be suggested and wofella can generate the copy/);
+  });
+
+  it("stores each change and refreshes the recommendations", async () => {
+    const { calls, queryClient } = await bootApp("/settings/", anyRateHandlers(false));
+    const recsKey = ["preview", "recs", "probe"];
+    queryClient.setQueryData(recsKey, "cached");
+    const toggle = await anyRateSwitch();
+    await userEvent.click(toggle);
+    await waitFor(() => {
+      expect(toggle).toHaveAttribute("aria-checked", "true");
+    });
+    expect(queryClient.getQueryState(recsKey)?.isInvalidated).toBe(true);
+    await userEvent.click(toggle);
+    await waitFor(() => {
+      expect(toggle).toHaveAttribute("aria-checked", "false");
+    });
+    expect(calls.filter((c) => c.cmd === "settings_set_recs_any_rate").map((c) => c.args)).toEqual([{ on: true }, { on: false }]);
+  });
+
+  it("shows a stored on", async () => {
+    await bootApp("/settings/", anyRateHandlers(true));
+    expect(await anyRateSwitch()).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("speaks Spanish", async () => {
+    await i18n.changeLanguage("es");
+    await bootApp("/settings/", anyRateHandlers(false));
+    expect(await screen.findByRole("switch", { name: "Permitir cualquier rate (0,70–1,50x)" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Recomendaciones" })).toBeInTheDocument();
   });
 });

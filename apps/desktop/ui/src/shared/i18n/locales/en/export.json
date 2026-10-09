@@ -1,0 +1,9 @@
+{
+  "export": {
+    "error": {
+      "folder_outside_songs": "The chart's set folder is not inside the osu! Songs folder, so wofella will not write there.",
+      "preview_unknown": "This preview expired or was already used. Close this window and open it again.",
+      "target_not_a_file": "The file name is held by something that is not a regular file (a folder or a link), so nothing was written."
+    }
+  }
+}

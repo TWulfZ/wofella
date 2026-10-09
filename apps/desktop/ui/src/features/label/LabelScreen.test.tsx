@@ -7,6 +7,7 @@ import { Playfield, type PlayfieldEffects, skinEffectSupport } from "@/features/
 import type {
   AnchorDto,
   ChartDetailsDto,
+  ChartMsdDto,
   ChartTimelineRequestDto,
   ChartWindowDto,
   LabelStatsDto,
@@ -90,9 +91,10 @@ function chartWindow(md5: string, fromMs: number, toMs: number, layoutId: string
     timing: [{ tMs: 0, kind: "red", beatLenMs: 300, meter: 4, sv: null }],
     layout: {
       id: layoutId ?? RIGHT_THUMB,
-      columns: ["left", "left", "left", "right", "right", "right", "right"].map((hand) => ({
+      // Only the thumb presets put a thumb on the middle column, which is what the thumb flags follow.
+      columns: ["left", "left", "left", "right", "right", "right", "right"].map((hand, col) => ({
         hand: hand as "left" | "right",
-        finger: "index" as const,
+        finger: col === 3 && (layoutId ?? RIGHT_THUMB).endsWith("_thumb") ? ("thumb" as const) : ("index" as const),
       })),
     },
     chartSpan: CHART_SPAN,
@@ -176,6 +178,15 @@ const DETAILS: ChartDetailsDto = {
   nLn: 120,
   setId: 123_456,
   beatmapId: 654_321,
+};
+
+const MSD: ChartMsdDto = {
+  md5: ANCHOR_A.md5,
+  status: "rated",
+  holdSharePermille: 51,
+  calcVersion: 527,
+  skillsets: ["overall", "stream", "jumpstream", "handstream", "stamina", "jackspeed", "chordjack", "technical"],
+  rates: [{ rateMilli: 1000, centi: [2450, 2300, 2200, 2000, 1900, 1600, 1500, 1800] }],
 };
 
 /** Short enough to keep the suite fast, long enough that a tap (press and release) never confirms. */
@@ -333,6 +344,7 @@ function renderScreen(
     },
     chartBackground: () => null,
     chartDetails: (args) => ({ ...DETAILS, md5: String(args["md5"]) }),
+    chartMsd: (args) => ({ ...MSD, md5: String(args["md5"]) }),
     settingsGetHandLayout: () => RIGHT_THUMB,
     ...extra,
   });
@@ -1257,6 +1269,17 @@ describe("LabelScreen", () => {
     ]);
   });
 
+  it("offers no thumb side on a hand layout without a thumb", async () => {
+    renderScreen([WINDOW_A, WINDOW_B], { settingsGetHandLayout: () => "k7.43" });
+    await roundLoaded();
+    await timelineShown();
+    await waitFor(() => {
+      expect(within(answerBar()).queryByRole("button", { name: "Left thumb" })).toBeNull();
+    });
+    expect(within(answerBar()).queryByRole("button", { name: "Right thumb" })).toBeNull();
+    expect(inBar("Mixed")).toBeInTheDocument();
+  });
+
   it("has no widen, narrow or shift window buttons any more", async () => {
     renderScreen();
     await roundLoaded();
@@ -1963,6 +1986,47 @@ describe("LabelScreen player layout", () => {
     const dialog = screen.getByRole("dialog", { name: "Alpha Song" });
     expect(within(dialog).getByRole("list", { name: "Map statistics" })).toHaveTextContent("02:34Length");
     expect(within(dialog).getByText("Source", { selector: "dt" }).nextElementSibling).toHaveTextContent("Some Game");
+  });
+
+  it("shows the chart's MinaCalc difficulty from chart_msd in the header dialog, fetched only once opened", async () => {
+    const calls = renderScreen();
+    await roundLoaded();
+    await timelineShown();
+    expect(argsOf(calls, "chart_msd")).toEqual([]);
+    await userEvent.click(screen.getByRole("button", { name: "Show the full image and map details" }));
+    const dialog = screen.getByRole("dialog", { name: "Alpha Song" });
+    const msd = await within(dialog).findByRole("region", { name: "Difficulty" });
+    expect(await within(msd).findByText("Rated")).toBeInTheDocument();
+    expect(within(msd).getByTestId("msd-overall")).toHaveTextContent("≈24.50");
+    expect(argsOf(calls, "chart_msd")).toEqual([{ md5: ANCHOR_A.md5 }]);
+  });
+
+  it("generates a rate copy of the chart from the header dialog at the picked rate", async () => {
+    const calls = renderScreen(undefined, {
+      jobsList: () => [],
+      rateCopyPlan: (args) => ({
+        previewId: "01JPREVIEW",
+        md5: String(args["md5"]),
+        rateMilli: Number(args["rateMilli"]),
+        nightcore: false,
+        folder: "/songs/1 Artist - Alpha Song",
+        osuFilename: "Artist - Alpha Song (Mapper) [Insane 1.2x].osu",
+        version: "Insane 1.2x",
+        audioFilename: "audio 1.20x.ogg",
+        audioExists: false,
+        osuExists: false,
+        refusal: null,
+      }),
+    });
+    await roundLoaded();
+    await userEvent.click(screen.getByRole("button", { name: "Show the full image and map details" }));
+    const details = screen.getByRole("dialog", { name: "Alpha Song" });
+    await userEvent.selectOptions(within(details).getByRole("combobox", { name: "Rate" }), "1200");
+    await userEvent.click(within(details).getByRole("button", { name: "Generate rate copy" }));
+    const dialog = await screen.findByRole("dialog", { name: "Generate a rate copy" });
+    expect(await within(dialog).findByText("audio 1.20x.ogg")).toBeInTheDocument();
+    expect(dialog).toHaveTextContent("Artist - Alpha Song [Insane]");
+    expect(argsOf(calls, "rate_copy_plan")).toEqual([{ md5: ANCHOR_A.md5, rateMilli: 1200, nightcore: false }]);
   });
 
   it("takes a clicked chip to its pattern card, opening the card's axis but leaving focus on the page", async () => {

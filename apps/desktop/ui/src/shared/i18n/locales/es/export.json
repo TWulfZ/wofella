@@ -1,0 +1,9 @@
+{
+  "export": {
+    "error": {
+      "folder_outside_songs": "La carpeta del set no está dentro de la carpeta Songs de osu!, así que wofella no escribe allí.",
+      "preview_unknown": "Esta vista previa caducó o ya se usó. Cierra esta ventana y vuelve a abrirla.",
+      "target_not_a_file": "El nombre del archivo lo ocupa algo que no es un archivo normal (una carpeta o un enlace), así que no se escribió nada."
+    }
+  }
+}

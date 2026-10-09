@@ -17,11 +17,14 @@ test-support = ["wolluf-chart/test-support"]
 wolluf-core.workspace = true
 wolluf-chart.workspace = true
 wolluf-patterns.workspace = true
+wolluf-difficulty.workspace = true
+wolluf-drills.workspace = true
 thiserror.workspace = true
 serde.workspace = true
 postcard.workspace = true
 zstd.workspace = true
 blake3.workspace = true
+libm.workspace = true
 
 [dev-dependencies]
 wolluf-chart = { workspace = true, features = ["test-support"] }

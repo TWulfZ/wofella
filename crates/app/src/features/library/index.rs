@@ -1,8 +1,10 @@
 //! `IndexLibrary` (F1): parses every catalog chart of a keymode with an engine profile into
-//! `chart_parsed`, writes its difficulty-name labels and name hints into `chart_label` and its
-//! pattern segments into `segment`. Each chart is memoized per md5 and stage in `derivation`
-//! (architecture §7), so a rerun only does what is new and a cancel means "run it again".
+//! `chart_parsed`, writes its difficulty-name labels and name hints into `chart_label`, its
+//! pattern segments into `segment` and its MinaCalc skillsets into `chart_msd` (ADR 0023). Each
+//! chart is memoized per md5 and stage in `derivation` (architecture §7), so a rerun only does
+//! what is new and a cancel means "run it again".
 
+use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::mpsc;
@@ -10,12 +12,16 @@ use std::sync::mpsc;
 use wolluf_core::{ChartMd5, ErrorCode, Keymode, StageId, VersionKey};
 use wolluf_engine::EngineError;
 use wolluf_engine::labels::LabelInput;
-use wolluf_engine::profile::Registry;
+use wolluf_engine::profile::{CalcId, Registry};
 use wolluf_engine::rows_blob::{decode_rows, encode_rows};
 use wolluf_engine::stage::chart_parse::parse_chart;
+use wolluf_engine::stage::difficulty::{
+    self, Calc, MinaCalcParams, MsdStatus, MsdTable, UnratedReason,
+};
 use wolluf_engine::stage::patterns::{self, Chart, Segment, Segmenter};
 use wolluf_engine::stage::{chart_label, chart_parse};
 use wolluf_source_osu::songs::{ChartReadError, read_chart_verified};
+use wolluf_store::repo::cache::chart_msd::{self, ChartMsd, MsdRow, MsdStatusRow};
 use wolluf_store::repo::cache::{
     CatalogChart, ChartLabel, ChartParsed, Derivation, DerivationStatus, SegmentRow, catalog_chart,
     chart_label as label_repo, chart_parsed, derivation, segment as segment_repo,
@@ -25,6 +31,7 @@ use wolluf_store::{Conn, DbHandle, StoreError};
 
 use crate::context::{blocking_join_error, catalog_install, songs_dir};
 use crate::errors::AppError;
+use crate::features::preview::ComputePlaySsrJob;
 use crate::jobs::dto::{IndexLibrarySummaryDto, JobKindDto, JobStageDto, JobSummaryDto};
 use crate::jobs::{ItemError, ItemResult, Job, JobCtx, JobFuture, JobSummary, panic_text};
 
@@ -65,13 +72,13 @@ impl Job for IndexLibraryJob {
 
 /// The stage-level keys every library row is stored and read under (D15).
 #[derive(Debug, Clone, Copy)]
-pub(super) struct Keys {
-    pub(super) parse: VersionKey,
-    pub(super) label: VersionKey,
+pub(crate) struct Keys {
+    pub(crate) parse: VersionKey,
+    pub(crate) label: VersionKey,
 }
 
 impl Keys {
-    pub(super) fn current() -> Result<Self, AppError> {
+    pub(crate) fn current() -> Result<Self, AppError> {
         let key = |r: Result<VersionKey, EngineError>| {
             r.map_err(|e| AppError::internal(format!("library vkey: {e}")))
         };
@@ -82,8 +89,8 @@ impl Keys {
     }
 }
 
-/// The `patterns` stage per keymode profile. The layout is the profile's default; a
-/// user-selected layout is future work.
+/// The `patterns` stage per keymode profile with a taxonomy (ADR 0023). The layout is the
+/// profile's default; a user-selected layout is future work.
 pub(super) struct Segmenters(Vec<(u8, Segmenter)>);
 
 impl Segmenters {
@@ -91,6 +98,7 @@ impl Segmenters {
         Registry::builtin()
             .profiles()
             .iter()
+            .filter(|p| p.taxonomy.is_some())
             .map(|p| {
                 let segmenter = Segmenter::new(p.layout())
                     .map_err(|e| AppError::internal(format!("patterns vkey: {e}")))?;
@@ -109,6 +117,111 @@ impl Segmenters {
     }
 }
 
+/// The `difficulty` stage per keymode profile rated with MinaCalc (ADR 0023), keyed on the
+/// `chart_parse` key its rows are computed from.
+pub(crate) struct Raters {
+    params: MinaCalcParams,
+    keys: Vec<(u8, VersionKey)>,
+}
+
+impl Raters {
+    pub(crate) fn current(parse: VersionKey) -> Result<Self, AppError> {
+        Self::with_params(parse, MinaCalcParams::default())
+    }
+
+    pub(super) fn with_params(parse: VersionKey, params: MinaCalcParams) -> Result<Self, AppError> {
+        // The store refuses a rated status without rate rows, and that refusal would fail the
+        // writer's whole batch instead of one chart.
+        if params.rate_grid_milli.is_empty() {
+            return Err(AppError::internal("difficulty params: empty rate grid"));
+        }
+        let keys = Registry::builtin()
+            .profiles()
+            .iter()
+            .filter(|p| p.calculators.contains(&CalcId::MinaCalc))
+            .map(|p| {
+                difficulty::vkey(parse, p.keymode, &params)
+                    .map(|vkey| (p.keymode.columns(), vkey))
+                    .map_err(|e| AppError::internal(format!("difficulty vkey: {e}")))
+            })
+            .collect::<Result<_, AppError>>()?;
+        Ok(Self { params, keys })
+    }
+
+    pub(crate) fn vkey(&self, keymode: u8) -> Option<VersionKey> {
+        self.keys
+            .iter()
+            .find(|(k, _)| *k == keymode)
+            .map(|(_, v)| *v)
+    }
+
+    fn vkeys(&self) -> Vec<VersionKey> {
+        self.keys.iter().map(|(_, v)| *v).collect()
+    }
+
+    /// `(keymode, difficulty key)` of every keymode rated by MinaCalc.
+    pub(crate) fn keys(&self) -> &[(u8, VersionKey)] {
+        &self.keys
+    }
+}
+
+thread_local! {
+    // MinaCalc keeps native scratch buffers and is not Sync; the rayon workers outlive a job, so
+    // each builds its calculator once.
+    static CALC: RefCell<Option<Calc>> = const { RefCell::new(None) };
+}
+
+fn msd_row(table: MsdTable) -> ChartMsd {
+    ChartMsd {
+        status: match table.status {
+            MsdStatus::Rated => MsdStatusRow::Rated,
+            MsdStatus::Unrated(UnratedReason::LnHeavy) => MsdStatusRow::LnHeavy,
+            MsdStatus::Unrated(UnratedReason::CalcRejected) => MsdStatusRow::CalcRejected,
+        },
+        hold_share_permille: table.hold_share_permille,
+        rows: table
+            .rows
+            .into_iter()
+            .map(|r| MsdRow {
+                rate_milli: r.rate_milli,
+                centi: r.centi,
+            })
+            .collect(),
+    }
+}
+
+enum Unrated {
+    /// Deterministic for these bytes, so memoized as failed.
+    KeymodeMismatch(ItemError),
+    /// Failed now, retried next run.
+    NoCalc(ItemError),
+}
+
+/// A calculator that rejects the chart is a `calc_rejected` status inside the table, never an
+/// item failure. A calculator that cannot be built says nothing about the chart, so that
+/// failure is transient.
+fn rate(chart: &Chart, keymode: u8, params: &MinaCalcParams) -> Result<ChartMsd, Unrated> {
+    let columns = chart.keymode().columns();
+    if columns != keymode {
+        return Err(Unrated::KeymodeMismatch(ItemError::new(
+            ErrorCode::ParseFailed,
+            format!("the file is {columns}K, the catalog says {keymode}K"),
+        )));
+    }
+    CALC.with_borrow_mut(|slot| {
+        let calc = match slot {
+            Some(calc) => calc,
+            None => slot.insert(Calc::new().map_err(|e| {
+                Unrated::NoCalc(ItemError::new(
+                    ErrorCode::Internal,
+                    format!("MinaCalc unavailable: {e}"),
+                ))
+            })?),
+        };
+        Ok(msd_row(difficulty::run(calc, chart, params)))
+    })
+}
+
 pub(super) fn segment_row(s: Segment) -> SegmentRow {
     SegmentRow {
         t0: s.t0,
@@ -124,7 +237,7 @@ pub(super) fn segment_row(s: Segment) -> SegmentRow {
 
 /// osu!.db builds the catalog path as `<folder>/<file>`.
 /// The set folder that holds the chart, even under nested Songs folders (`Normal/<set>/x.osu`).
-pub(super) fn folder_of(path: &str) -> &str {
+pub(crate) fn folder_of(path: &str) -> &str {
     let parent = path.rsplit_once('/').map_or("", |(folder, _)| folder);
     parent.rsplit_once('/').map_or(parent, |(_, last)| last)
 }
@@ -140,6 +253,7 @@ struct Item {
     labels: bool,
     parse: bool,
     segments: bool,
+    difficulty: bool,
 }
 
 /// `(items with work, charts whose parse is memoized)`. A skip is no memo hit: the file may
@@ -150,6 +264,7 @@ fn plan(
     played: &BTreeSet<ChartMd5>,
     keys: Keys,
     segmenters: &Segmenters,
+    raters: &Raters,
 ) -> Result<(Vec<Item>, u32), StoreError> {
     let registry = Registry::builtin();
     let mut items = Vec::new();
@@ -176,14 +291,21 @@ fn plan(
                     .is_none_or(|d| d.status == DerivationStatus::Skipped),
                 None => false,
             };
+        let difficulty_due = !parse_failed
+            && match raters.vkey(chart.keymode) {
+                Some(vkey) => derivation::get(conn, &difficulty::STAGE, &key, vkey)?
+                    .is_none_or(|d| d.status == DerivationStatus::Skipped),
+                None => false,
+            };
         memoized += u32::from(parse_done);
-        if !parse_done || labels_due || segments_due {
+        if !parse_done || labels_due || segments_due || difficulty_due {
             items.push(Item {
                 played: played.contains(&chart.md5),
                 chart,
                 labels: labels_due,
                 parse: !parse_done,
                 segments: segments_due,
+                difficulty: difficulty_due,
             });
         }
     }
@@ -196,6 +318,7 @@ struct ChartWrite {
     parsed: Option<ChartParsed>,
     labels: Option<Vec<ChartLabel>>,
     segments: Option<(VersionKey, Vec<SegmentRow>)>,
+    msd: Option<(VersionKey, ChartMsd)>,
     derivations: Vec<Derivation>,
 }
 
@@ -292,6 +415,7 @@ struct Env<'a> {
     songs: &'a Path,
     keys: Keys,
     segmenters: &'a Segmenters,
+    raters: &'a Raters,
     cache: &'a DbHandle,
 }
 
@@ -320,6 +444,7 @@ fn index_item(
         parsed: None,
         labels: None,
         segments: None,
+        msd: None,
         derivations: Vec::new(),
     };
     let mut fresh = None;
@@ -358,8 +483,10 @@ fn index_item(
             Err(Unparsed::Transient(e)) => outcome = Err(e),
         }
     }
-    let segmenter = env.segmenters.get(item.chart.keymode);
-    if let (true, Some(segmenter), true) = (item.segments, segmenter, outcome.is_ok()) {
+    let keymode = item.chart.keymode;
+    let segmenter = env.segmenters.get(keymode).filter(|_| item.segments);
+    let rater = env.raters.vkey(keymode).filter(|_| item.difficulty);
+    if (segmenter.is_some() || rater.is_some()) && outcome.is_ok() {
         // No early return: the item's other rows and memos must still reach the writer.
         let chart = match fresh {
             Some(chart) => Some(chart),
@@ -372,10 +499,10 @@ fn index_item(
             },
             None => None,
         };
-        if let Some(chart) = chart {
+        if let (Some(chart), Some(segmenter)) = (&chart, segmenter) {
             let stage = patterns::STAGE;
             let vkey = segmenter.vkey();
-            match segmenter.run(&chart) {
+            match segmenter.run(chart) {
                 Ok(segments) => {
                     let rows = segments.into_iter().map(segment_row).collect();
                     write.segments = Some((vkey, rows));
@@ -385,6 +512,26 @@ fn index_item(
                 }
                 Err(e) => {
                     let e = engine_error(&e);
+                    write.derivations.push(Derivation {
+                        error_code: Some(e.code),
+                        error_msg: Some(e.message.clone()),
+                        ..memo(stage, &key, vkey, DerivationStatus::Failed)
+                    });
+                    outcome = Err(e);
+                }
+            }
+        }
+        if let (Some(chart), Some(vkey)) = (&chart, rater) {
+            let stage = difficulty::STAGE;
+            match rate(chart, keymode, &env.raters.params) {
+                Ok(msd) => {
+                    write.msd = Some((vkey, msd));
+                    write
+                        .derivations
+                        .push(memo(stage, &key, vkey, DerivationStatus::Ok));
+                }
+                Err(Unrated::NoCalc(e)) => outcome = Err(e),
+                Err(Unrated::KeymodeMismatch(e)) => {
                     write.derivations.push(Derivation {
                         error_code: Some(e.code),
                         error_msg: Some(e.message.clone()),
@@ -406,6 +553,7 @@ struct Written {
     parsed: u32,
     labels: u32,
     segments: u32,
+    msd: u32,
 }
 
 fn write_batch(
@@ -417,8 +565,8 @@ fn write_batch(
     if batch.is_empty() {
         return Ok(());
     }
-    let (parsed, labels, segments) = cache.write(move |tx| {
-        let (mut parsed, mut labels, mut segments) = (0_u32, 0_u32, 0_u32);
+    let (parsed, labels, segments, msd) = cache.write(move |tx| {
+        let (mut parsed, mut labels, mut segments, mut msd) = (0_u32, 0_u32, 0_u32, 0_u32);
         for w in &batch {
             if let Some(p) = &w.parsed {
                 chart_parsed::put(tx, p)?;
@@ -432,15 +580,20 @@ fn write_batch(
                 segment_repo::replace_for(tx, w.md5, *vkey, rows)?;
                 segments += u32::try_from(rows.len()).unwrap_or(u32::MAX);
             }
+            if let Some((vkey, table)) = &w.msd {
+                chart_msd::replace_for(tx, w.md5, *vkey, table)?;
+                msd += 1;
+            }
             for d in &w.derivations {
                 derivation::put(tx, d)?;
             }
         }
-        Ok((parsed, labels, segments))
+        Ok((parsed, labels, segments, msd))
     })?;
     written.parsed += parsed;
     written.labels += labels;
     written.segments += segments;
+    written.msd += msd;
     Ok(())
 }
 
@@ -466,6 +619,11 @@ fn count(n: usize) -> u32 {
 }
 
 fn index(ctx: &JobCtx) -> Result<JobSummary, AppError> {
+    let raters = Raters::current(Keys::current()?.parse)?;
+    index_with(ctx, &raters)
+}
+
+fn index_with(ctx: &JobCtx, raters: &Raters) -> Result<JobSummary, AppError> {
     let keys = Keys::current()?;
     let segmenters = Segmenters::current()?;
     let mut summary = IndexLibrarySummaryDto::default();
@@ -491,7 +649,7 @@ fn index(ctx: &JobCtx) -> Result<JobSummary, AppError> {
     played_first(&mut charts, &played);
     let (items, memoized) = ctx
         .cache
-        .read(|c| plan(c, charts, &played, keys, &segmenters))?;
+        .read(|c| plan(c, charts, &played, keys, &segmenters, raters))?;
     summary.skipped_memoized = memoized;
 
     let songs = songs_dir(&install.root_path);
@@ -499,6 +657,7 @@ fn index(ctx: &JobCtx) -> Result<JobSummary, AppError> {
         songs: &songs,
         keys,
         segmenters: &segmenters,
+        raters,
         cache: &ctx.cache,
     };
     // rayon splits a slice in halves, so one pass would not honour the order: played charts
@@ -543,16 +702,20 @@ fn index(ctx: &JobCtx) -> Result<JobSummary, AppError> {
     summary.parsed_new = written.parsed;
     summary.labels_written = written.labels;
     summary.segments_written = written.segments;
+    summary.msd_written = written.msd;
     ctx.check_cancelled()?;
 
     let segment_keys = segmenters.vkeys();
+    let msd_keys = raters.vkeys();
     let pruned = ctx.cache.write(move |tx| {
         Ok(chart_parsed::prune_except(tx, &[keys.parse])?
             + label_repo::prune_except(tx, &[keys.label])?
-            + segment_repo::prune_except(tx, &segment_keys)?)
+            + segment_repo::prune_except(tx, &segment_keys)?
+            + chart_msd::prune_except(tx, &msd_keys)?)
     })?;
     summary.failed_items = ctx.failed_items();
-    let changed = written.parsed + written.labels + written.segments > 0 || pruned > 0;
+    let changed =
+        written.parsed + written.labels + written.segments + written.msd > 0 || pruned > 0;
     Ok(JobSummary {
         changed: if changed {
             vec![DOMAIN_LIBRARY]
@@ -567,7 +730,8 @@ fn finish(summary: IndexLibrarySummaryDto) -> JobSummary {
     JobSummary {
         summary: Some(JobSummaryDto::IndexLibrary(summary)),
         changed: Vec::new(),
-        follow_ups: Vec::new(),
+        // New parses can turn `no_chart` plays into rated ones.
+        follow_ups: vec![Box::new(ComputePlaySsrJob)],
     }
 }
 
@@ -576,14 +740,16 @@ mod tests {
     use std::collections::BTreeSet;
 
     use wolluf_core::{ChartMd5, ErrorCode, TimeUs, VersionKey};
+    use wolluf_engine::stage::difficulty::MinaCalcParams;
     use wolluf_engine::stage::{chart_label, chart_parse, patterns};
+    use wolluf_store::repo::cache::chart_msd::{ChartMsd, MsdStatusRow};
     use wolluf_store::repo::cache::{
         CatalogChart, ChartParsed, DerivationStatus, SegmentRow, catalog_chart,
         chart_label as label_repo, chart_parsed, derivation, item_failure, segment as segment_repo,
     };
 
     use super::*;
-    use crate::features::library::testkit::{Map, osu_text, reindex, synced};
+    use crate::features::library::testkit::{Map, osu_text, reindex, synced, taps_7k};
     use crate::features::plays::testkit::Fixture;
     use crate::jobs::JobKindDto;
 
@@ -616,12 +782,13 @@ mod tests {
             Map::k7("beta"),
             Map::k7("gamma"),
             Map::new("four keys", 4, osu_text(4, "four keys", &[(0, 0)], &[])),
+            Map::new("five keys", 5, osu_text(5, "five keys", &[(0, 0)], &[])),
         ];
         let (f, first) = synced(&maps, &[]).await;
-        assert_eq!(first.charts_total, 3, "4K has no engine profile");
-        assert_eq!(first.parsed_new, 3);
+        assert_eq!(first.charts_total, 4, "5K has no engine profile");
+        assert_eq!(first.parsed_new, 4);
         assert_eq!((first.skipped_memoized, first.failed_items), (0, 0));
-        assert_eq!(parsed_count(&f), 3);
+        assert_eq!(parsed_count(&f), 4);
         let vkey = chart_parse::vkey().unwrap();
         let row = f
             .ctx
@@ -632,13 +799,19 @@ mod tests {
         assert_eq!((row.n_notes, row.n_ln, row.length_ms), (8, 0, 1_750));
         let d = parse_row(&f, &maps[0]).unwrap();
         assert_eq!(d.status, DerivationStatus::Ok);
-        assert!(parse_row(&f, &maps[3]).is_none());
+        assert_eq!(
+            parse_row(&f, &maps[3]).unwrap().status,
+            DerivationStatus::Ok
+        );
+        let k4_segments = f.ctx.library().segments(&maps[3].md5).await.unwrap();
+        assert!(k4_segments.is_empty(), "4K has no taxonomy (ADR 0023)");
+        assert!(parse_row(&f, &maps[4]).is_none());
 
         let (_, second) = reindex(&f).await;
-        assert_eq!(second.charts_total, 3);
+        assert_eq!(second.charts_total, 4);
         assert_eq!((second.parsed_new, second.labels_written), (0, 0));
-        assert_eq!(second.skipped_memoized, 3);
-        assert_eq!(parsed_count(&f), 3);
+        assert_eq!(second.skipped_memoized, 4);
+        assert_eq!(parsed_count(&f), 4);
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -935,6 +1108,160 @@ mod tests {
             })
             .unwrap();
         assert_eq!((old, current), (0, 1));
+    }
+
+    fn difficulty_key(keymode: u8) -> VersionKey {
+        Raters::current(chart_parse::vkey().unwrap())
+            .unwrap()
+            .vkey(keymode)
+            .unwrap()
+    }
+
+    fn msd_of(f: &Fixture, m: &Map, vkey: VersionKey) -> Option<ChartMsd> {
+        f.ctx
+            .cache_db()
+            .read(|c| chart_msd::get(c, md5(m), vkey))
+            .unwrap()
+    }
+
+    fn difficulty_row(
+        f: &Fixture,
+        m: &Map,
+        vkey: VersionKey,
+    ) -> Option<wolluf_store::repo::cache::Derivation> {
+        f.ctx
+            .cache_db()
+            .read(|c| derivation::get(c, &difficulty::STAGE, &m.md5, vkey))
+            .unwrap()
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn difficulty_rates_4k_and_7k_charts_and_only_7k_is_segmented() {
+        let rice = Map::rice4("rice four");
+        let jacks = Map::jacks("jacks");
+        let (f, first) = synced(&[rice.clone(), jacks.clone()], &[]).await;
+        assert_eq!(first.failed_items, 0);
+        assert_eq!(first.msd_written, 2);
+        let (k4, k7) = (difficulty_key(4), difficulty_key(7));
+        assert_ne!(k4, k7);
+
+        let rice_msd = msd_of(&f, &rice, k4).unwrap();
+        assert_eq!(rice_msd.status, MsdStatusRow::Rated);
+        let rates: Vec<u16> = rice_msd.rows.iter().map(|r| r.rate_milli).collect();
+        assert_eq!(rates, MinaCalcParams::default().rate_grid_milli);
+        assert!(rice_msd.rows.iter().all(|r| r.centi[0] > 0), "{rice_msd:?}");
+        assert_eq!(
+            difficulty_row(&f, &rice, k4).unwrap().status,
+            DerivationStatus::Ok
+        );
+        assert!(msd_of(&f, &rice, k7).is_none(), "keyed per keymode");
+        assert!(
+            f.ctx
+                .library()
+                .segments(&rice.md5)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        let rice_patterns = f
+            .ctx
+            .cache_db()
+            .read(derivation::list_all)
+            .unwrap()
+            .into_iter()
+            .filter(|d| d.stage == patterns::STAGE && d.input_key == rice.md5)
+            .count();
+        assert_eq!(rice_patterns, 0, "4K has no patterns stage (ADR 0023)");
+
+        assert!(msd_of(&f, &jacks, k7).is_some());
+        assert_eq!(
+            difficulty_row(&f, &jacks, k7).unwrap().status,
+            DerivationStatus::Ok
+        );
+        assert_eq!(segments_of(&f, &jacks).len(), 1);
+
+        let (_, second) = reindex(&f).await;
+        assert_eq!((second.msd_written, second.failed_items), (0, 0));
+        assert_eq!(msd_of(&f, &rice, k4), Some(rice_msd));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn ln_heavy_charts_get_a_status_without_rate_rows() {
+        let ln = Map::ln4("ln four");
+        let (f, first) = synced(std::slice::from_ref(&ln), &[]).await;
+        assert_eq!((first.msd_written, first.failed_items), (1, 0));
+        let msd = msd_of(&f, &ln, difficulty_key(4)).unwrap();
+        assert_eq!(msd.status, MsdStatusRow::LnHeavy);
+        assert!(msd.rows.is_empty());
+        assert!(
+            msd.hold_share_permille >= MinaCalcParams::default().ln_unrated_hold_share_permille
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn new_difficulty_params_recompute_and_prune_the_old_key() {
+        let rice = Map::rice4("rice four");
+        let (f, _) = synced(std::slice::from_ref(&rice), &[]).await;
+        let old = difficulty_key(4);
+        let mut coarse = MinaCalcParams::default();
+        coarse.rate_grid_milli.retain(|r| r % 100 == 0);
+        let raters = Raters::with_params(chart_parse::vkey().unwrap(), coarse.clone()).unwrap();
+        let new = raters.vkey(4).unwrap();
+        assert_ne!(old, new);
+        let ctx = f.ctx.jobs().test_ctx(JobKindDto::IndexLibrary);
+        let summary = tokio::task::spawn_blocking(move || index_with(&ctx, &raters))
+            .await
+            .unwrap()
+            .unwrap();
+        let Some(JobSummaryDto::IndexLibrary(s)) = summary.summary else {
+            panic!("{summary:?}");
+        };
+        assert_eq!((s.parsed_new, s.msd_written, s.failed_items), (0, 1, 0));
+        let rates: Vec<u16> = msd_of(&f, &rice, new)
+            .unwrap()
+            .rows
+            .iter()
+            .map(|r| r.rate_milli)
+            .collect();
+        assert_eq!(rates, coarse.rate_grid_milli);
+        assert!(msd_of(&f, &rice, old).is_none(), "old key pruned");
+        assert_eq!(
+            difficulty_row(&f, &rice, new).unwrap().status,
+            DerivationStatus::Ok
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn charts_without_a_parse_are_not_rated() {
+        let text = String::from_utf8(osu_text(4, "std", &[(0, 0)], &[]))
+            .unwrap()
+            .replace("Mode: 3", "Mode: 0");
+        let broken = Map::new("std", 4, text.into_bytes());
+        let missing = Map::rice4("missing").missing();
+        let (f, first) = synced(&[broken.clone(), missing.clone()], &[]).await;
+        assert_eq!(first.msd_written, 0);
+        let k4 = difficulty_key(4);
+        for m in [&broken, &missing] {
+            assert!(difficulty_row(&f, m, k4).is_none());
+            assert!(msd_of(&f, m, k4).is_none());
+        }
+        let (_, second) = reindex(&f).await;
+        assert_eq!((second.msd_written, second.failed_items), (0, 0));
+    }
+
+    /// osu!.db files it as 4K, the file says 7K: a 7K rating under the 4K key would mislead.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_file_of_another_keymode_than_the_catalog_is_not_rated() {
+        let liar = Map::new("liar", 4, taps_7k("liar", 8));
+        let (f, first) = synced(std::slice::from_ref(&liar), &[]).await;
+        assert_eq!((first.parsed_new, first.failed_items), (1, 1));
+        let k4 = difficulty_key(4);
+        let memo = difficulty_row(&f, &liar, k4).unwrap();
+        assert_eq!(memo.status, DerivationStatus::Failed);
+        assert_eq!(memo.error_code, Some(ErrorCode::ParseFailed));
+        assert!(msd_of(&f, &liar, k4).is_none());
+        let (_, rerun) = reindex(&f).await;
+        assert_eq!(rerun.failed_items, 0, "memoized like a parse failure");
     }
 
     #[test]

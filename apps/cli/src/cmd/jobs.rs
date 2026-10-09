@@ -36,6 +36,14 @@ fn result(job: &JobDto) -> String {
             "parsed={} memoized={} failed={}",
             s.parsed_new, s.skipped_memoized, s.failed_items
         ),
+        Some(JobSummaryDto::ComputePlaySsr(s)) => format!(
+            "computed={} counted={} failed={}",
+            s.computed, s.counted, s.failed_items
+        ),
+        Some(JobSummaryDto::RateCopy(s)) => format!(
+            "osu_written={} audio_written={} failed={}",
+            s.osu_written, s.audio_written, s.failed_items
+        ),
         None => "-".to_owned(),
     }
 }

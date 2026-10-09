@@ -85,6 +85,14 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::settings::settings_set_session_notify,
             commands::label::label_export,
             commands::app::app_open_exports_dir::<tauri::Wry>,
+            commands::meta::meta_keymodes,
+            commands::chart::chart_msd,
+            commands::preview::preview_skill,
+            commands::preview::preview_recs,
+            commands::settings::settings_get_recs_any_rate,
+            commands::settings::settings_set_recs_any_rate,
+            commands::rate_copy::rate_copy_plan,
+            commands::rate_copy::rate_copy_confirm,
         ])
 }
 

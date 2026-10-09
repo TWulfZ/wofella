@@ -2,10 +2,24 @@
 //! defaults. Profiles are data; a keymode without one is not indexed.
 
 use wolluf_chart::Layout;
-use wolluf_chart::layout::{DEFAULT_K7, preset_ids};
+use wolluf_chart::layout::{DEFAULT_K4, DEFAULT_K7, Finger, preset_ids};
 use wolluf_core::Keymode;
 
 use crate::taxonomy::{self, PatternDef};
+
+/// A chart difficulty calculator a profile is rated with; `as_str` ids are persisted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CalcId {
+    MinaCalc,
+}
+
+impl CalcId {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::MinaCalc => "minacalc",
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KeymodeProfile {
@@ -14,8 +28,10 @@ pub struct KeymodeProfile {
     pub default_layout: &'static str,
     /// Whether difficulty-name labels (`crate::labels`) are extracted for this keymode.
     pub label_sources: bool,
-    /// The keymode's pattern ids (`crate::taxonomy`).
-    pub taxonomy: &'static [PatternDef],
+    /// The keymode's pattern ids (`crate::taxonomy`). `None` (ADR 0023): the keymode is indexed
+    /// and rated but never segmented, labelled or prompted for session labels.
+    pub taxonomy: Option<&'static [PatternDef]>,
+    pub calculators: &'static [CalcId],
 }
 
 impl KeymodeProfile {
@@ -37,18 +53,38 @@ impl KeymodeProfile {
         std::iter::once(default).chain(others).collect()
     }
 
+    /// Whether the default layout puts a thumb on any column; thumb-side choices only make sense
+    /// then.
+    pub fn has_thumb(&self) -> bool {
+        self.layout()
+            .columns()
+            .iter()
+            .any(|&(_, finger)| finger == Finger::Thumb)
+    }
+
     /// A user-chosen preset, only if it belongs to this profile's keymode.
     pub fn layout_by_id(&self, id: &str) -> Option<Layout> {
         Layout::by_id(id).filter(|l| l.keymode() == self.keymode)
     }
 }
 
-const BUILTIN: &[KeymodeProfile] = &[KeymodeProfile {
-    keymode: Keymode::K7,
-    default_layout: DEFAULT_K7,
-    label_sources: true,
-    taxonomy: taxonomy::k7(),
-}];
+/// Ascending by keymode.
+const BUILTIN: &[KeymodeProfile] = &[
+    KeymodeProfile {
+        keymode: Keymode::K4,
+        default_layout: DEFAULT_K4,
+        label_sources: false,
+        taxonomy: None,
+        calculators: &[CalcId::MinaCalc],
+    },
+    KeymodeProfile {
+        keymode: Keymode::K7,
+        default_layout: DEFAULT_K7,
+        label_sources: true,
+        taxonomy: Some(taxonomy::k7()),
+        calculators: &[CalcId::MinaCalc],
+    },
+];
 
 /// The concrete set of keymodes the engine knows (D5); features never hard-code it.
 #[derive(Debug, Clone, Copy)]
@@ -73,7 +109,7 @@ impl Registry {
 
 #[cfg(test)]
 mod tests {
-    use wolluf_chart::layout::DEFAULT_K7;
+    use wolluf_chart::layout::{DEFAULT_K4, DEFAULT_K7};
     use wolluf_core::Keymode;
 
     use super::*;
@@ -121,10 +157,38 @@ mod tests {
     }
 
     #[test]
+    fn builtin_enables_k4_rated_by_minacalc_without_patterns_or_thumb() {
+        let k4 = Registry::builtin().profile(Keymode::K4).unwrap();
+        assert_eq!(k4.keymode, Keymode::K4);
+        assert_eq!(k4.default_layout, "k4.generic");
+        assert_eq!(k4.default_layout, DEFAULT_K4);
+        assert!(!k4.label_sources);
+        assert!(k4.taxonomy.is_none());
+        assert_eq!(k4.calculators, [CalcId::MinaCalc]);
+        assert_eq!(k4.layout().id(), DEFAULT_K4);
+        assert!(!k4.has_thumb());
+        let ids: Vec<String> = k4.layouts().iter().map(|l| l.id().to_owned()).collect();
+        assert_eq!(ids, ["k4.generic"]);
+    }
+
+    #[test]
+    fn k7_keeps_its_taxonomy_and_gains_minacalc() {
+        let k7 = Registry::builtin().profile(Keymode::K7).unwrap();
+        assert_eq!(k7.taxonomy, Some(crate::taxonomy::k7()));
+        assert_eq!(k7.calculators, [CalcId::MinaCalc]);
+        assert!(k7.has_thumb());
+    }
+
+    #[test]
+    fn calc_id_stable_strings() {
+        assert_eq!(CalcId::MinaCalc.as_str(), "minacalc");
+    }
+
+    #[test]
     fn keymodes_without_a_profile_are_disabled() {
         let registry = Registry::builtin();
-        assert!(registry.profile(Keymode::K4).is_none());
+        assert!(registry.profile(Keymode::new(5).unwrap()).is_none());
         let keymodes: Vec<Keymode> = registry.profiles().iter().map(|p| p.keymode).collect();
-        assert_eq!(keymodes, [Keymode::K7]);
+        assert_eq!(keymodes, [Keymode::K4, Keymode::K7]);
     }
 }

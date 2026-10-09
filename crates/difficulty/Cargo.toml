@@ -1,0 +1,22 @@
+[package]
+name = "wolluf-difficulty"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+wolluf-chart.workspace = true
+wolluf-minacalc.workspace = true
+serde.workspace = true
+postcard.workspace = true
+blake3.workspace = true
+
+[dev-dependencies]
+wolluf-core.workspace = true
+wolluf-chart = { workspace = true, features = ["test-support"] }
+proptest.workspace = true

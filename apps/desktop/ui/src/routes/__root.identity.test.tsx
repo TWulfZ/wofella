@@ -37,6 +37,17 @@ describe("root layout identity hosting", () => {
     expect(screen.queryByRole("note")).not.toBeInTheDocument();
   });
 
+  it("mounts the keymode switcher in the header, fed by meta_keymodes", async () => {
+    const { router } = await bootWithProfiles("/");
+    const header = screen.getByRole("banner");
+    const switcher = await screen.findByRole("group", { name: "Keymode" });
+    expect(header).toContainElement(switcher);
+    await userEvent.click(screen.getByRole("button", { name: "4K" }));
+    await waitFor(() => {
+      expect(router.state.matches[0]?.search).toEqual({ keymode: 4 });
+    });
+  });
+
   it("drops an invalid ?scope= through the root validateSearch", async () => {
     const { router } = await bootWithProfiles("/?scope=bogus&keymode=7");
     expect(router.state.matches[0]?.search).toEqual({ keymode: 7 });
@@ -66,5 +77,6 @@ describe("root layout identity hosting", () => {
   it("hides the scope controls during first-run setup", async () => {
     await bootApp("/setup/", { playersListProfiles: () => [SELF, ALL] });
     expect(screen.queryByRole("combobox", { name: "Viewing" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Keymode" })).not.toBeInTheDocument();
   });
 });

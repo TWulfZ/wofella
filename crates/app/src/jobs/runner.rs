@@ -37,6 +37,7 @@ struct Queued {
 
 struct Running {
     id: JobId,
+    kind: JobKindDto,
     cancel: CancellationToken,
 }
 
@@ -224,6 +225,13 @@ impl JobRunner {
         }
     }
 
+    /// Whether a job of `kind` is queued or running right now.
+    pub fn is_active(&self, kind: JobKindDto) -> bool {
+        let state = self.inner.lock();
+        state.running.as_ref().is_some_and(|r| r.kind == kind)
+            || state.queue.iter().any(|q| q.kind == kind)
+    }
+
     /// A context outside the queue, so a test can drive one job's `run` with its own token.
     /// It has no `job_run` row, so recording an item failure through it fails.
     #[cfg(test)]
@@ -384,6 +392,7 @@ async fn worker(inner: Arc<Inner>) {
             if let Some(q) = &next {
                 state.running = Some(Running {
                     id: q.id.clone(),
+                    kind: q.kind,
                     cancel: inner.shutdown.child_token(),
                 });
             }

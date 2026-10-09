@@ -357,7 +357,12 @@ mod tests {
             let ids: Vec<&str> = examples.iter().map(|e| e.id.as_str()).collect();
             let unique: BTreeSet<&str> = ids.iter().copied().collect();
             assert_eq!(unique.len(), ids.len(), "duplicate example ids: {ids:?}");
-            let expected: BTreeSet<&str> = profile.taxonomy.iter().map(|p| p.id.as_str()).collect();
+            let expected: BTreeSet<&str> = profile
+                .taxonomy
+                .unwrap_or_default()
+                .iter()
+                .map(|p| p.id.as_str())
+                .collect();
             assert_eq!(unique, expected, "{:?}", profile.keymode);
         }
     }

@@ -12,9 +12,13 @@ use wolluf_chart::Layout;
 use wolluf_chart::testkit::chart_from_rows;
 use wolluf_patterns::PatternsError;
 
+use wolluf_difficulty::minacalc::note_rows;
+
 use super::chart_parse::{parse_chart, summarize};
+use super::difficulty::{Calc, MinaCalcParams, MsdStatus, UnratedReason};
 use crate::error::EngineError;
 use crate::labels::LabelInput;
+use crate::preview::{GoalParams, PlayCounts, PlayMods, goal_permyriad};
 use crate::rows_blob::{decode_rows, encode_rows};
 
 /// Ratios are pinned to 1e-6: finer bits would make the golden depend on float formatting.
@@ -114,6 +118,140 @@ fn patterns_dump() -> String {
         }
     }
     dump
+}
+
+pub(super) fn difficulty() -> String {
+    hex(&difficulty_dump())
+}
+
+const US_PER_SECOND: f64 = 1_000_000.0;
+
+/// What MinaCalc is fed and whether it is asked, never its answer: calculator values can differ
+/// by a centi across platforms (ADR 0022). `CalcRejected` is the calculator's own verdict, so it
+/// folds into `rate` with `Rated`.
+fn difficulty_dump() -> String {
+    let params = MinaCalcParams::default();
+    let mut dump = String::new();
+    let _ = writeln!(dump, "params {}", hex_bytes(&params.params_hash()));
+    let rates: Vec<String> = params.rate_grid_milli.iter().map(u16::to_string).collect();
+    let _ = writeln!(dump, "rates {}", rates.join(" "));
+    let _ = writeln!(
+        dump,
+        "ln_unrated_hold_share_permille {}",
+        params.ln_unrated_hold_share_permille
+    );
+    let Ok(mut calc) = Calc::new() else {
+        let _ = writeln!(dump, "error calc");
+        return dump;
+    };
+    for (name, chart) in difficulty_fixtures() {
+        let Some(chart) = chart else {
+            let _ = writeln!(dump, "fixture {name}\nerror fixture");
+            continue;
+        };
+        let _ = writeln!(dump, "fixture {name} keys={}", chart.keymode().columns());
+        let table = super::difficulty::run(&mut calc, &chart, &params);
+        let decision = match table.status {
+            MsdStatus::Unrated(UnratedReason::LnHeavy) => "ln_heavy",
+            MsdStatus::Rated | MsdStatus::Unrated(UnratedReason::CalcRejected) => "rate",
+        };
+        let _ = writeln!(dump, "hold_share_permille {}", table.hold_share_permille);
+        let _ = writeln!(dump, "decision {decision}");
+        let rows = note_rows(&chart).rows;
+        let _ = writeln!(dump, "rows {}", rows.len());
+        for r in rows {
+            // f32 seconds are IEEE-exact on every platform; whole µs keep the dump integer-only.
+            let time_us = (f64::from(r.time_s) * US_PER_SECOND).round() as i64;
+            let _ = writeln!(dump, "row {time_us} {}", r.notes);
+        }
+    }
+    dump
+}
+
+/// 4K and 7K rice (chords, a light LN, a late start so times are taken from the first row),
+/// an LN-heavy chart past the cut-off, and a chart without notes.
+fn difficulty_fixtures() -> Vec<(&'static str, Option<Chart>)> {
+    let k4_rice = chart![step = 120, start = 1500;
+        "x..[", ".x.|", "..x]", "xx..", "..xx", "x.x.", ".x.x", "xxx.", "...x", "x..x", ".xx.",
+        "x...",
+    ];
+    let k7_rice = chart![step = 90;
+        "x..x...", ".x...x.", "..x.x..", "x.....x", "xxx.xxx", "...x...", ".x.x.x.", "xx...xx",
+        "..xxx..", "x.x.x.x",
+    ];
+    let k7_ln_heavy = chart![step = 100;
+        "[[[....", "|||x...", "]]]....", "...[[[.", "x..|||.", "...]]]x", "x......",
+    ];
+    let empty = parse_chart(OsuText::mania(7).build().as_bytes())
+        .ok()
+        .map(|p| p.chart);
+    vec![
+        ("k4_rice", Some(k4_rice)),
+        ("k7_rice", Some(k7_rice)),
+        ("k7_ln_heavy", Some(k7_ln_heavy)),
+        ("k7_empty", empty),
+    ]
+}
+
+pub(super) fn play_ssr() -> String {
+    hex(&play_ssr_dump())
+}
+
+/// The goal model alone: SSRs are calculator floats (ADR 0022) and never enter the golden.
+fn play_ssr_dump() -> String {
+    let params = GoalParams::default();
+    let mut dump = String::new();
+    let _ = writeln!(dump, "params {}", hex_bytes(&params.params_hash()));
+    for (name, counts, od, bits) in play_ssr_fixtures() {
+        let goal = goal_permyriad(counts, od, PlayMods::from_bits(bits), &params);
+        let _ = writeln!(dump, "goal {name} {goal:?}");
+    }
+    dump
+}
+
+const HR: i32 = 16;
+const EZ: i32 = 2;
+const DT_NC: i32 = 64 | 512;
+const HT: i32 = 256;
+const V2: i32 = 1 << 29;
+
+/// `[max, 300, 200, 100, 50, miss]` across OD, every window mod and the edge cases.
+fn play_ssr_fixtures() -> Vec<(&'static str, PlayCounts, f32, i32)> {
+    let counts = |a: [u16; 6]| PlayCounts {
+        max: a[0],
+        n300: a[1],
+        n200: a[2],
+        n100: a[3],
+        n50: a[4],
+        miss: a[5],
+    };
+    // Below the cap, so OD and every window mod show in the output.
+    let mid = counts([500, 400, 150, 60, 20, 15]);
+    vec![
+        ("empty", PlayCounts::default(), 8.0, 0),
+        ("all_max", counts([1000, 0, 0, 0, 0, 0]), 8.0, 0),
+        ("all_miss", counts([0, 0, 0, 0, 0, 50]), 8.0, 0),
+        ("tight", counts([1500, 400, 50, 15, 5, 10]), 8.0, 0),
+        ("mid_od8", mid, 8.0, 0),
+        ("mid_od0", mid, 0.0, 0),
+        ("mid_od8_3", mid, 8.3, 0),
+        ("mid_od10", mid, 10.0, 0),
+        ("mid_hr", mid, 8.0, HR),
+        ("mid_ez", mid, 8.0, EZ),
+        ("mid_dt_nc", mid, 8.0, DT_NC),
+        ("mid_ht", mid, 8.0, HT),
+        ("near_cap", counts([1000, 600, 100, 30, 10, 10]), 8.0, 0),
+        ("rough", counts([300, 300, 200, 100, 50, 40]), 7.0, 0),
+        ("max_and_50s", counts([900, 0, 0, 0, 100, 0]), 8.0, 0),
+        ("mid_v2_od0", mid, 0.0, V2),
+        ("mid_v2_od8", mid, 8.0, V2),
+        ("mid_v2_od9", mid, 9.0, V2),
+        ("mid_v2_hr", mid, 8.0, V2 | HR),
+    ]
+}
+
+fn hex_bytes(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 const PATTERNS_STEP_MS: i32 = 100;
@@ -480,6 +618,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn play_ssr_golden_pins_goals_and_params() {
+        let dump = play_ssr_dump();
+        let params = hex_bytes(&GoalParams::default().params_hash());
+        assert!(dump.starts_with(&format!("params {params}\n")), "{dump}");
+        for expected in [
+            "goal empty None\n",
+            "goal all_max Some(9650)\n",
+            "goal all_miss Some(0)\n",
+            "goal mid_dt_nc Some(",
+            "goal max_and_50s Some(",
+            "goal mid_v2_od0 Some(",
+            "goal mid_v2_hr Some(",
+        ] {
+            assert!(dump.contains(expected), "missing {expected:?} in\n{dump}");
+        }
+        assert_eq!(dump.lines().count(), 1 + play_ssr_fixtures().len());
+        let goal_of = |name: &str| {
+            dump.lines()
+                .find(|l| l.starts_with(&format!("goal {name} ")))
+                .map(|l| l.rsplit(' ').next().unwrap().to_owned())
+                .unwrap()
+        };
+        // V2 shares V1's 16 ms MAX at OD 8 and widens it at OD 0.
+        assert_eq!(goal_of("mid_v2_od8"), goal_of("mid_od8"));
+        assert_ne!(goal_of("mid_v2_od0"), goal_of("mid_od0"));
+    }
+
+    #[test]
     fn fixtures_exercise_errors_diagnostics_and_edge_charts() {
         let dump = chart_parse_dump();
         for expected in [
@@ -514,6 +680,28 @@ mod tests {
                 "missing {expected:?} in\n{labels}"
             );
         }
+    }
+
+    #[test]
+    fn difficulty_golden_pins_the_adapter_output_and_no_calculator_value() {
+        let dump = difficulty_dump();
+        assert_eq!(dump, difficulty_dump());
+        let params = wolluf_difficulty::minacalc::MinaCalcParams::default();
+        for expected in [
+            format!("params {}\n", hex_bytes(&params.params_hash())),
+            "rates 700 750 800 850 900 950 1000 1050 1100 1150 1200 1250 1300 1350 1400 1450 1500\n"
+                .to_owned(),
+            "ln_unrated_hold_share_permille 400\n".to_owned(),
+            "fixture k4_rice keys=4\nhold_share_permille 47\ndecision rate\nrows 12\nrow 0 9\nrow 120000 2\n"
+                .to_owned(),
+            "fixture k7_rice keys=7\nhold_share_permille 0\ndecision rate\nrows 10\n".to_owned(),
+            "fixture k7_ln_heavy keys=7\nhold_share_permille 600\ndecision ln_heavy\n".to_owned(),
+            "fixture k7_empty keys=7\nhold_share_permille 0\ndecision rate\nrows 0\n".to_owned(),
+        ] {
+            assert!(dump.contains(&expected), "missing {expected:?} in\n{dump}");
+        }
+        assert!(!dump.contains("error"), "{dump}");
+        assert!(!dump.contains("centi") && !dump.contains('.'), "{dump}");
     }
 
     #[test]

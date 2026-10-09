@@ -1,25 +1,29 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Compass } from "lucide-react";
-import { useTranslation } from "react-i18next";
-import { ComingSoonPage, RecommendationsPreview } from "@/features/roadmap";
+import { useState } from "react";
+import { RecommendationsPage } from "@/features/preview";
+import { RateCopyDialog, type RateCopyTarget } from "@/features/rateCopies";
 
-export const Route = createFileRoute("/recommendations")({
-  component: RecommendationsPage,
-});
-
-function RecommendationsPage() {
-  const { t } = useTranslation();
+function RecommendationsRoute() {
+  const [target, setTarget] = useState<RateCopyTarget | null>(null);
   return (
-    <ComingSoonPage
-      icon={Compass}
-      title={t("roadmap.recommendations.title")}
-      subtitle={t("roadmap.recommendations.subtitle")}
-      preview={<RecommendationsPreview />}
-      features={[
-        t("roadmap.recommendations.features.picks"),
-        t("roadmap.recommendations.features.feedback"),
-        t("roadmap.recommendations.features.drills"),
-      ]}
-    />
+    <>
+      <RecommendationsPage
+        onGenerateRateCopy={(item) => {
+          setTarget({ md5: item.md5, rateMilli: item.rateMilli, chartLabel: `${item.artist} - ${item.title} [${item.version}]` });
+        }}
+      />
+      <RateCopyDialog
+        target={target}
+        onOpenChange={(open) => {
+          if (!open) {
+            setTarget(null);
+          }
+        }}
+      />
+    </>
   );
 }
+
+export const Route = createFileRoute("/recommendations")({
+  component: RecommendationsRoute,
+});

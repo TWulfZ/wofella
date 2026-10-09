@@ -221,6 +221,44 @@
       "closeSettings": "Cerrar los ajustes de reproducción",
       "seed": "Semilla {{seed}}",
       "hint": "Aquí están los ajustes de reproducción: offset, velocidad, skin y más"
+    },
+    "msd": {
+      "title": "Dificultad",
+      "calculator": "MinaCalc {{version}}",
+      "status": {
+        "rated": "Calculada",
+        "ln_heavy": "Muchas LN: sin calcular",
+        "calc_rejected": "Rechazada",
+        "pending": "Pendiente"
+      },
+      "note": {
+        "ln_heavy": "{{percent}} % de notas largas",
+        "calc_rejected": "MinaCalc no pudo calcular este mapa.",
+        "pending": "Indexa la biblioteca para calcular este mapa."
+      },
+      "approx": "≈{{value}}",
+      "overall": "Overall a 1,0×",
+      "showRates": "Ver todas las velocidades",
+      "hideRates": "Ocultar las velocidades",
+      "table": "MSD por velocidad y skillset",
+      "rate": "Velocidad",
+      "rateValue": "{{rate}}×",
+      "skillset": {
+        "overall": "Overall",
+        "stream": "Stream",
+        "jumpstream": "Jumpstream",
+        "handstream": "Handstream",
+        "stamina": "Stamina",
+        "jackspeed": "JackSpeed",
+        "chordjack": "Chordjack",
+        "technical": "Technical"
+      }
+    },
+    "unavailable": {
+      "title": "El etiquetado de patrones para {{keymode}}K está en camino",
+      "body": "Las puntuaciones de MinaCalc de los mapas {{keymode}}K ya están disponibles.",
+      "hint": "Los patrones se etiquetan por modo de teclas; cambia a uno que los tenga.",
+      "switchTo": "Etiquetar {{keymode}}K"
     }
   }
 }

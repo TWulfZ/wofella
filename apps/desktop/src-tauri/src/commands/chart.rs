@@ -1,6 +1,6 @@
 use wolluf_app::errors::IpcError;
 use wolluf_app::features::library::dto::{
-    ChartAudioDto, ChartDetailsDto, ChartImageDto, ChartWindowDto,
+    ChartAudioDto, ChartDetailsDto, ChartImageDto, ChartMsdDto, ChartWindowDto,
 };
 
 use super::Ctx;
@@ -48,4 +48,12 @@ pub async fn chart_background(
 #[tracing::instrument(skip_all)]
 pub async fn chart_details(ctx: Ctx<'_>, md5: String) -> Result<ChartDetailsDto, IpcError> {
     ctx.library().chart_details(&md5).await.map_err(to_ipc)
+}
+
+/// MinaCalc skillsets per rate at the current difficulty key; `pending` until the index rates it.
+#[tauri::command]
+#[specta::specta]
+#[tracing::instrument(skip_all)]
+pub async fn chart_msd(ctx: Ctx<'_>, md5: String) -> Result<ChartMsdDto, IpcError> {
+    ctx.library().chart_msd(&md5).await.map_err(to_ipc)
 }

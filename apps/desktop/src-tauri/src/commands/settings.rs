@@ -52,3 +52,18 @@ pub async fn settings_get_session_notify(ctx: Ctx<'_>) -> Result<bool, IpcError>
 pub async fn settings_set_session_notify(ctx: Ctx<'_>, on: bool) -> Result<(), IpcError> {
     ctx.settings().set_session_notify(on).await.map_err(to_ipc)
 }
+
+/// "Enable rates" on the Recommended page; off until the user turns it on.
+#[tauri::command]
+#[specta::specta]
+#[tracing::instrument(skip_all)]
+pub async fn settings_get_recs_any_rate(ctx: Ctx<'_>) -> Result<bool, IpcError> {
+    ctx.settings().recs_any_rate().await.map_err(to_ipc)
+}
+
+#[tauri::command]
+#[specta::specta]
+#[tracing::instrument(skip_all)]
+pub async fn settings_set_recs_any_rate(ctx: Ctx<'_>, on: bool) -> Result<(), IpcError> {
+    ctx.settings().set_recs_any_rate(on).await.map_err(to_ipc)
+}

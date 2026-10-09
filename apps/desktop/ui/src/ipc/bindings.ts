@@ -122,6 +122,33 @@ export const commands = {
 	/**  Into `<data dir>/exports/`, which the opener scope already covers (no save dialog). */
 	labelExport: (keymode: number) => typedError<LabelExportDto, IpcError>(__TAURI_INVOKE("label_export", { keymode })),
 	appOpenExportsDir: () => typedError<null, IpcError>(__TAURI_INVOKE("app_open_exports_dir")),
+	/**
+	 *  Enabled keymodes, ascending, so the UI never hard-codes them (D5). Infallible, but a `Result`
+	 *  like every other command because the UI's `call` unwraps only that shape.
+	 */
+	metaKeymodes: () => typedError<KeymodeDto[], IpcError>(__TAURI_INVOKE("meta_keymodes")),
+	/**  MinaCalc skillsets per rate at the current difficulty key; `pending` until the index rates it. */
+	chartMsd: (md5: string) => typedError<ChartMsdDto, IpcError>(__TAURI_INVOKE("chart_msd", { md5 })),
+	/**
+	 *  One uncalibrated preview per resolved scope of `entry` (ADR 0024); `merge` overrides the
+	 *  profile's own merge mode for this read only.
+	 */
+	previewSkill: (entry: EntryRefDto, keymode: number, merge: "merged" | "separate" | null) => typedError<SkillPreviewDto[], IpcError>(__TAURI_INVOKE("preview_skill", { entry, keymode, merge })),
+	/**
+	 *  Charts × rate around the first resolved scope's preview rating (ADR 0024); `skillset` is a
+	 *  MinaCalc id, read in `skillset` mode only.
+	 */
+	previewRecs: (entry: EntryRefDto, keymode: number, mode: RecsModeDto, skillset: string | null, merge: "merged" | "separate" | null) => typedError<RecsPreviewDto, IpcError>(__TAURI_INVOKE("preview_recs", { entry, keymode, mode, skillset, merge })),
+	/**  "Enable rates" on the Recommended page; off until the user turns it on. */
+	settingsGetRecsAnyRate: () => typedError<boolean, IpcError>(__TAURI_INVOKE("settings_get_recs_any_rate")),
+	settingsSetRecsAnyRate: (on: boolean) => typedError<null, IpcError>(__TAURI_INVOKE("settings_set_recs_any_rate", { on })),
+	/**
+	 *  Previews a rate copy of the chart (ADR 0025); writes nothing. `nightcore` makes the pitch
+	 *  follow the rate.
+	 */
+	rateCopyPlan: (md5: string, rateMilli: number, nightcore: boolean) => typedError<RateCopyPlanDto, IpcError>(__TAURI_INVOKE("rate_copy_plan", { md5, rateMilli, nightcore })),
+	/**  The only path that mints an `ExportPermit` (D9): starts the `rate_copy` job. */
+	rateCopyConfirm: (previewId: string) => typedError<JobId, IpcError>(__TAURI_INVOKE("rate_copy_confirm", { previewId })),
 };
 
 /** Events */
@@ -229,6 +256,19 @@ export type ChartImageDto = {
 	height: number,
 };
 
+/**  A chart's MinaCalc skillsets per rate (ADR 0022, ADR 0023). */
+export type ChartMsdDto = {
+	md5: string,
+	status: MsdStatusDto,
+	/**  LN objects over all objects; 0 while pending. */
+	holdSharePermille: number,
+	calcVersion: number,
+	/**  The order of every `MsdRateDto::centi`, Overall first. */
+	skillsets: string[],
+	/**  Ascending; empty unless rated. */
+	rates: MsdRateDto[],
+};
+
 /**  Values match the persisted and exported ids. */
 export type ChartPickDto = 
 /**  The stratified sampler's round. */
@@ -287,6 +327,19 @@ export type ColumnDto = {
 	finger: FingerDto,
 };
 
+/**  ComputePlaySsr counters (ADR 0024). */
+export type ComputePlaySsrSummaryDto = {
+	/**  Ledger plays, of every alias, on a catalog chart of a keymode with a calculator. */
+	playsTotal: number,
+	/**  Rows written this run, counted or excluded. */
+	computed: number,
+	counted: number,
+	excluded: number,
+	/**  Already had a row under the current `play_ssr` key. */
+	skippedMemoized: number,
+	failedItems: number,
+};
+
 export type CountDto = {
 	key: string,
 	count: number,
@@ -297,6 +350,14 @@ export type CreateProfileInput = {
 	aliasIds: number[],
 	mergeMode?: MergeModeDto | null,
 };
+
+export type DanEstimateDto = {
+	label: string,
+	third: DanThirdDto,
+	marginCenti: number,
+};
+
+export type DanThirdDto = "low" | "mid" | "high";
 
 export type DataChanged = DataChangedDto;
 
@@ -329,6 +390,20 @@ export type EntryRefDto = { kind: "profile"; id: number } | { kind: "all_players
 /**  Wire mirror of core's `ErrorCode`: domain types never derive specta (D13). */
 export type ErrorCodeDto = "OSU_DIR_NOT_FOUND" | "UNSUPPORTED_FORMAT" | "PARSE_FAILED" | "OSU_RUNNING" | "CONSENT_REQUIRED" | "SIGNATURE_INVALID" | "NOT_FOUND" | "INVALID_INPUT" | "CONFLICT" | "CANCELLED" | "INTERNAL";
 
+export type EvidenceDto = {
+	counted: number,
+	tier: EvidenceTierDto,
+	excluded: ExclusionCountDto[],
+};
+
+export type EvidenceTierDto = "low" | "medium" | "ok";
+
+export type ExclusionCountDto = {
+	/**  A `play_ssr` status other than `counted`, or `pending` for a play with no row. */
+	reason: string,
+	count: number,
+};
+
 export type FingerDto = "pinky" | "ring" | "middle" | "index" | "thumb";
 
 export type HandDto = "left" | "right" | 
@@ -357,6 +432,8 @@ export type IndexLibrarySummaryDto = {
 	labelsWritten: number,
 	/**  Pattern segments stored this run (`patterns` stage). */
 	segmentsWritten: number,
+	/**  Charts given an MSD status this run (`difficulty` stage), rated or not. */
+	msdWritten: number,
 	failedItems: number,
 };
 
@@ -420,7 +497,11 @@ export type JobKindDto = "sync_plays" |
 /**  Chained after every `SyncPlays` (spec 004); never started from IPC. */
 "refresh_identity" | 
 /**  Chained after every `SyncPlays` too, and startable on its own. */
-"index_library";
+"index_library" | 
+/**  Chained after every `IndexLibrary` (ADR 0024); never started from IPC. */
+"compute_play_ssr" | 
+/**  Started only by `rate_copy_confirm`, which mints its `ExportPermit` (ADR 0025, D9). */
+"rate_copy";
 
 export type JobProgress = JobProgressDto;
 
@@ -434,7 +515,13 @@ export type JobProgressDto = {
 };
 
 /**  The step a job is in; the UI localises it (`jobs.stage.<id>`). */
-export type JobStageDto = "catalog" | "ingest" | "archive" | "index";
+export type JobStageDto = "catalog" | "ingest" | "archive" | "index" | 
+/**  Per-play goals and SSRs for the skill preview. */
+"play_ssr" | 
+/**  Time-stretching the chart audio for a rate copy. */
+"render_audio" | 
+/**  Writing a rate copy's files into the set folder. */
+"write";
 
 /**  `JobService::start` input, tagged on `kind` (spec 003 IPC). */
 export type JobStartDto = {
@@ -446,12 +533,28 @@ export type JobStartDto = {
 export type JobStatusDto = "queued" | "running" | "ok" | "failed" | "cancelled";
 
 /**  Per-kind result, stored as `job_run.summary_json`. */
-export type JobSummaryDto = { kind: "sync_plays"; counters: SyncSummaryDto } | { kind: "index_library"; counters: IndexLibrarySummaryDto };
+export type JobSummaryDto = { kind: "sync_plays"; counters: SyncSummaryDto } | { kind: "index_library"; counters: IndexLibrarySummaryDto } | { kind: "compute_play_ssr"; counters: ComputePlaySsrSummaryDto } | { kind: "rate_copy"; counters: RateCopySummaryDto };
 
 export type KeymodeCountDto = {
 	/**  `k1`..`k16` or `unknown` (`KeymodeBucket`). */
 	bucket: string,
 	n: number,
+};
+
+/**  One keymode the engine indexes (ADR 0023). */
+export type KeymodeDto = {
+	keymode: number,
+	/**
+	 *  Whether the keymode has a pattern taxonomy, so segments, labelling and session labels
+	 *  exist for it.
+	 */
+	hasPatterns: boolean,
+	/**  Calculator ids, e.g. `minacalc`. */
+	calculators: string[],
+	/**  A layout preset id. */
+	defaultLayout: string,
+	/**  Whether the default layout has a thumb column; thumb-side choices only make sense then. */
+	hasThumb: boolean,
 };
 
 export type LabelEventDto = {
@@ -596,6 +699,18 @@ export type MoveWindowRequestDto = {
 	t0Ms: number,
 };
 
+export type MsdRateDto = {
+	rateMilli: number,
+	/**  MSD × 100 per skillset, in `ChartMsdDto::skillsets` order. */
+	centi: number[],
+};
+
+export type MsdStatusDto = "rated" | 
+/**  MinaCalc ignores holds and releases, so from the LN cut-off on its numbers mean nothing. */
+"ln_heavy" | "calc_rejected" | 
+/**  Not rated yet under the current `difficulty` key: unindexed, unparsed or missing. */
+"pending";
+
 /**  lazer's values; the wiki's 0/1/2 disagree and are unverified (research 06). */
 export type NoteBodyStyleDto = "stretch" | "repeat_top" | "repeat_bottom" | "repeat_top_and_bottom";
 
@@ -638,6 +753,10 @@ export type PatternExampleDto = {
 	window: ChartWindowDto,
 };
 
+export type PreviewStateDto = "ready" | 
+/**  `ComputePlaySsr` is queued or running; the rows already cached are shown. */
+"computing" | "no_plays";
+
 export type ProfileEntryDto = {
 	ref: EntryRefDto,
 	profileKind: ProfileKindDto,
@@ -664,6 +783,77 @@ export type RandomRequestDto = {
 	exclude: AnchorDto[],
 };
 
+/**
+ *  What `confirm(previewId)` would write. `refusal` set means nothing can be written: the
+ *  `previewId` is then empty and the names are empty when the chart could not be rewritten.
+ */
+export type RateCopyPlanDto = {
+	previewId: string,
+	md5: string,
+	rateMilli: number,
+	/**  The audio's pitch follows the rate (osu!'s NC); `false` keeps it, as DT does. */
+	nightcore: boolean,
+	/**  The set folder the files go into. */
+	folder: string,
+	osuFilename: string,
+	version: string,
+	audioFilename: string,
+	/**  Reused instead of rendered again. */
+	audioExists: boolean,
+	/**  Skipped: an existing file is never replaced. */
+	osuExists: boolean,
+	/**  One of [`refusal`]; the UI localises it (`rateCopy.refusal.<id>`). */
+	refusal: string | null,
+};
+
+/**  What a rate copy wrote into its set folder (ADR 0025). */
+export type RateCopySummaryDto = {
+	folder: string,
+	osuFilename: string,
+	audioFilename: string,
+	/**  `false`: a file of that name was already there and was left untouched. */
+	osuWritten: boolean,
+	audioWritten: boolean,
+	/**  The audio at that rate already existed, so none was rendered. */
+	audioReused: boolean,
+	/**
+	 *  [`RATE_COPY_NEXT_STEP`]: the catalog comes from osu!.db, so the copy shows up in wofella
+	 *  only after stable refreshes (F5 in song select) and a sync reads it back.
+	 */
+	nextStep: string,
+	failedItems: number,
+};
+
+export type ReasonDto = {
+	/**
+	 *  `deficit`, `push`, `skillset`, `unplayed`, `played_before`, `needs_rate_copy` or
+	 *  `rate_copy_in_library`: i18n keys.
+	 */
+	code: string,
+	/**  Skillsets as MinaCalc ids, MSD in centi, rates in milli. */
+	args: string[],
+};
+
+export type RecItemDto = {
+	md5: string,
+	title: string,
+	artist: string,
+	version: string,
+	creator: string,
+	setId: number | null,
+	beatmapId: number | null,
+	/**  The mod rate to play at; a rate copy is always picked at 1000. */
+	rateMilli: number,
+	needsRateCopy: boolean,
+	isRateCopy: boolean,
+	focusCenti: number,
+	overallCenti: number,
+	/**  The seven skillsets after Overall, in `SkillPreviewDto.skillsets` order. */
+	skillsetsCenti: number[],
+	played: boolean,
+	reasons: ReasonDto[],
+};
+
 export type RecentLabelDto = {
 	eventId: string,
 	md5: string,
@@ -674,6 +864,38 @@ export type RecentLabelDto = {
 	noPattern: boolean,
 	at: string,
 };
+
+export type RecsModeDto = 
+/**  The weakest skillset the keymode lets Deficit pick. */
+"deficit" | 
+/**  Overall, aimed above the player. */
+"push" | 
+/**  The skillset the caller names. */
+"skillset";
+
+export type RecsPreviewDto = {
+	/**  Empty when the entry resolves to no scope. */
+	scopeHash: string,
+	keymode: number,
+	method: string,
+	calcVersion: number,
+	state: RecsStateDto,
+	anyRate: boolean,
+	/**  A MinaCalc skillset id (`overall` for Push); empty for Deficit without a rating. */
+	focus: string,
+	/**  The scope's rating on `focus`; 0 without a rating. */
+	ratingCenti: number,
+	/**  Inclusive absolute MSD band; `[0, 0]` without a rating. */
+	bandCenti: [number, number],
+	items: RecItemDto[],
+	warnings: string[],
+};
+
+export type RecsStateDto = "ready" | 
+/**  `ComputePlaySsr` is queued or running; the list reads the rating as cached so far. */
+"computing" | 
+/**  The scope has no rating in this keymode yet, so there is no band. */
+"no_rating";
 
 /**
  *  `anchor` resized to `[t0Ms, t1Ms)`: the edge that moved from the anchor's is clamped to
@@ -788,6 +1010,27 @@ export type SetupStatusDto = {
 	logsDir: string,
 	appVersion: string,
 	lastSync: JobDto | null,
+};
+
+export type SkillPreviewDto = {
+	scopeHash: string,
+	keymode: number,
+	method: string,
+	calcVersion: number,
+	state: PreviewStateDto,
+	overallCenti: number | null,
+	skillsets: SkillsetRatingDto[],
+	dan: DanEstimateDto | null,
+	evidence: EvidenceDto,
+	topPlays: TopPlayDto[],
+	trend: TrendPointDto[],
+	warnings: string[],
+};
+
+export type SkillsetRatingDto = {
+	/**  A MinaCalc skillset id (`stream`, `jumpstream`, …), as `ChartMsdDto.skillsets` names them. */
+	id: string,
+	ratingCenti: number,
 };
 
 export type SkinDiagnosticDto = {
@@ -914,6 +1157,26 @@ export type TopChartDto = {
 	title: string | null,
 	version: string | null,
 	n: number,
+};
+
+export type TopPlayDto = {
+	/**  64 hex chars. */
+	playId: string,
+	md5: string,
+	title: string,
+	version: string,
+	rateMilli: number,
+	goalPermyriad: number,
+	overallCenti: number,
+	dominantSkillset: string,
+	/**  Unix ms; an `f64` holds it exactly and crosses the bindings without a BigInt. */
+	playedAtMs: number | null,
+};
+
+export type TrendPointDto = {
+	/**  `YYYY-MM`, UTC. */
+	month: string,
+	overallCenti: number,
 };
 
 /**  A window inside one chart the user picked, start chosen like the sampler's. */

@@ -528,6 +528,151 @@ mod commands_smoke {
     }
 
     #[test]
+    fn meta_and_chart_msd_commands_answer() {
+        let h = synced();
+        let keymodes = h.invoke("meta_keymodes", json!({})).unwrap();
+        let keymodes = keymodes.as_array().unwrap();
+        assert!(keymodes.len() >= 2, "{keymodes:?}");
+        let k7 = keymodes.iter().find(|k| k["keymode"] == json!(7)).unwrap();
+        assert_eq!(
+            (&k7["hasPatterns"], &k7["hasThumb"], &k7["defaultLayout"]),
+            (&json!(true), &json!(true), &json!("k7.313_right_thumb")),
+            "{k7}"
+        );
+        assert_eq!(k7["calculators"], json!(["minacalc"]), "{k7}");
+
+        // Sync chains the library index, so the chart already has a status row.
+        let msd = h.invoke("chart_msd", json!({ "md5": CHART_MD5 })).unwrap();
+        assert_eq!(msd["md5"], json!(CHART_MD5), "{msd}");
+        assert_eq!(msd["status"], json!("rated"), "{msd}");
+        assert_eq!(msd["skillsets"][0], json!("overall"), "{msd}");
+        assert_eq!(msd["skillsets"].as_array().unwrap().len(), 8, "{msd}");
+        assert!(msd["calcVersion"].is_number(), "{msd}");
+        assert!(msd["holdSharePermille"].is_number(), "{msd}");
+        // Centi values stay unpinned: they may differ by 1 across platforms (ADR 0022).
+        let at_1x = msd["rates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["rateMilli"] == json!(1_000))
+            .unwrap();
+        assert_eq!(at_1x["centi"].as_array().unwrap().len(), 8, "{msd}");
+
+        let err = h
+            .invoke("chart_msd", json!({ "md5": "0".repeat(32) }))
+            .unwrap_err();
+        assert_eq!(err["code"], json!("NOT_FOUND"), "{err}");
+        let err = h.invoke("chart_msd", json!({ "md5": "../x" })).unwrap_err();
+        assert_eq!(err["code"], json!("INVALID_INPUT"), "{err}");
+    }
+
+    /// Rating values belong to `PreviewService`'s tests; the shell proves the wiring and the
+    /// frozen wire shape (`odd/tasks/skill-preview.md`).
+    #[test]
+    fn preview_skill_command_answers() {
+        let h = synced();
+        for entry in [
+            json!({ "kind": "profile", "id": 1 }),
+            json!({ "kind": "all_players" }),
+        ] {
+            let previews = h
+                .invoke(
+                    "preview_skill",
+                    json!({ "entry": entry, "keymode": 7, "merge": null }),
+                )
+                .unwrap();
+            for p in previews.as_array().unwrap() {
+                assert_eq!(p["keymode"], json!(7), "{p}");
+                assert_eq!(p["method"], json!("preview.etterna_rating@1"), "{p}");
+                assert!(
+                    ["ready", "computing", "no_plays"].contains(&p["state"].as_str().unwrap()),
+                    "{p}"
+                );
+                assert!(p["scopeHash"].is_string(), "{p}");
+                assert!(p["evidence"]["counted"].is_number(), "{p}");
+                assert!(
+                    p["warnings"]
+                        .as_array()
+                        .unwrap()
+                        .contains(&json!("uncalibrated"))
+                );
+            }
+        }
+        let merged = h.invoke(
+            "preview_skill",
+            json!({ "entry": { "kind": "profile", "id": 1 }, "keymode": 7, "merge": "separate" }),
+        );
+        assert!(merged.unwrap().is_array());
+
+        let err = h
+            .invoke(
+                "preview_skill",
+                json!({ "entry": { "kind": "all_players" }, "keymode": 0, "merge": null }),
+            )
+            .unwrap_err();
+        assert_eq!(err["code"], json!("INVALID_INPUT"), "{err}");
+    }
+
+    /// List values belong to `PreviewService`'s tests; the shell proves the wiring, the frozen
+    /// wire shape (`odd/tasks/recs-preview.md`) and the "Enable rates" setting.
+    #[test]
+    fn preview_recs_command_answers() {
+        let h = synced();
+        let recs = |mode: &str, skillset: Value| {
+            h.invoke(
+                "preview_recs",
+                json!({
+                    "entry": { "kind": "profile", "id": 1 },
+                    "keymode": 7,
+                    "mode": mode,
+                    "skillset": skillset,
+                    "merge": null,
+                }),
+            )
+        };
+        let r = recs("push", Value::Null).unwrap();
+        assert_eq!(r["keymode"], json!(7), "{r}");
+        assert_eq!(r["method"], json!("preview.band_recs@1"), "{r}");
+        assert!(
+            ["ready", "computing", "no_rating"].contains(&r["state"].as_str().unwrap()),
+            "{r}"
+        );
+        assert_eq!(r["anyRate"], json!(false), "{r}");
+        assert_eq!(r["focus"], json!("overall"), "{r}");
+        for field in [
+            "scopeHash",
+            "calcVersion",
+            "ratingCenti",
+            "bandCenti",
+            "items",
+        ] {
+            assert!(r.get(field).is_some(), "{field}: {r}");
+        }
+        assert!(
+            r["warnings"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("uncalibrated"))
+        );
+        assert!(recs("deficit", Value::Null).is_ok());
+        assert!(recs("skillset", json!("stream")).is_ok());
+        let err = recs("skillset", json!("nope")).unwrap_err();
+        assert_eq!(err["code"], json!("INVALID_INPUT"), "{err}");
+
+        assert_eq!(
+            h.invoke("settings_get_recs_any_rate", json!({})).unwrap(),
+            json!(false)
+        );
+        h.invoke("settings_set_recs_any_rate", json!({ "on": true }))
+            .unwrap();
+        assert_eq!(
+            h.invoke("settings_get_recs_any_rate", json!({})).unwrap(),
+            json!(true)
+        );
+        assert_eq!(recs("push", Value::Null).unwrap()["anyRate"], json!(true));
+    }
+
+    #[test]
     fn label_export_writes_under_the_data_dir() {
         let h = synced();
         let out = h.invoke("label_export", json!({ "keymode": 7 })).unwrap();
@@ -690,5 +835,36 @@ mod commands_smoke {
             .unwrap_err();
         assert_eq!(err["code"], json!("INVALID_INPUT"), "{err}");
         assert_eq!(err["messageKey"], json!("players.error.duplicate_alias"));
+    }
+
+    /// The fixture set holds no audio file, so the plan is refused and records nothing.
+    #[test]
+    fn rate_copy_commands_answer() {
+        let h = synced();
+        let plan = h
+            .invoke(
+                "rate_copy_plan",
+                json!({ "md5": CHART_MD5, "rateMilli": 1100, "nightcore": false }),
+            )
+            .unwrap();
+        assert_eq!(plan["md5"], json!(CHART_MD5), "{plan}");
+        assert_eq!(plan["rateMilli"], json!(1100), "{plan}");
+        assert_eq!(plan["nightcore"], json!(false), "{plan}");
+        assert_eq!(plan["audioFilename"], json!("audio 1.10x.ogg"), "{plan}");
+        assert_eq!(plan["refusal"], json!("audio_missing"), "{plan}");
+        assert_eq!(plan["previewId"], json!(""), "{plan}");
+        let nc = h
+            .invoke(
+                "rate_copy_plan",
+                json!({ "md5": CHART_MD5, "rateMilli": 1100, "nightcore": true }),
+            )
+            .unwrap();
+        assert_eq!(nc["nightcore"], json!(true), "{nc}");
+        assert_eq!(nc["audioFilename"], json!("audio 1.10x nc.ogg"), "{nc}");
+        let err = h
+            .invoke("rate_copy_confirm", json!({ "previewId": "01JNOPREVIEW" }))
+            .unwrap_err();
+        assert_eq!(err["code"], json!("NOT_FOUND"), "{err}");
+        assert_eq!(err["messageKey"], json!("export.error.preview_unknown"));
     }
 }

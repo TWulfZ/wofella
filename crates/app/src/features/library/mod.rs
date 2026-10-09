@@ -10,6 +10,7 @@ mod service;
 pub(crate) mod testkit;
 
 pub use index::IndexLibraryJob;
+pub(crate) use index::{Keys, Raters, folder_of};
 pub use params::LibraryParams;
 pub(crate) use service::catalog_keymodes;
 pub use service::{ChartRows, LibraryService};

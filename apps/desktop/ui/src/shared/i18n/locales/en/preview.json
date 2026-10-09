@@ -1,0 +1,185 @@
+{
+  "preview": {
+    "title": "Skill",
+    "subtitle": "Where your plays put you today, skillset by skillset",
+    "badge": "Beta · uncalibrated · MinaCalc {{version}}",
+    "approx": "≈ {{value}}",
+    "overall": "Overall",
+    "method": {
+      "trigger": "How this is computed",
+      "title": "How these numbers are made",
+      "difficulty": "Chart difficulty comes from MinaCalc, Etterna's difficulty calculator, for each skillset and rate.",
+      "goal": "Your accuracy on each play is estimated from its judgement counts. wofella does not re-judge your replays yet.",
+      "rating": "The rating works like Etterna's: on each map only your top 2 rate personal bests count, and each skillset combines them the way Etterna's player rating does. Overall is the mean of the skillsets.",
+      "differ": "Expect differences from Etterna or Companella: osu! judges hits differently, accuracy here is an estimate and nothing is calibrated against real players yet.",
+      "calibrate": "Labelling patterns helps calibrate what comes next.",
+      "labelLink": "Label patterns"
+    },
+    "dan": {
+      "label": "Estimated dan",
+      "value": "≈ {{label}} · {{third}}",
+      "third": {
+        "low": "low",
+        "mid": "mid",
+        "high": "high"
+      },
+      "explain": "Places the difficulty of the charts you completed on the 4K dan courses. It can be off by about one dan either way."
+    },
+    "radar": {
+      "label": "Skillset radar: {{values}}",
+      "value": "{{name}} {{value}}",
+      "unmeasured": "{{name}} not measured",
+      "notMeasured": "not measured"
+    },
+    "skillsets": {
+      "title": "Skillsets",
+      "notMeasured": "Not measured"
+    },
+    "skillset": {
+      "overall": "Overall",
+      "stream": "Stream",
+      "jumpstream": "Jumpstream",
+      "handstream": "Handstream",
+      "stamina": "Stamina",
+      "jackspeed": "JackSpeed",
+      "chordjack": "Chordjack",
+      "technical": "Technical"
+    },
+    "trend": {
+      "title": "Overall by month",
+      "label": "Overall by month, from {{from}} ({{fromValue}}) to {{to}} ({{toValue}})",
+      "single": "Overall by month: only {{month}} so far ({{value}})",
+      "empty": "No monthly history yet."
+    },
+    "evidence": {
+      "title": "Plays that count",
+      "counted_one": "{{count}} play counts",
+      "counted_other": "{{count}} plays count",
+      "tier": {
+        "low": "Few plays: the rating can still move a lot.",
+        "medium": "Some plays: expect the rating to move as you play more.",
+        "ok": "Enough plays for a steady estimate."
+      },
+      "tierName": {
+        "low": "Low evidence",
+        "medium": "Medium evidence",
+        "ok": "Good evidence"
+      },
+      "excluded": "Left out",
+      "noneExcluded": "No play was left out.",
+      "reason": {
+        "incomplete": "Not completed",
+        "score_v2": "ScoreV2 plays",
+        "unsupported_mods": "Random, co-op or key-conversion mods",
+        "ln_heavy": "Long-note-heavy charts",
+        "calc_rejected": "Charts MinaCalc could not rate",
+        "no_chart": "Chart missing from your library",
+        "pending": "Not rated yet"
+      }
+    },
+    "topPlays": {
+      "title": "Top plays",
+      "chart": "Chart",
+      "rate": "Rate",
+      "rateValue": "{{rate}}x",
+      "goal": "Accuracy (est.)",
+      "ssr": "Overall SSR",
+      "skillset": "Main skillset",
+      "date": "Played",
+      "noDate": "Unknown",
+      "empty": "No play counts yet."
+    },
+    "warnings": {
+      "title": "About these numbers",
+      "code": {
+        "uncalibrated": "Uncalibrated: these ratings are not checked against real players yet.",
+        "goal_estimated": "Accuracy is estimated from judgement counts, not read from your replays.",
+        "k7_less_validated": "7K ratings are less validated than 4K: MinaCalc was built and tuned for 4K.",
+        "ln_not_measured": "Long notes are not measured: LN skill is not part of these numbers.",
+        "k7_tech_not_measured": "Technical is not measured on 7K, so it is left out of Overall."
+      },
+      "unknown": "Another limit applies ({{code}}).",
+      "cta": "Help calibrate: label patterns"
+    },
+    "state": {
+      "computing": "Computing ratings for your plays…",
+      "computingHint": "This runs after every sync. The page updates when it finishes.",
+      "updating": "Updating ratings…",
+      "preparing_one": "Ratings for {{count}} play are being prepared",
+      "preparing_other": "Ratings for {{count}} plays are being prepared",
+      "noPlaysTitle": "No rated {{keymode}}K plays yet",
+      "noPlaysBody": "Play and complete some {{keymode}}K charts in osu! stable, then sync from Home. They show up here once rated."
+    },
+    "scope": {
+      "noName": "(no name)",
+      "unnamed": "Names {{n}} of {{total}}"
+    },
+    "recs": {
+      "title": "Recommended",
+      "subtitle": "Charts and rates around your rating, for what you choose to train",
+      "method": {
+        "title": "How these picks are made",
+        "band": "Each pick is a chart and rate whose MinaCalc difficulty on the focus skillset sits in a band around your rating, reaching further above it than below.",
+        "dominant": "The focus skillset has to be the one that leads the chart, so a pick trains what it says.",
+        "sets": "You get one map per beatmap set, with charts you have not played first.",
+        "rates": "Rates are NM, HT, DT and rate copies already in your library. With any rate enabled in Settings, every rate from 0.70x to 1.50x can be suggested.",
+        "differ": "Uncalibrated: your rating and the chart difficulty come from MinaCalc and are not checked against real osu! players yet."
+      },
+      "modes": {
+        "label": "Recommendation mode",
+        "deficit": "Deficit",
+        "deficitHint": "Your weakest skillset",
+        "push": "Push",
+        "pushHint": "Overall, a step above you",
+        "skillset": "Skillset",
+        "skillsetHint": "One you choose"
+      },
+      "picker": {
+        "label": "Skillset",
+        "notMeasured": "Not measured on {{keymode}}K"
+      },
+      "summary": {
+        "focus": "Focus: {{skillset}}",
+        "rating": "Your rating {{value}}",
+        "band": "Band {{lo}}–{{hi}}"
+      },
+      "list": "Recommended charts",
+      "by": "mapped by {{creator}}",
+      "rate": {
+        "label": "Rate",
+        "ht": "HT",
+        "dt": "DT"
+      },
+      "rateCopy": "Rate copy",
+      "played": "Played",
+      "unplayed": "New",
+      "focusValue": "{{skillset}} {{value}}",
+      "reasons": {
+        "label": "Why this pick",
+        "deficit": "Trains {{skillset}}, your weakest skillset ({{rating}})",
+        "push": "Aims a little above your Overall, around {{target}}",
+        "skillset": "{{skillset}} leads this chart",
+        "unplayed": "You have not played it yet",
+        "played_before": "You have played it before",
+        "needs_rate_copy": "Needs a {{rate}} rate copy: osu! stable only plays NM, HT and DT",
+        "rate_copy_in_library": "Uses a rate copy already in your library"
+      },
+      "actions": {
+        "copyName": "Copy name",
+        "copied": "Copied",
+        "copyFailed": "Could not copy",
+        "generate": "Generate rate copy",
+        "generateSoon": "Coming in this beta"
+      },
+      "state": {
+        "noRatingTitle": "No {{keymode}}K rating yet",
+        "noRatingBody": "Picks sit around your rating. Play and complete some {{keymode}}K charts in osu! stable, then sync from Home.",
+        "emptyTitle": "No chart fits your band yet",
+        "emptyBody": "No chart in your library has {{skillset}} between {{lo}} and {{hi}} as its leading skillset at the rates in use.",
+        "emptyAnyRate": "Enabling any rate lets wofella suggest every rate from 0.70x to 1.50x.",
+        "enableAnyRate": "Enable any rate in Settings",
+        "emptyTryMode": "Try another mode, or add charts around this difficulty to your library."
+      }
+    }
+  }
+}

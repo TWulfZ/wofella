@@ -192,7 +192,7 @@ const YEARS_PER_ERA: i64 = 400;
 /// Days from 0000-03-01 to 1970-01-01.
 const UNIX_EPOCH_SHIFT: i64 = 719_468;
 
-fn rfc3339_ms(t: UnixUs) -> String {
+pub(crate) fn rfc3339_ms(t: UnixUs) -> String {
     let ms = t.0.div_euclid(US_PER_MS);
     let secs = ms.div_euclid(MS_PER_SEC);
     let days = secs.div_euclid(SECS_PER_DAY);

@@ -1,0 +1,185 @@
+{
+  "preview": {
+    "title": "Habilidad",
+    "subtitle": "Dónde te dejan hoy tus jugadas, skillset por skillset",
+    "badge": "Beta · sin calibrar · MinaCalc {{version}}",
+    "approx": "≈ {{value}}",
+    "overall": "Overall",
+    "method": {
+      "trigger": "Cómo se calcula",
+      "title": "De dónde salen estos números",
+      "difficulty": "La dificultad de cada mapa viene de MinaCalc, el calculador de dificultad de Etterna, por skillset y por rate.",
+      "goal": "Tu precisión en cada jugada se estima a partir de sus juicios. wofella todavía no vuelve a juzgar tus replays.",
+      "rating": "El rating funciona como el de Etterna: en cada mapa solo cuentan tus 2 mejores rates, y cada skillset los combina como lo hace el rating de jugador de Etterna. Overall es la media de los skillsets.",
+      "differ": "Puede diferir de Etterna o Companella: osu! juzga los golpes de otra forma, aquí la precisión es una estimación y nada está calibrado todavía con jugadores reales.",
+      "calibrate": "Etiquetar patrones ayuda a calibrar lo que viene.",
+      "labelLink": "Etiquetar patrones"
+    },
+    "dan": {
+      "label": "Dan estimado",
+      "value": "≈ {{label}} · {{third}}",
+      "third": {
+        "low": "bajo",
+        "mid": "medio",
+        "high": "alto"
+      },
+      "explain": "Sitúa la dificultad de los mapas que completaste en los cursos de dan de 4K. Puede desviarse alrededor de un dan arriba o abajo."
+    },
+    "radar": {
+      "label": "Radar de skillsets: {{values}}",
+      "value": "{{name}} {{value}}",
+      "unmeasured": "{{name}} sin medir",
+      "notMeasured": "sin medir"
+    },
+    "skillsets": {
+      "title": "Skillsets",
+      "notMeasured": "Sin medir"
+    },
+    "skillset": {
+      "overall": "Overall",
+      "stream": "Stream",
+      "jumpstream": "Jumpstream",
+      "handstream": "Handstream",
+      "stamina": "Stamina",
+      "jackspeed": "JackSpeed",
+      "chordjack": "Chordjack",
+      "technical": "Technical"
+    },
+    "trend": {
+      "title": "Overall por mes",
+      "label": "Overall por mes, de {{from}} ({{fromValue}}) a {{to}} ({{toValue}})",
+      "single": "Overall por mes: solo {{month}} por ahora ({{value}})",
+      "empty": "Todavía no hay historial mensual."
+    },
+    "evidence": {
+      "title": "Jugadas que cuentan",
+      "counted_one": "Cuenta {{count}} jugada",
+      "counted_other": "Cuentan {{count}} jugadas",
+      "tier": {
+        "low": "Pocas jugadas: el rating todavía puede moverse mucho.",
+        "medium": "Algunas jugadas: el rating se moverá a medida que juegues más.",
+        "ok": "Jugadas suficientes para una estimación estable."
+      },
+      "tierName": {
+        "low": "Evidencia baja",
+        "medium": "Evidencia media",
+        "ok": "Evidencia buena"
+      },
+      "excluded": "Fuera del cálculo",
+      "noneExcluded": "No se dejó fuera ninguna jugada.",
+      "reason": {
+        "incomplete": "Sin completar",
+        "score_v2": "Jugadas con ScoreV2",
+        "unsupported_mods": "Mods Random, co-op o de conversión de teclas",
+        "ln_heavy": "Mapas con muchas notas largas",
+        "calc_rejected": "Mapas que MinaCalc no pudo calcular",
+        "no_chart": "Mapa ausente de tu biblioteca",
+        "pending": "Aún sin calcular"
+      }
+    },
+    "topPlays": {
+      "title": "Mejores jugadas",
+      "chart": "Mapa",
+      "rate": "Rate",
+      "rateValue": "{{rate}}x",
+      "goal": "Precisión (est.)",
+      "ssr": "SSR Overall",
+      "skillset": "Skillset principal",
+      "date": "Jugada",
+      "noDate": "Desconocida",
+      "empty": "Todavía no cuenta ninguna jugada."
+    },
+    "warnings": {
+      "title": "Sobre estos números",
+      "code": {
+        "uncalibrated": "Sin calibrar: estos ratings todavía no se han contrastado con jugadores reales.",
+        "goal_estimated": "La precisión se estima a partir de los juicios, no se lee de tus replays.",
+        "k7_less_validated": "Los ratings de 7K están menos validados que los de 4K: MinaCalc se creó y ajustó para 4K.",
+        "ln_not_measured": "Las notas largas no se miden: la habilidad en LN no forma parte de estos números.",
+        "k7_tech_not_measured": "Technical no se mide en 7K, así que queda fuera de Overall."
+      },
+      "unknown": "Se aplica otro límite ({{code}}).",
+      "cta": "Ayuda a calibrar: etiqueta patrones"
+    },
+    "state": {
+      "computing": "Calculando ratings de tus jugadas…",
+      "computingHint": "Esto se ejecuta tras cada sincronización. La página se actualiza cuando termina.",
+      "updating": "Actualizando ratings…",
+      "preparing_one": "Se está preparando el rating de {{count}} jugada",
+      "preparing_other": "Se están preparando los ratings de {{count}} jugadas",
+      "noPlaysTitle": "Todavía no hay jugadas de {{keymode}}K con rating",
+      "noPlaysBody": "Juega y completa algunos mapas de {{keymode}}K en osu! stable y luego sincroniza desde Inicio. Aparecen aquí cuando tienen rating."
+    },
+    "scope": {
+      "noName": "(sin nombre)",
+      "unnamed": "Nombres {{n}} de {{total}}"
+    },
+    "recs": {
+      "title": "Recomendados",
+      "subtitle": "Mapas y rates alrededor de tu rating, para lo que elijas entrenar",
+      "method": {
+        "title": "Cómo se eligen",
+        "band": "Cada sugerencia es un mapa y un rate cuya dificultad de MinaCalc en el skillset elegido cae en una banda alrededor de tu rating, que llega más arriba que abajo.",
+        "dominant": "Ese skillset tiene que ser el que domina el mapa, para que la sugerencia entrene lo que dice.",
+        "sets": "Recibes un mapa por beatmapset, primero los que no has jugado.",
+        "rates": "Los rates son NM, HT, DT y las copias con rate que ya tienes en tu biblioteca. Si activas cualquier rate en Ajustes, se puede sugerir cualquier rate de 0,70x a 1,50x.",
+        "differ": "Sin calibrar: tu rating y la dificultad de los mapas salen de MinaCalc y todavía no se han contrastado con jugadores reales de osu!."
+      },
+      "modes": {
+        "label": "Modo de recomendación",
+        "deficit": "Déficit",
+        "deficitHint": "Tu skillset más débil",
+        "push": "Subir",
+        "pushHint": "Overall, un paso por encima",
+        "skillset": "Skillset",
+        "skillsetHint": "El que elijas"
+      },
+      "picker": {
+        "label": "Skillset",
+        "notMeasured": "No se mide en {{keymode}}K"
+      },
+      "summary": {
+        "focus": "Foco: {{skillset}}",
+        "rating": "Tu rating {{value}}",
+        "band": "Banda {{lo}}–{{hi}}"
+      },
+      "list": "Mapas recomendados",
+      "by": "mapeado por {{creator}}",
+      "rate": {
+        "label": "Rate",
+        "ht": "HT",
+        "dt": "DT"
+      },
+      "rateCopy": "Copia con rate",
+      "played": "Jugado",
+      "unplayed": "Nuevo",
+      "focusValue": "{{skillset}} {{value}}",
+      "reasons": {
+        "label": "Por qué",
+        "deficit": "Entrena {{skillset}}, tu skillset más débil ({{rating}})",
+        "push": "Apunta un poco por encima de tu Overall, alrededor de {{target}}",
+        "skillset": "{{skillset}} domina este mapa",
+        "unplayed": "Todavía no lo has jugado",
+        "played_before": "Ya lo has jugado",
+        "needs_rate_copy": "Necesita una copia a {{rate}}: osu! stable solo juega NM, HT y DT",
+        "rate_copy_in_library": "Usa una copia con rate que ya está en tu biblioteca"
+      },
+      "actions": {
+        "copyName": "Copiar nombre",
+        "copied": "Copiado",
+        "copyFailed": "No se pudo copiar",
+        "generate": "Generar copia con rate",
+        "generateSoon": "Llega en esta beta"
+      },
+      "state": {
+        "noRatingTitle": "Todavía no tienes rating de {{keymode}}K",
+        "noRatingBody": "Las sugerencias se sitúan alrededor de tu rating. Juega y completa algunos mapas de {{keymode}}K en osu! stable y luego sincroniza desde Inicio.",
+        "emptyTitle": "Ningún mapa cae en tu banda todavía",
+        "emptyBody": "Ningún mapa de tu biblioteca tiene {{skillset}} entre {{lo}} y {{hi}} como skillset dominante en los rates disponibles.",
+        "emptyAnyRate": "Si activas cualquier rate, wofella puede sugerir todos los rates de 0,70x a 1,50x.",
+        "enableAnyRate": "Activar cualquier rate en Ajustes",
+        "emptyTryMode": "Prueba otro modo o añade a tu biblioteca mapas de esta dificultad."
+      }
+    }
+  }
+}

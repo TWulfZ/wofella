@@ -1,0 +1,65 @@
+{
+  "rateCopy": {
+    "title": "Generate a rate copy",
+    "description": "wofella adds a new difficulty at this rate, with its own time-stretched audio, next to the original chart.",
+    "trigger": "Generate rate copy",
+    "rate": "Rate",
+    "rateValue": "{{rate}}x",
+    "pitch": {
+      "label": "Change pitch (NC)",
+      "hint": "Sounds like osu! Nightcore; off keeps the pitch, like DT."
+    },
+    "planning": "Checking the chart…",
+    "field": {
+      "chart": "Chart",
+      "rate": "Rate",
+      "folder": "Set folder",
+      "osuFile": "Difficulty file",
+      "version": "New difficulty",
+      "audio": "Audio file"
+    },
+    "audio": {
+      "willGenerate": "Will be generated",
+      "reused": "Already exists, reused"
+    },
+    "osu": {
+      "exists": "Already exists, left untouched"
+    },
+    "writes_one": "wofella writes {{count}} new file into this set folder; it never overwrites or deletes anything.",
+    "writes_other": "wofella writes {{count}} new files into this set folder; it never overwrites or deletes anything.",
+    "writesNothing": "Both files already exist; wofella writes nothing and never overwrites or deletes anything.",
+    "refused": "This rate copy can't be made",
+    "refusal": {
+      "unsupported_mode": "Only osu!mania charts can get a rate copy.",
+      "keysounded": "This chart uses keysounds or storyboard samples, which a rate copy cannot keep in time.",
+      "no_audio": "This chart has no audio file.",
+      "audio_missing": "The chart's audio file is missing from its set folder.",
+      "malformed": "The chart's .osu file could not be read.",
+      "rate_out_of_range": "This rate is outside the range wofella can generate.",
+      "identity_rate": "1.00x is the chart itself; pick another rate.",
+      "already_rate_copy": "This chart is already a rate copy; make one from the original chart instead.",
+      "ln_heavy": "This chart is mostly long notes; rate copies of LN-heavy charts are not supported yet.",
+      "same_column_collision": "At this rate, two notes in one column would land too close together; try another rate.",
+      "unsafe_name": "The copy's file names would not be valid for osu! stable.",
+      "already_exists": "A file with the copy's name already exists and is not this rate copy; wofella never overwrites it.",
+      "unknown": "This rate copy can't be made."
+    },
+    "progress": {
+      "title": "Generating…",
+      "queued": "Waiting to start…"
+    },
+    "done": "Done. In osu!, press F5 in song select to see the new difficulty, then sync wofella.",
+    "file": {
+      "written": "Written",
+      "kept": "Already there, left untouched",
+      "reused": "Reused"
+    },
+    "failed": "The rate copy failed.",
+    "cancelled": "The rate copy was cancelled.",
+    "actions": {
+      "generate": "Generate",
+      "cancel": "Cancel",
+      "close": "Close"
+    }
+  }
+}

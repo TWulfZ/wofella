@@ -1,0 +1,11 @@
+error[E0451]: fields `preview_id`, `folder` and `files` of struct `ExportPermit` are private
+ --> tests/ui/export_permit_literal.rs:5:9
+  |
+4 |     let permit = ExportPermit {
+  |                  ------------ in this type
+5 |         preview_id: String::new(),
+  |         ^^^^^^^^^^ private field
+6 |         folder,
+  |         ^^^^^^ private field
+7 |         files: vec!["x.osu".to_owned()],
+  |         ^^^^^ private field
